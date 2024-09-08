@@ -32,6 +32,15 @@ TEST(AsciiTest, IsDigit)
     EXPECT_FALSE(NebulaAscii::IsDigit(65)); // 'A'
 }
 
+TEST(AsciiTest, IsHexDigit)
+{
+    EXPECT_TRUE(NebulaAscii::IsHexDigit(48));  // '0'
+    EXPECT_TRUE(NebulaAscii::IsHexDigit(57));  // '9'
+    EXPECT_TRUE(NebulaAscii::IsHexDigit(65));  // 'A'
+    EXPECT_TRUE(NebulaAscii::IsHexDigit(102)); // 'f'
+    EXPECT_FALSE(NebulaAscii::IsHexDigit(71)); // 'G'
+}
+
 TEST(AsciiTest, IsAlpha)
 {
     EXPECT_TRUE(NebulaAscii::IsAlpha(65));  // 'A'
