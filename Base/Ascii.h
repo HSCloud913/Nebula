@@ -2,8 +2,8 @@
 // Created by hsclo on 24. 5. 17.
 //
 
-#ifndef ASCII_H
-#define ASCII_H
+#ifndef NEBULAASCII_H
+#define NEBULAASCII_H
 
 #include <algorithm>
 #include <ranges>
@@ -35,23 +35,23 @@ BEGIN_NS(ne)
         static const int_t CharProperties[128];
 
     public:
-        inline static int_t Properties(int_t _value);
-        inline static bool_t HasProperties(int_t _value, int_t _properties);
+        [[nodiscard]] inline static int_t Properties(int_t _value);
+        [[nodiscard]] inline static bool_t HasProperties(int_t _value, int_t _properties);
 
     public:
-        inline static bool_t IsAscii(int_t _value);
-        inline static bool_t IsSpace(int_t _value);
-        inline static bool_t IsPunct(int_t _value);
-        inline static bool_t IsDigit(int_t _value);
-        inline static bool_t IsHexDigit(int_t _value);
-        inline static bool_t IsAlpha(int_t _value);
-        inline static bool_t IsAlphaNumeric(int_t _value);
-        inline static bool_t IsLower(int_t _value);
-        inline static bool_t IsUpper(int_t _value);
+        [[nodiscard]] inline static bool_t IsAscii(int_t _value);
+        [[nodiscard]] inline static bool_t IsSpace(int_t _value);
+        [[nodiscard]] inline static bool_t IsPunct(int_t _value);
+        [[nodiscard]] inline static bool_t IsDigit(int_t _value);
+        [[nodiscard]] inline static bool_t IsHexDigit(int_t _value);
+        [[nodiscard]] inline static bool_t IsAlpha(int_t _value);
+        [[nodiscard]] inline static bool_t IsAlphaNumeric(int_t _value);
+        [[nodiscard]] inline static bool_t IsLower(int_t _value);
+        [[nodiscard]] inline static bool_t IsUpper(int_t _value);
 
     public:
-        inline static int_t Lower(int_t _value);
-        inline static int_t Upper(int_t _value);
+        [[nodiscard]] inline static int_t Lower(int_t _value);
+        [[nodiscard]] inline static int_t Upper(int_t _value);
     };
 
 
@@ -127,4 +127,4 @@ END_NS
 
 typedef ne::Ascii NebulaAscii;
 
-#endif //ASCII_H
+#endif //NEBULAASCII_H
