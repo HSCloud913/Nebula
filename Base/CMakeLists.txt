@@ -9,6 +9,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 SET(SOURCES
         Ascii.cpp
+        Logger.cpp
 )
 
 add_library(${PROJECT_NAME} STATIC ${SOURCES})
