@@ -5,7 +5,7 @@
 #include "Ascii.h"
 
 
-BEGIN_NS(Ne)
+BEGIN_NS(ne)
     const int_t Ascii::CharProperties[128] =
         {
             /* 00 . */ ACP_CONTROL,

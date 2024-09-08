@@ -10,7 +10,7 @@
 #include <cwctype>
 #include "Type.h"
 
-BEGIN_NS(Ne)
+BEGIN_NS(ne)
 	class NEBULA_API Ascii final
 	{
 	private:
@@ -57,6 +57,6 @@ BEGIN_NS(Ne)
 
 END_NS
 
-typedef Ne::Ascii NebulaAscii;
+typedef ne::Ascii NebulaAscii;
 
 #endif //ASCII_H
