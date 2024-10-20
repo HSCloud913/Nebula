@@ -7,8 +7,10 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Header only 항목만 추가
 SET(HEADERS
         Exception.h
+        NebulaHandle.h
 )
 
 SET(SOURCES
