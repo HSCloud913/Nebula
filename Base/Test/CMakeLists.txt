@@ -9,7 +9,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(${PROJECT_NAME} test.cpp
         test_ascii.cpp
-        test_logger.cpp)
+        test_logger.cpp
+        test_exception.cpp)
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/Base)
 target_link_libraries(${PROJECT_NAME} gtest gtest_main NebulaBase)
