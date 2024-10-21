@@ -11,6 +11,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 SET(HEADERS
         Exception.h
         NebulaHandle.h
+        StringFormat.h
 )
 
 SET(SOURCES
