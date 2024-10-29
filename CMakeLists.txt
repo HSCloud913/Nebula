@@ -13,5 +13,5 @@ FetchContent_MakeAvailable(googletest)
 enable_testing()
 
 add_subdirectory(Base)
-# add_subdirectory(Cryptography)
-# add_subdirectory(Protocol)
+add_subdirectory(Cryptography)
+add_subdirectory(Protocol)
