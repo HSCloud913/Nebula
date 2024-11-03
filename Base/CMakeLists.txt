@@ -17,6 +17,8 @@ SET(HEADERS
 SET(SOURCES
         Ascii.cpp
         Logger.cpp
+        Json.cpp
+        JsonValue.cpp
 )
 
 add_library(${PROJECT_NAME} STATIC ${HEADERS} ${SOURCES})

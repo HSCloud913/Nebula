@@ -14,6 +14,7 @@ add_executable(${PROJECT_NAME}
         test_handle.cpp
         test_logger.cpp
         test_stringformat.cpp
+        test_json.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/Base)

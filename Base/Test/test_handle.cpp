@@ -36,7 +36,7 @@ TEST_F(NebulaHandleTest, DefaultConstructor)
 TEST_F(NebulaHandleTest, MoveConstructor)
 {
 	NebulaHandle<HandleType, TestDeleter, InvalidHandle> handle1(42); // 유효한 핸들
-	NebulaHandle<HandleType, TestDeleter, InvalidHandle> handle2(std::move(handle1));
+	NebulaHandle handle2(std::move(handle1));
 
 	EXPECT_EQ(handle2.Get(), 42); // 이동 후 핸들 값 확인
 	EXPECT_EQ(handle1.Get(), InvalidHandle); // 원래 핸들은 InvalidHandle이어야 함

@@ -1,15 +1,16 @@
-#ifndef JSONVALUE_H
-#define JSONVALUE_H
+#ifndef NEBULAJSONVALUE_H
+#define NEBULAJSONVALUE_H
 
 #include <memory>
 #include <variant>
 
 #include "Json.h"
 
-BEGIN_NS(ne::protocol)
+BEGIN_NS(ne)
 	enum class JsonType
 	{
-		NE_NULL,
+		INVALID,
+		NULL_DATA,
 		BOOLEAN,
 		NUMBER,
 		POSITIVE_NUMBER,
@@ -28,7 +29,8 @@ BEGIN_NS(ne::protocol)
 		friend class Json;
 
 	public:
-		JsonValue() : type(JsonType::NE_NULL) {}
+		JsonValue() : type(JsonType::INVALID) {}
+		explicit JsonValue(JsonType _type) : type(_type) {}
 		explicit JsonValue(bool_t _value) : type(JsonType::BOOLEAN), value(_value) {}
 		explicit JsonValue(int_t _value) : type(JsonType::NUMBER), value(_value) {}
 		explicit JsonValue(uint_t _value) : type(JsonType::POSITIVE_NUMBER), value(_value) {}
@@ -38,7 +40,9 @@ BEGIN_NS(ne::protocol)
 		explicit JsonValue(lpcstr_t _value) : type(JsonType::STRING), value(std::make_shared<string_t>(_value)) {}
 		explicit JsonValue(const string_t& _value) : type(JsonType::STRING), value(std::make_shared<string_t>(_value)) {}
 		explicit JsonValue(const JsonObject& _value) : type(JsonType::OBJECT), value(_value) {}
+		explicit JsonValue(JsonObject&& _value) : type(JsonType::OBJECT), value(std::move(_value)) {}
 		explicit JsonValue(const JsonArray& _value) : type(JsonType::ARRAY), value(_value) {}
+		explicit JsonValue(JsonArray&& _value) : type(JsonType::ARRAY), value(std::move(_value)) {}
 		JsonValue(const JsonValue& _value) : type(_value.type), value(_value.value) {}
 
 	private:
@@ -49,7 +53,8 @@ BEGIN_NS(ne::protocol)
 		Value value;
 
 	public:
-		[[nodiscard]] bool_t IsNull() const { return type == JsonType::NE_NULL; }
+		[[nodiscard]] bool_t IsInvalid() const { return type == JsonType::INVALID; }
+		[[nodiscard]] bool_t IsNull() const { return type == JsonType::NULL_DATA; }
 		[[nodiscard]] bool_t IsBool() const { return type == JsonType::BOOLEAN; }
 		[[nodiscard]] bool_t IsNumber() const { return type == JsonType::NUMBER; }
 		[[nodiscard]] bool_t IsPositiveNumber() const { return type == JsonType::POSITIVE_NUMBER; }
@@ -66,21 +71,28 @@ BEGIN_NS(ne::protocol)
 		[[nodiscard]] longlong_t AsLargeNumber() const { return std::get<longlong_t>(value); }
 		[[nodiscard]] ulonglong_t AsPositiveLargeNumber() const { return std::get<ulonglong_t>(value); }
 		[[nodiscard]] double_t AsReal() const { return std::get<double>(value); }
-		[[nodiscard]] std::shared_ptr<string_t> AsString() const { return std::get<std::shared_ptr<string_t>>(value); }
-		[[nodiscard]] JsonObject AsObject() const { return std::get<JsonObject>(value); }
-		[[nodiscard]] JsonArray AsArray() const { return std::get<JsonArray>(value); }
+		[[nodiscard]] string_t* AsString() const { return std::get<std::shared_ptr<string_t>>(value).get(); }
+		[[nodiscard]] const JsonObject& AsObject() const { return std::get<JsonObject>(value); }
+		[[nodiscard]] const JsonArray& AsArray() const { return std::get<JsonArray>(value); }
 
-		[[nodiscard]] std::vector<string_t> ObjectKeys() const;
+		JsonValue& operator=(bool_t _value) { type = JsonType::BOOLEAN; value = _value; return *this; }
+		JsonValue& operator=(int_t _value) { type = JsonType::NUMBER; value = _value; return *this; }
+		JsonValue& operator=(uint_t _value) { type = JsonType::POSITIVE_NUMBER; value = _value; return *this; }
+		JsonValue& operator=(longlong_t _value) { type = JsonType::LARGE_NUMBER; value = _value; return *this; }
+		JsonValue& operator=(ulonglong_t _value) { type = JsonType::POSITIVE_LARGE_NUMBER; value = _value; return *this; }
+		JsonValue& operator=(double_t _value) { type = JsonType::REAL; value = _value; return *this; }
+		JsonValue& operator=(lpcstr_t _value) { type = JsonType::STRING; value = std::make_shared<string_t>(_value); return *this; }
+		JsonValue& operator=(const string_t& _value) { type = JsonType::STRING; value = std::make_shared<string_t>(_value); return *this; }
+		JsonValue& operator=(const JsonObject& _value) { type = JsonType::OBJECT; value = _value; return *this; }
+		JsonValue& operator=(JsonObject&& _value) { type = JsonType::OBJECT; value = std::move(_value); return *this; }
+		JsonValue& operator=(const JsonArray& _value) { type = JsonType::ARRAY; value = _value; return *this; }
+		JsonValue& operator=(JsonArray&& _value) { type = JsonType::ARRAY; value = std::move(_value); return *this; }
 
 	public:
-		[[nodiscard]] bool_t HasChild(std::size_t _index) const;
-		[[nodiscard]] bool_t HasChild(lpcstr_t _name) const;
-		[[nodiscard]] std::shared_ptr<JsonValue> Child(std::size_t _index);
-		[[nodiscard]] std::shared_ptr<JsonValue> Child(lpcstr_t _name);
-		[[nodiscard]] std::size_t CountChildren() const;
+		[[nodiscard]] std::vector<string_t> ObjectKeys() const;
 
 	protected:
-		static std::shared_ptr<JsonValue> Parse(lpcstr_t* _data);
+		static JsonValue Parse(lpcstr_t* _data);
 		static ulonglong_t ParseNumber(lpcstr_t* _data, bool_t& _isOverflow);
 		static double_t ParseReal(lpcstr_t* _data);
 		static bool_t ParseString(lpcstr_t* _data, string_t& _str);
@@ -96,4 +108,4 @@ BEGIN_NS(ne::protocol)
 
 END_NS
 
-#endif //JSONVALUE_H
+#endif //NEBULAJSONVALUE_H
