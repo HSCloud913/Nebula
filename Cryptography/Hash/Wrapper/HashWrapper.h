@@ -1,0 +1,28 @@
+#ifndef HASHWRAPPER_H
+#define HASHWRAPPER_H
+
+
+#include "Type.h"
+
+BEGIN_NS(ne::cryptography)
+class HashWrapper
+{
+public:
+	explicit HashWrapper() = default;
+	virtual ~HashWrapper() = default;
+
+public:
+	[[nodiscard]] string_t GetHashFromString(string_t&& _text);
+	void GetHashFromString(char_t* _buf, size_t _bufSize, lpcstr_t _text);
+
+	[[nodiscard]] string_t GetHashFromFile(string_t&& _filePath);
+	void GetHashFromFile(char_t* _buf, size_t _bufSize, lpcstr_t _filePath);
+
+private:
+	[[nodiscard]] virtual string_t OnGetHashFromString(string_t&& _string) = 0;
+	[[nodiscard]] virtual string_t OnGetHashFromFile(FILE* _file) = 0;
+}; 
+
+END_NS
+
+#endif //HASHWRAPPER_H
