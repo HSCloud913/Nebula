@@ -43,7 +43,7 @@ public:
 	}
 	constexpr NebulaHandle& operator=(NebulaHandle&& _nebulaHandle) noexcept
 	{
-		if (this != &_nebulaHandle.handle)
+		if (this != &_nebulaHandle)
 		{
 			handle = _nebulaHandle.handle;
 			_nebulaHandle.handle = InvalidHandle;
@@ -102,9 +102,14 @@ private:
 			try
 			{
 				Deleter{}(handle);
-			} catch (...)
+			}
+			catch (std::exception& e)
 			{
-				// log
+				std::cerr << "NebulaHandle exception: " << e.what() << std::endl;
+			}
+			catch (...)
+			{
+				std::cerr << "NebulaHandle unknown exception" << std::endl;
 			}
 
 			handle = InvalidHandle;
