@@ -1,10 +1,8 @@
 #include "SHA3.h"
 
-#include <cstring>
 
 
-
-constexpr ne::ulonglong_t XorMasks[] =
+constexpr ne::ulonglong_t XorMasks[24] =
 {
 	0x0000000000000001ULL, 0x0000000000008082ULL, 0x800000000000808aULL,
 	0x8000000080008000ULL, 0x000000000000808bULL, 0x0000000080000001ULL,
@@ -16,22 +14,9 @@ constexpr ne::ulonglong_t XorMasks[] =
 	0x8000000000008080ULL, 0x0000000080000001ULL, 0x8000000080008008ULL
 };
 
-
-
 inline ne::ulonglong_t RotateLeft(ne::ulonglong_t x, ne::byte_t _numBits)
 {
 	return (x << _numBits) | (x >> (64 - _numBits));
-}
-inline ne::ulonglong_t Swap(ne::ulonglong_t x)
-{
-	return (x >> 56) |
-			((x >> 40) & 0x000000000000FF00ULL) |
-			((x >> 24) & 0x0000000000FF0000ULL) |
-			((x >> 8) & 0x00000000FF000000ULL) |
-			((x << 8) & 0x000000FF00000000ULL) |
-			((x << 24) & 0x0000FF0000000000ULL) |
-			((x << 40) & 0x00FF000000000000ULL) |
-			(x << 56);
 }
 inline ne::uint_t Mod5(ne::uint_t x)
 {
@@ -141,11 +126,7 @@ BEGIN_NS(ne::cryptography)
 		auto data = static_cast<const ulonglong_t*>(_data);
 		for (uint_t i = 0; i < blockSize / 8; i++)
 		{
-#if defined(__BYTE_ORDER) && (__BYTE_ORDER != 0) && (__BYTE_ORDER == __BIG_ENDIAN)
-			sha3Value[i] ^= swap(data[i]);
-#else
 			sha3Value[i] ^= data[i];
-#endif
 		}
 
 		for (uint_t round = 0; round < 24; round++)

@@ -11,9 +11,6 @@ BEGIN_NS(ne::cryptography)
 		~CRC32() = default;
 
 	private:
-		static const uint_t crc32Value[8][256];
-
-	private:
 		uint_t hash = 0;
 
 	public:

@@ -1,7 +1,5 @@
 #include "SHA1.h"
 
-#include <cstdio>
-
 
 
 inline ne::uint_t SHA1_F1(ne::uint_t b, ne::uint_t c, ne::uint_t d)
@@ -19,10 +17,6 @@ inline ne::uint_t SHA1_F3(ne::uint_t b, ne::uint_t c, ne::uint_t d)
 inline ne::uint_t SHA1_Rotate(ne::uint_t a, ne::uint_t c)
 {
 	return (a << c) | (a >> (32 - c));
-}
-inline ne::uint_t SHA1_Swap(ne::uint_t x)
-{
-	return (x >> 24) | ((x >> 8) & 0x0000FF00) | ((x << 8) & 0x00FF0000) | (x << 24);
 }
 
 
@@ -170,11 +164,7 @@ BEGIN_NS(ne::cryptography)
 
 		for (int_t i = 0; i < 16; i++)
 		{
-#if defined(__BYTE_ORDER) && (__BYTE_ORDER != 0) && (__BYTE_ORDER == __BIG_ENDIAN)
 			words[i] = data[i];
-#else
-			words[i] = SHA1_Swap(data[i]);
-#endif
 		}
 
 		for (int_t i = 16; i < 80; i++)

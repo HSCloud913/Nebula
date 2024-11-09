@@ -25,21 +25,6 @@ inline ne::uint_t MD5_Rotate(ne::uint_t a, ne::uint_t c)
 	return (a << c) | (a >> (32 - c));
 }
 
-#if defined(__BYTE_ORDER) && (__BYTE_ORDER != 0) && (__BYTE_ORDER == __BIG_ENDIAN)
-inline ne::uint_t swap(ne::uint_t x)
-{
-#if defined(__GNUC__) || defined(__clang__)
-	return __builtin_bswap32(x);
-#endif
-
-#ifdef MSC_VER
-	return _byteswap_ulong(x);
-#endif
-
-	return (x >> 24) | ((x >> 8) & 0x0000FF00) | ((x << 8) & 0x00FF0000) | (x << 24);
-}
-#endif
-
 
 
 BEGIN_NS(ne::cryptography)
@@ -190,11 +175,7 @@ BEGIN_NS(ne::cryptography)
 
 		for (int_t i = 0; i < 16; i++)
 		{
-#if defined(__BYTE_ORDER) && (__BYTE_ORDER != 0) && (__BYTE_ORDER == __BIG_ENDIAN)
-			words[i] = swap(data[i]);
-#else
 			words[i] = data[i];
-#endif
 		}
 
 		uint_t a = md5Value[0];

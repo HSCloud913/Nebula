@@ -1,27 +1,7 @@
 #include "CRC32.h"
 
 
-
-BEGIN_NS(ne::cryptography)
-	inline uint_t swap(uint_t x)
-	{
-		// #if defined(__GNUC__) || defined(__clang__)
-		// 	return __builtin_bswap32(x);
-		// #endif
-		// #ifdef MSC_VER
-		// 	return _byteswap_ulong(x);
-		// #endif
-
-		return (x >> 24) | ((x >> 8) & 0x0000FF00) | ((x << 8) & 0x00FF0000) | (x << 24);
-	}
-
-
-
-	/*--------------------------------------------------*/
-
-
-
-	const uint_t CRC32::crc32Value[8][256] =
+constexpr ne::uint_t Crc32Value[8][256] =
 	{
 		{
 			0x00000000, 0x77073096, 0xEE0E612C, 0x990951BA, 0x076DC419, 0x706AF48F, 0xE963A535, 0x9E6495A3,
@@ -306,6 +286,7 @@ BEGIN_NS(ne::cryptography)
 
 
 
+BEGIN_NS(ne::cryptography)
 	void CRC32::Init()
 	{
 		hash = 0;
@@ -318,37 +299,25 @@ BEGIN_NS(ne::cryptography)
 		uint_t crc = ~hash;
 		while (_dataLen >= 8)
 		{
-#if defined(__BYTE_ORDER) && (__BYTE_ORDER != 0) && (__BYTE_ORDER == __BIG_ENDIAN)
-			uint_t one = *current++ ^ swap(crc);
-			uint_t two = *current++;
-			crc = crc32Value[7][one >> 24] ^
-				  crc32Value[6][(one >> 16) & 0xFF] ^
-				  crc32Value[5][(one >> 8) & 0xFF] ^
-				  crc32Value[4][one & 0xFF] ^
-				  crc32Value[3][two >> 24] ^
-				  crc32Value[2][(two >> 16) & 0xFF] ^
-				  crc32Value[1][(two >> 8) & 0xFF] ^
-				  crc32Value[0][two & 0xFF];
-#else
 			uint_t one = *data++ ^ crc;
 			uint_t two = *data++;
 
-			crc = crc32Value[7][one & 0xFF] ^
-				crc32Value[6][(one >> 8) & 0xFF] ^
-				crc32Value[5][(one >> 16) & 0xFF] ^
-				crc32Value[4][one >> 24] ^
-				crc32Value[3][two & 0xFF] ^
-				crc32Value[2][(two >> 8) & 0xFF] ^
-				crc32Value[1][(two >> 16) & 0xFF] ^
-				crc32Value[0][two >> 24];
-#endif
+			crc = Crc32Value[7][one & 0xFF] ^
+				Crc32Value[6][(one >> 8) & 0xFF] ^
+				Crc32Value[5][(one >> 16) & 0xFF] ^
+				Crc32Value[4][one >> 24] ^
+				Crc32Value[3][two & 0xFF] ^
+				Crc32Value[2][(two >> 8) & 0xFF] ^
+				Crc32Value[1][(two >> 16) & 0xFF] ^
+				Crc32Value[0][two >> 24];
+
 			_dataLen -= 8;
 		}
 
 		const auto* currentChar = reinterpret_cast<const byte_t*>(data);
 		while (_dataLen--)
 		{
-			crc = (crc >> 8) ^ crc32Value[0][(crc & 0xFF) ^ *currentChar++];
+			crc = (crc >> 8) ^ Crc32Value[0][(crc & 0xFF) ^ *currentChar++];
 		}
 
 		hash = ~crc;
