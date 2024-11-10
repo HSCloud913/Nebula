@@ -12,6 +12,10 @@ SET(HEADERS
         Exception.h
         NebulaHandle.h
         StringFormat.h
+
+        Interface/ICommand.h
+        Interface/IObserver.h
+        Interface/ISingleton.h
 )
 
 SET(SOURCES

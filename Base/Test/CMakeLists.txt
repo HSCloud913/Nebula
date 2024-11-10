@@ -15,6 +15,10 @@ add_executable(${PROJECT_NAME}
         test_logger.cpp
         test_stringformat.cpp
         test_json.cpp
+
+        Interface/test_command.cpp
+        Interface/test_observer.cpp
+        Interface/test_singleton.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/Base)
