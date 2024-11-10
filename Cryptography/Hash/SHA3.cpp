@@ -1,5 +1,7 @@
 #include "SHA3.h"
 
+#include <cstring>
+
 
 
 constexpr ne::ulonglong_t XorMasks[24] =

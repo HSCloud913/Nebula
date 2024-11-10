@@ -1,6 +1,7 @@
 #include "CRC32.h"
 
 
+
 constexpr ne::uint_t Crc32Value[8][256] =
 	{
 		{
@@ -294,7 +295,7 @@ BEGIN_NS(ne::cryptography)
 
 	void CRC32::AddBuffer(const void* _data, size_t _dataLen)
 	{
-		const auto* data = reinterpret_cast<const uint_t*>(_data);
+		auto data = static_cast<const uint_t*>(_data);
 
 		uint_t crc = ~hash;
 		while (_dataLen >= 8)

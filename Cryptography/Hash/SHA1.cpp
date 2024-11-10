@@ -164,7 +164,7 @@ BEGIN_NS(ne::cryptography)
 
 		for (int_t i = 0; i < 16; i++)
 		{
-			words[i] = data[i];
+			words[i] = (data[i] >> 24) | ((data[i] >> 8) & 0x0000FF00) | ((data[i] << 8) & 0x00FF0000) | (data[i] << 24);
 		}
 
 		for (int_t i = 16; i < 80; i++)
