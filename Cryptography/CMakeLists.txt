@@ -13,8 +13,6 @@ set(HEADERS
 )
 
 set(SOURCES
-        main.cpp
-
         Base64/Base64.cpp
 
         Hash/CRC32.cpp
@@ -31,9 +29,10 @@ set(SOURCES
         Hash/Factory/HashFactory.cpp
 )
 
-# add_library(${PROJECT_NAME} ${HEADERS} ${SOURCES})
-add_executable(${PROJECT_NAME} ${HEADERS} ${SOURCES})
+add_library(${PROJECT_NAME} STATIC ${HEADERS} ${SOURCES})
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/Base)
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/Cryptography)
 target_link_libraries(${PROJECT_NAME} PRIVATE NebulaBase)
+
+add_subdirectory(Test)

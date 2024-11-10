@@ -300,8 +300,8 @@ BEGIN_NS(ne::cryptography)
 		uint_t crc = ~hash;
 		while (_dataLen >= 8)
 		{
-			uint_t one = *data++ ^ crc;
-			uint_t two = *data++;
+			const uint_t one = *data++ ^ crc;
+			const uint_t two = *data++;
 
 			crc = Crc32Value[7][one & 0xFF] ^
 				Crc32Value[6][(one >> 8) & 0xFF] ^

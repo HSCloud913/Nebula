@@ -10,9 +10,9 @@ BEGIN_NS(ne::cryptography)
 		return  OnGetHashFromString(std::move(_text));
 	}
 
-	void HashWrapper::GetHashFromString(char_t* _buf, size_t _bufSize, lpcstr_t _text)
+	void HashWrapper::GetHashFromString(char_t* _buffer, size_t _bufferSize, lpcstr_t _text)
 	{
-		strcpy_s(_buf, _bufSize, OnGetHashFromString(_text).c_str());
+		strcpy_s(_buffer, _bufferSize, OnGetHashFromString(_text).c_str());
 	}
 
 
@@ -33,14 +33,14 @@ BEGIN_NS(ne::cryptography)
 		return result;
 	}
 
-	void HashWrapper::GetHashFromFile(char_t* _buf, size_t _bufSize, lpcstr_t _filePath)
+	void HashWrapper::GetHashFromFile(char_t* _buffer, size_t _bufferSize, lpcstr_t _filePath)
 	{
 		FILE* file = nullptr;
 
 		fopen_s(&file, _filePath, "rb");
 		if (file != nullptr)
 		{
-			strcpy_s(_buf, _bufSize, OnGetHashFromFile(file).c_str());
+			strcpy_s(_buffer, _bufferSize, OnGetHashFromFile(file).c_str());
 
 			fclose(file);
 		}
