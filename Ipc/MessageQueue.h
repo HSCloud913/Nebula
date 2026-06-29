@@ -38,6 +38,4 @@ BEGIN_NS(ne::protocol::Ipc)
 
 END_NS
 
-typedef ne::protocol::Ipc::MessageQueue NebulaMessageQueue;
-
 #endif //MESSAGEQUEUE_H

@@ -16,6 +16,8 @@
 #	include <cerrno>
 #endif
 
+
+
 BEGIN_NS(ne::protocol::Ipc)
 #if defined(_WIN32)
 	class SharedMemory::Impl final
@@ -117,9 +119,7 @@ BEGIN_NS(ne::protocol::Ipc)
 
 
 	SharedMemory::SharedMemory(const string_view_t _name, const std::size_t _size)
-		: impl(std::make_unique<Impl>(_name, _size))
-	{
-	}
+		: impl(std::make_unique<Impl>(_name, _size)) {}
 	SharedMemory::~SharedMemory() = default;
 
 	SharedMemory::SharedMemory(SharedMemory&&) noexcept = default;

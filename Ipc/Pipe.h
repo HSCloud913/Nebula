@@ -29,7 +29,7 @@ BEGIN_NS(ne::protocol::Ipc)
 
 	public:
 		[[nodiscard]] longlong_t Read(std::span<std::byte> _buffer) const;
-		bool_t Write(std::span<const std::byte> _data) const;
+		[[nodiscard]] bool_t Write(std::span<const std::byte> _data) const;
 
 	private:
 		class Impl;
@@ -37,7 +37,5 @@ BEGIN_NS(ne::protocol::Ipc)
 	};
 
 END_NS
-
-typedef ne::protocol::Ipc::Pipe NebulaPipe;
 
 #endif //PIPE_H

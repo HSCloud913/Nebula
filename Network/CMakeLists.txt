@@ -9,8 +9,10 @@ set(BASE_DIR "${CMAKE_SOURCE_DIR}/Base")
 set(SOURCES
     Socket/Socket.cpp
     Stream/PlainStream.cpp
-    Http/Http1Client.cpp
-    Http/Http1Server.cpp
+    Stream/TlsStream.cpp
+    Stream/SshStream.cpp
+    Http/Http1/Client.cpp
+    Http/Http1/Server.cpp
 )
 
 if (UNIX)
@@ -18,7 +20,10 @@ if (UNIX)
 endif()
 
 if (WIN32)
-    list(APPEND SOURCES IoEngine/IocpEngine.cpp)
+    list(APPEND SOURCES
+        IoEngine/IocpEngine.cpp
+        Stream/Schannel/TlsMessageBuffer.cpp
+    )
 endif()
 
 add_library(NebulaNetwork STATIC ${SOURCES})
@@ -30,6 +35,22 @@ target_include_directories(NebulaNetwork PUBLIC
 
 target_link_libraries(NebulaNetwork PUBLIC NebulaBase)
 
+# ── Windows: SChannel ────────────────────────────────────────
 if (WIN32)
-    target_link_libraries(NebulaNetwork PRIVATE Ws2_32)
+    target_link_libraries(NebulaNetwork PRIVATE Ws2_32 Secur32)
+endif()
+
+# ── POSIX: OpenSSL (TLS) ─────────────────────────────────────
+if (UNIX)
+    find_package(OpenSSL QUIET)
+    if (TARGET OpenSSL::SSL)
+        target_compile_definitions(NebulaNetwork PRIVATE NEBULA_WITH_OPENSSL)
+        target_link_libraries(NebulaNetwork PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+    endif()
+endif()
+
+# ── libssh2: 루트 CMakeLists.txt 의 FetchContent 로 이미 포함됨 ──
+if (TARGET libssh2::libssh2)
+    target_compile_definitions(NebulaNetwork PRIVATE NEBULA_WITH_LIBSSH2)
+    target_link_libraries(NebulaNetwork PRIVATE libssh2::libssh2)
 endif()

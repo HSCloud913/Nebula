@@ -19,11 +19,6 @@ set(SOURCES
         Socket/TlsSocket.cpp
         Socket/UdpSocket.cpp
 
-        Ipc/Pipe.cpp
-        Ipc/SharedMemory.cpp
-        Ipc/MessageQueue.cpp
-        Ipc/Semaphore.cpp
-
         Ftp/FtpClient.cpp
 
         Sftp/SftpClient.cpp

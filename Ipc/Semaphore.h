@@ -33,6 +33,4 @@ BEGIN_NS(ne::protocol::Ipc)
 
 END_NS
 
-typedef ne::protocol::Ipc::Semaphore NebulaSemaphore;
-
 #endif //SEMAPHORE_H

@@ -10,7 +10,6 @@
 #include "IoEngine/IIoEngine.h"
 
 BEGIN_NS(ne::network)
-
 	struct SshConfig
 	{
 		string_t username;
@@ -23,41 +22,36 @@ BEGIN_NS(ne::network)
 	// SSH exec/shell 채널을 IStream 으로 노출 (libssh2 백엔드).
 	// Send  → channel stdin
 	// Receive → channel stdout
-	class SshStream final : public IStream
+	class SshStream final :public IStream
 	{
 	public:
 		NEBULA_NON_COPYABLE(SshStream)
+
+	private:
+		explicit SshStream(Socket&& _socket, IIoEngine& _engine,
+			void* _session, void* _channel) noexcept;
+
+	public:
 		SshStream(SshStream&& _other) noexcept;
 		SshStream& operator=(SshStream&& _other) noexcept;
 		~SshStream() override;
 
-	private:
-		explicit SshStream(Socket&& _socket, IIoEngine& _engine,
-		                   void* _session, void* _channel) noexcept;
-
 	public:
-		[[nodiscard]] static ne::Task<ne::Result<SshStream, ne::OsError>> Connect(
-			Socket&&         _socket,
-			IIoEngine&       _engine,
-			const SshConfig& _config
-		);
+		[[nodiscard]] static ne::Task<ne::Result<SshStream, ne::OsError>> Connect(Socket&& _socket, IIoEngine& _engine, const SshConfig& _config);
 
 	private:
-		Socket     socket;
+		Socket socket;
 		IIoEngine* engine;
-		void*      session{};  // LIBSSH2_SESSION*
-		void*      channel{};  // LIBSSH2_CHANNEL*
+		void* session{};  // LIBSSH2_SESSION*
+		void* channel{};  // LIBSSH2_CHANNEL*
 
 	public:
-		ne::Task<ne::Result<std::size_t, ne::OsError>> Send(std::span<const byte_t> _data) override;
-		ne::Task<ne::Result<std::size_t, ne::OsError>> Receive(std::span<byte_t> _data) override;
-		ne::Result<void, ne::OsError> Close() override;
+		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Send(std::span<const byte_t> _data) override;
+		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Receive(std::span<byte_t> _data) override;
+		virtual ne::Result<void, ne::OsError> Close() override;
 
 	public:
-		[[nodiscard]] bool_t IsOpen() const noexcept override
-		{
-			return socket.IsValid() && channel != nullptr;
-		}
+		[[nodiscard]] virtual bool_t IsOpen() const noexcept override { return socket.IsValid() && channel != nullptr; }
 	};
 
 END_NS

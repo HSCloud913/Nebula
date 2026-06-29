@@ -32,6 +32,4 @@ BEGIN_NS(ne::protocol::Ipc)
 
 END_NS
 
-typedef ne::protocol::Ipc::SharedMemory NebulaSharedMemory;
-
 #endif //SHAREDMEMORY_H

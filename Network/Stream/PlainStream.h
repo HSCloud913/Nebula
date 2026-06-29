@@ -33,12 +33,12 @@ BEGIN_NS(ne::network)
 		IIoEngine* engine;
 
 	public:
-		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Send(std::span<const ne::byte_t> _data) override;
-		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Receive(std::span<ne::byte_t> _data) override;
-		virtual ne::Result<void, ne::OsError> Close() override;
+		virtual Task<Result<std::size_t, OsError>> Send(std::span<const ne::byte_t> _data) override;
+		virtual Task<Result<std::size_t, OsError>> Receive(std::span<ne::byte_t> _data) override;
+		virtual Result<void, OsError> Close() override;
 
 	public:
-		[[nodiscard]] bool_t IsOpen() const noexcept override { return socket.IsValid(); }
+		[[nodiscard]] virtual bool_t IsOpen() const noexcept override { return socket.IsValid(); }
 	};
 
 END_NS
