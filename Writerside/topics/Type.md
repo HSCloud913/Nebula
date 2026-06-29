@@ -33,19 +33,19 @@ namespace 를 닫는 매크로 입니다.
 <table style="header-column">
     <tr>
         <td>std::string</td>
-        <td>Ne::string_t</td>
+        <td>ne::string_t</td>
     </tr>
     <tr>
         <td>std::string_view</td>
-        <td>Ne::string_view_t</td>
+        <td>ne::string_view_t</td>
     </tr>
     <tr>
         <td>std::wstring</td>
-        <td>Ne::wstring_t</td>
+        <td>ne::wstring_t</td>
     </tr>
     <tr>
         <td>std::wstring_view</td>
-        <td>Ne::wstring_view_t</td>
+        <td>ne::wstring_view_t</td>
     </tr>
     <tr>
         <td>char*</td>

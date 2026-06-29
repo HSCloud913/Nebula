@@ -1,5 +1,5 @@
 //
-// Created by hsclo on 24. 5. 17.
+// Created by nebula on 24. 5. 17.
 //
 
 #ifndef ISINGLETON_H
@@ -22,7 +22,7 @@ BEGIN_NS(ne)
 	public:
 		static T& GetInstance() noexcept
 		{
-			static auto instance = std::make_unique<T>();
+			static auto instance = std::unique_ptr<T>(new T());
 
 			return *instance;
 		}

@@ -1,5 +1,5 @@
-#ifndef HASHFACTORY_H
-#define HASHFACTORY_H
+#ifndef NEBULA_HASHFACTORY_H
+#define NEBULA_HASHFACTORY_H
 
 #include <memory>
 #include "Type.h"
@@ -35,7 +35,4 @@ BEGIN_NS(ne::cryptography)
 
 END_NS
 
-typedef ne::cryptography::HashType NebulaHashType;
-typedef ne::cryptography::HashFactory NebulaHash;
-
-#endif //HASHFACTORY_H
+#endif //NEBULA_HASHFACTORY_H

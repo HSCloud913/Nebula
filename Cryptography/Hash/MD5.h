@@ -1,5 +1,5 @@
-#ifndef MD5_H
-#define MD5_H
+#ifndef NEBULA_MD5_H
+#define NEBULA_MD5_H
 
 #include "Type.h"
 
@@ -38,4 +38,4 @@ BEGIN_NS(ne::cryptography)
 
 END_NS
 
-#endif //MD5_H
+#endif //NEBULA_MD5_H

@@ -1,5 +1,5 @@
-#ifndef SHA1_H
-#define SHA1_H
+#ifndef NEBULA_SHA1_H
+#define NEBULA_SHA1_H
 
 #include "Type.h"
 
@@ -38,4 +38,4 @@ BEGIN_NS(ne::cryptography)
 
 END_NS
 
-#endif //SHA1_H
+#endif //NEBULA_SHA1_H

@@ -1,5 +1,5 @@
-#ifndef NEBULAJSONVALUE_H
-#define NEBULAJSONVALUE_H
+#ifndef NEBULA_JSONVALUE_H
+#define NEBULA_JSONVALUE_H
 
 #include <memory>
 #include <variant>
@@ -30,13 +30,13 @@ BEGIN_NS(ne)
 
 	public:
 		JsonValue() : type(JsonType::INVALID) {}
-		explicit JsonValue(JsonType _type) : type(_type) {}
-		explicit JsonValue(bool_t _value) : type(JsonType::BOOLEAN), value(_value) {}
-		explicit JsonValue(int_t _value) : type(JsonType::NUMBER), value(_value) {}
-		explicit JsonValue(uint_t _value) : type(JsonType::POSITIVE_NUMBER), value(_value) {}
-		explicit JsonValue(longlong_t _value) : type(JsonType::LARGE_NUMBER), value(_value) {}
-		explicit JsonValue(ulonglong_t _value) : type(JsonType::POSITIVE_LARGE_NUMBER), value(_value) {}
-		explicit JsonValue(double_t _value) : type(JsonType::REAL), value(_value) {}
+		explicit JsonValue(const JsonType _type) : type(_type) {}
+		explicit JsonValue(const bool_t _value) : type(JsonType::BOOLEAN), value(_value) {}
+		explicit JsonValue(const int_t _value) : type(JsonType::NUMBER), value(_value) {}
+		explicit JsonValue(const uint_t _value) : type(JsonType::POSITIVE_NUMBER), value(_value) {}
+		explicit JsonValue(const longlong_t _value) : type(JsonType::LARGE_NUMBER), value(_value) {}
+		explicit JsonValue(const ulonglong_t _value) : type(JsonType::POSITIVE_LARGE_NUMBER), value(_value) {}
+		explicit JsonValue(const double_t _value) : type(JsonType::REAL), value(_value) {}
 		explicit JsonValue(lpcstr_t _value) : type(JsonType::STRING), value(std::make_shared<string_t>(_value)) {}
 		explicit JsonValue(const string_t& _value) : type(JsonType::STRING), value(std::make_shared<string_t>(_value)) {}
 		explicit JsonValue(const JsonObject& _value) : type(JsonType::OBJECT), value(_value) {}
@@ -108,4 +108,4 @@ BEGIN_NS(ne)
 
 END_NS
 
-#endif //NEBULAJSONVALUE_H
+#endif //NEBULA_JSONVALUE_H

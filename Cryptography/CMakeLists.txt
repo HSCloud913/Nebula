@@ -27,6 +27,13 @@ set(SOURCES
         Hash/Wrapper/SHA2Wrapper.cpp
         Hash/Wrapper/SHA3Wrapper.cpp
         Hash/Factory/HashFactory.cpp
+
+        HMAC/HMAC.cpp
+
+        AES/AES.cpp
+
+        RSA/BigInt.cpp
+        RSA/RSA.cpp
 )
 
 add_library(${PROJECT_NAME} STATIC ${HEADERS} ${SOURCES})

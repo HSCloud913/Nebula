@@ -1,5 +1,5 @@
-#ifndef CRC32WRAPPER_H
-#define CRC32WRAPPER_H
+#ifndef NEBULA_CRC32WRAPPER_H
+#define NEBULA_CRC32WRAPPER_H
 
 #include <memory>
 #include "Type.h"
@@ -23,4 +23,4 @@ BEGIN_NS(ne::cryptography)
 
 END_NS
 
-#endif //CRC32WRAPPER_H
+#endif //NEBULA_CRC32WRAPPER_H

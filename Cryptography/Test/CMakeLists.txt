@@ -11,6 +11,8 @@ add_executable(${PROJECT_NAME}
         test.cpp
         test_hash.cpp
         test_base64.cpp
+        test_aes.cpp
+        test_rsa.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/Base)

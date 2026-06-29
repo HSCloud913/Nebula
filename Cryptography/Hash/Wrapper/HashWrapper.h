@@ -1,5 +1,5 @@
-#ifndef HASHWRAPPER_H
-#define HASHWRAPPER_H
+#ifndef NEBULA_HASHWRAPPER_H
+#define NEBULA_HASHWRAPPER_H
 
 
 #include "Type.h"
@@ -25,4 +25,4 @@ private:
 
 END_NS
 
-#endif //HASHWRAPPER_H
+#endif //NEBULA_HASHWRAPPER_H

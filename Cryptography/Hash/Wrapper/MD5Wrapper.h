@@ -1,5 +1,5 @@
-#ifndef MD5WRAPPER_H
-#define MD5WRAPPER_H
+#ifndef NEBULA_MD5WRAPPER_H
+#define NEBULA_MD5WRAPPER_H
 
 #include <memory>
 #include "Type.h"
@@ -23,4 +23,4 @@ BEGIN_NS(ne::cryptography)
 
 END_NS
 
-#endif //MD5WRAPPER_H
+#endif //NEBULA_MD5WRAPPER_H

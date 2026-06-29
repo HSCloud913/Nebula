@@ -30,8 +30,10 @@ inline ne::uint_t Mod5(ne::uint_t x)
 BEGIN_NS(ne::cryptography)
 	void SHA3::Init()
 	{
-		blockSize = 200 - 2 * (static_cast<int_t>(type) / 8);
 		memset(buffer, 0, sizeof(byte_t) * MaxBlockSize);
+		bufferSize = 0;
+		blockSize = 200 - 2 * (static_cast<int_t>(type) / 8);
+		length = 0;
 	}
 
 	void SHA3::AddBuffer(const void_t* _data, size_t _dataLength)

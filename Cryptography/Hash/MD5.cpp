@@ -30,6 +30,10 @@ inline ne::uint_t MD5_Rotate(ne::uint_t a, ne::uint_t c)
 BEGIN_NS(ne::cryptography)
 	void MD5::Init()
 	{
+		memset(buffer, 0, sizeof(byte_t) * MD5BlockSize);
+		bufferSize = 0;
+		length = 0;
+
 		md5Value[0] = 0x67452301;
 		md5Value[1] = 0xefcdab89;
 		md5Value[2] = 0x98badcfe;

@@ -1,5 +1,5 @@
-#ifndef CRC32_H
-#define CRC32_H
+#ifndef NEBULA_CRC32_H
+#define NEBULA_CRC32_H
 
 #include "Type.h"
 
@@ -15,10 +15,10 @@ BEGIN_NS(ne::cryptography)
 
 	public:
 		void Init();
-		void AddBuffer(const void* _data, size_t _dataLen);
+		void AddBuffer(const void_t* _data, size_t _dataLength);
 		[[nodiscard]] string_t Get() const;
 	};
 
 END_NS
 
-#endif //CRC32_H
+#endif //NEBULA_CRC32_H

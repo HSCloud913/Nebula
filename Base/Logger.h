@@ -1,9 +1,9 @@
 //
-// Created by hsclo on 24. 5. 17.
+// Created by nebula on 24. 5. 17.
 //
 
-#ifndef NEBULALOGGER_H
-#define NEBULALOGGER_H
+#ifndef NEBULA_LOGGER_H
+#define NEBULA_LOGGER_H
 
 #include <fstream>
 #include <mutex>
@@ -31,7 +31,6 @@ BEGIN_NS(ne)
         std::mutex mutex;
         std::ofstream os;
         LogLevel logLevel;
-        string_t date;
 
     public:
         LogLevel GetLogLevel() const;
@@ -60,7 +59,4 @@ BEGIN_NS(ne)
     };
 END_NS
 
-typedef ne::Logger NebulaLogger;
-typedef ne::LogLevel NebulaLogLevel;
-
-#endif //NEBULALOGGER_H
+#endif //NEBULA_LOGGER_H

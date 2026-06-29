@@ -215,6 +215,9 @@ inline void ShaCompress(ne::ulonglong_t* _state, const ne::byte_t* _buffer)
 BEGIN_NS(ne::cryptography)
 	void SHA2::Init()
 	{
+		length = 0;
+		currentLength = 0;
+
 		if (type == Type::SHA2_224)
 		{
 			sha2Value32[0] = 0xc1059ed8UL;

@@ -1,5 +1,5 @@
 //
-// Created by hsclo on 24. 11. 3.
+// Created by nebula on 24. 11. 3.
 //
 
 #include <gtest/gtest.h>
@@ -10,7 +10,7 @@
 class NebulaJsonValueTest : public ::testing::Test
 {
 protected:
-	NebulaJsonValue jsonValue; // 테스트를 위한 JsonValue 객체
+	ne::JsonValue jsonValue; // 테스트를 위한 JsonValue 객체
 };
 
 
@@ -18,7 +18,7 @@ protected:
 // Json 직렬화
 TEST_F(NebulaJsonValueTest, SerializeJson)
 {
-	NebulaJsonObject object;
+	ne::JsonObject object;
 	object["bool_value"] = false;
 	object["number_value"] = -1;
 	object["positive_number_value"] = 4294967295U;
@@ -27,14 +27,14 @@ TEST_F(NebulaJsonValueTest, SerializeJson)
 	object["real_value"] = 0.123456789f;
 	object["string_value"] = "Test string";
 
-	auto string = NebulaJson::Stringify(object);
+	auto string = ne::Json::Stringify(object);
 	EXPECT_EQ(string, R"({"bool_value":false,"large_number_value":9223372036854775807,"number_value":-1,"positive_large_number_value":18446744073709551615,"positive_number_value":4294967295,"real_value":0.123456791043282,"string_value":"Test string"})");
 }
 
 // 유효한 JSON parse
 TEST_F(NebulaJsonValueTest, ParseValidJson)
 {
-	auto root = NebulaJson::Parse(R"({"key":"value"})");
+	auto root = ne::Json::Parse(R"({"key":"value"})");
 	EXPECT_TRUE(root.IsObject());
 
 	auto object = root.AsObject();
@@ -44,14 +44,14 @@ TEST_F(NebulaJsonValueTest, ParseValidJson)
 // 잘못된 JSON parse
 TEST_F(NebulaJsonValueTest, ParseInvalidJson)
 {
-	auto root = NebulaJson::Parse(R"({"key":"value")");
+	auto root = ne::Json::Parse(R"({"key":"value")");
 	EXPECT_FALSE(root.IsObject());
 }
 
 // JSON 직렬화 후 다시 파싱
 TEST_F(NebulaJsonValueTest, SerializeAndParseJson)
 {
-	NebulaJsonObject object;
+	ne::JsonObject object;
 	object["bool_value"] = false;
 	object["number_value"] = -1;
 	object["positive_number_value"] = 4294967295U;
@@ -60,13 +60,13 @@ TEST_F(NebulaJsonValueTest, SerializeAndParseJson)
 	object["real_value"] = 0.123456789f;
 	object["string_value"] = "Test string";
 
-	auto string = NebulaJson::Stringify(object);
+	auto string = ne::Json::Stringify(object);
 	EXPECT_EQ(string, R"({"bool_value":false,"large_number_value":9223372036854775807,"number_value":-1,"positive_large_number_value":18446744073709551615,"positive_number_value":4294967295,"real_value":0.123456791043282,"string_value":"Test string"})");
 
-	auto root = NebulaJson::Parse(string.c_str());
+	auto root = ne::Json::Parse(string.c_str());
 	EXPECT_TRUE(root.IsObject());
 
-	NebulaJsonObject parseObject = root.AsObject();
+	ne::JsonObject parseObject = root.AsObject();
 	EXPECT_EQ(parseObject["bool_value"].AsBool(), false);
 	EXPECT_EQ(parseObject["number_value"].AsNumber(), -1);
 	EXPECT_EQ(parseObject["positive_number_value"].AsPositiveNumber(), 4294967295U);
@@ -76,22 +76,38 @@ TEST_F(NebulaJsonValueTest, SerializeAndParseJson)
 	EXPECT_EQ(*parseObject["string_value"].AsString(), "Test string");
 }
 
+// 소수점 없는 지수 표기법 파싱 (예: 3e2 = 300.0)
+TEST_F(NebulaJsonValueTest, ParseIntegerExponent)
+{
+	auto v1 = ne::Json::Parse("3e2");
+	EXPECT_TRUE(v1.IsReal());
+	EXPECT_NEAR(v1.AsReal(), 300.0, 1e-9);
+
+	auto v2 = ne::Json::Parse("5e3");
+	EXPECT_TRUE(v2.IsReal());
+	EXPECT_NEAR(v2.AsReal(), 5000.0, 1e-9);
+
+	auto v3 = ne::Json::Parse("2e-1");
+	EXPECT_TRUE(v3.IsReal());
+	EXPECT_NEAR(v3.AsReal(), 0.2, 1e-9);
+}
+
 // JSON 객체에 값 추가
 TEST_F(NebulaJsonValueTest, AddValue)
 {
-	NebulaJsonObject subObject;
+	ne::JsonObject subObject;
 	subObject["sub1"] = true;
 	subObject["sub2"] = 2;
 	subObject["sub3"] = 0.12f;
 	subObject["sub4"] = "Test sub string";
 
-	NebulaJsonArray subArray;
+	ne::JsonArray subArray;
 	for (ne::int_t i = 0; i < 3; i++)
 	{
 		subArray.emplace_back(subObject);
 	}
 
-	NebulaJsonObject object;
+	ne::JsonObject object;
 	object["bool_value"] = false;
 	object["number_value"] = -1;
 	object["positive_number_value"] = 4294967295U;
@@ -130,7 +146,7 @@ TEST_F(NebulaJsonValueTest, AddValue)
 // JSON 객체에 존재하는 값 제거
 TEST_F(NebulaJsonValueTest, RemoveValue)
 {
-	NebulaJsonObject object;
+	ne::JsonObject object;
 	object["bool_value"] = false;
 	EXPECT_EQ(object["bool_value"].AsBool(), false);
 
@@ -141,7 +157,7 @@ TEST_F(NebulaJsonValueTest, RemoveValue)
 // 중복된 key
 TEST_F(NebulaJsonValueTest, DuplicateKeys)
 {
-	NebulaJsonObject object;
+	ne::JsonObject object;
 	object["bool_value"] = false;
 	object["bool_value"] = true;
 
@@ -168,16 +184,16 @@ TEST_F(NebulaJsonValueTest, Whitespace)
  	\"array_letters\" : [ \"a\", \"b\", \"c\", [ 1, 2, 3  ]  ] \
  }                                                           ";
 
-	auto root = NebulaJson::Parse(EXAMPLE);
+	auto root = ne::Json::Parse(EXAMPLE);
 	EXPECT_TRUE(root.IsObject());
 
-	NebulaJsonObject parseObject = root.AsObject();
+	ne::JsonObject parseObject = root.AsObject();
 	EXPECT_EQ(*parseObject["string_name"].AsString(), "asdf");
 	EXPECT_EQ(parseObject["bool_name"].AsBool(), true);
 	EXPECT_EQ(parseObject["bool_second"].AsBool(), true);
 	EXPECT_TRUE(parseObject["null_name"].IsNull());
 	EXPECT_EQ(parseObject["nua"].AsLargeNumber(), 9223372036854775807LL);
-	EXPECT_EQ(parseObject["max"].AsPositiveLargeNumber(), 18446744073709551615LL);
+	EXPECT_EQ(parseObject["max"].AsPositiveLargeNumber(), 18446744073709551615ULL);
 	EXPECT_EQ(*parseObject["oor"].AsString(), "The value is out of range.");
 	EXPECT_NEAR(parseObject["negative"].AsReal(), -34.276f, 1e-3);
 

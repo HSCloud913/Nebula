@@ -156,7 +156,7 @@ BEGIN_NS(ne::cryptography)
 				{
 					if (pos < _bufferSize)
 					{
-						_buffer[pos++] += arrayOutput[i];
+						_buffer[pos++] = arrayOutput[i];
 					}
 				}
 
@@ -184,7 +184,7 @@ BEGIN_NS(ne::cryptography)
 			{
 				if (pos < _bufferSize)
 				{
-					_buffer[pos++] += arrayOutput[j];
+					_buffer[pos++] = arrayOutput[j];
 				}
 			}
 		}
@@ -247,6 +247,42 @@ BEGIN_NS(ne::cryptography)
 		}
 
 		return generalString;
+	}
+
+	string_t Base64::EncodeURL(string_t&& _string)
+	{
+		string_t result = Encode(std::move(_string));
+
+		for (char_t& c : result)
+		{
+			if (c == '+') c = '-';
+			else if (c == '/') c = '_';
+		}
+
+		const size_t padPos = result.find('=');
+		if (padPos != string_t::npos)
+			result.erase(padPos);
+
+		return result;
+	}
+
+	string_t Base64::DecodeURL(string_t&& _string)
+	{
+		string_t padded = std::move(_string);
+
+		for (char_t& c : padded)
+		{
+			if (c == '-') c = '+';
+			else if (c == '_') c = '/';
+		}
+
+		const size_t remainder = padded.size() % 4;
+		if (remainder == 2)
+			padded += "==";
+		else if (remainder == 3)
+			padded += "=";
+
+		return Decode(std::move(padded));
 	}
 
 END_NS

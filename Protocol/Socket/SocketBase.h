@@ -1,5 +1,5 @@
 //
-// Created by hsclo on 24. 6. 20.
+// Created by nebula on 24. 6. 20.
 //
 
 #ifndef SOCKETBASE_H
@@ -18,7 +18,7 @@ BEGIN_NS(ne::protocol)
 #if defined(_WIN32)
 	typedef SOCKET socket_t;
 
-	using SocketHandle = NebulaHandle<socket_t, decltype([](const auto _socket)
+	using SocketHandle = ne::Handle<socket_t, decltype([](const auto _socket)
 	{
 		if (_socket == INVALID_SOCKET) return;
 
@@ -26,7 +26,7 @@ BEGIN_NS(ne::protocol)
 		{
 			if (const auto result = WSAGetLastError(); result != WSAENOTCONN)
 			{
-				throw NebulaException("[SocketHandle]", std::format("Failed to shutdown socket connection (error: {})", result));
+				throw ne::Exception("[SocketHandle]", std::format("Failed to shutdown socket connection (error: {})", result));
 			}
 		}
 		closesocket(_socket);
@@ -34,7 +34,7 @@ BEGIN_NS(ne::protocol)
 #elif defined(IS_POSIX)
 	typedef int_t socket_t;
 
-	using SocketHandle = NebulaHandle<int_t, decltype([](const auto _socket)
+	using SocketHandle = ne::Handle<int_t, decltype([](const auto _socket)
 	{
 		if (_socket == -1) return;
 
@@ -42,7 +42,7 @@ BEGIN_NS(ne::protocol)
 		{
 			if (const auto result = errno; result != ENOTCONN)
 			{
-				throw NebulaException("[SocketHandle]", std::format("Failed to shutdown socket connection (error: {})", result));
+				throw ne::Exception("[SocketHandle]", std::format("Failed to shutdown socket connection (error: {})", result));
 			}
 		}
 		close(_socket);

@@ -1,8 +1,8 @@
 #include "JsonValue.h"
 
-#include <string.h>
+#include <cstring>
 #include <sstream>
-#include <math.h>
+#include <cmath>
 
 
 
@@ -40,7 +40,7 @@ BEGIN_NS(ne)
 	{
 #if defined(_WIN32)
 		// NULL
-		if (strchk(*_data, 4) & _strnicmp(*_data, "null", 4) == 0)
+		if (strchk(*_data, 4) && _strnicmp(*_data, "null", 4) == 0)
 		{
 			(*_data) += 4;
 			return JsonValue(JsonType::NULL_DATA);
@@ -55,10 +55,10 @@ BEGIN_NS(ne)
 			return JsonValue(value);
 		}
 #elif defined(IS_POSIX)
-		if (strchk(*_data, 4) & strncasecmp(*_data, "null", 4) == 0)
+		if (strchk(*_data, 4) && strncasecmp(*_data, "null", 4) == 0)
 		{
 			(*_data) += 4;
-			return JsonValue();
+			return JsonValue(JsonType::NULL_DATA);
 		}
 
 		if ((strchk(*_data, 4) && strncasecmp(*_data, "true", 4) == 0) || (strchk(*_data, 5) && strncasecmp(*_data, "false", 5) == 0))
@@ -99,13 +99,14 @@ BEGIN_NS(ne)
 				isReal = true;
 
 				(*_data)++;
-				if (!(**_data >= '0') && **_data <= '9') return {};
+				if (**_data < '0' || **_data > '9') return {};
 
 				real += static_cast<double_t>(number);
 				real += ParseReal(_data);
 			}
 			if (**_data == 'E' || **_data == 'e')
 			{
+				if (!isReal) real = static_cast<double_t>(number);
 				isReal = true;
 
 				(*_data)++;
@@ -116,7 +117,7 @@ BEGIN_NS(ne)
 					(*_data)++;
 				}
 
-				if (!(**_data >= '0') && **_data <= '9') return {};
+				if (**_data < '0' || **_data > '9') return {};
 
 				ulonglong_t exponential = ParseNumber(_data, isOverflow);
 				for (ulonglong_t i = 0; i < exponential; i++)
@@ -285,22 +286,34 @@ BEGIN_NS(ne)
 				{
 					if (!strchk(*_data, 5)) return false;
 
-					c = 0;
+					uint32_t codepoint = 0;
 					for (int_t i = 0; i < 4; i++)
 					{
 						(*_data)++;
-
-						c <<= 4;
-
-						if (**_data >= '0' && **_data <= '9') c |= (**_data - '0');
-						else if (**_data >= 'A' && **_data <= 'F') c |= 10 + (**_data - 'A');
-						else if (**_data >= 'a' && **_data <= 'f') c |= 10 + (**_data - 'a');
-						else
-						{
-							return false;
-						}
+						codepoint <<= 4;
+						if (**_data >= '0' && **_data <= '9') codepoint |= (**_data - '0');
+						else if (**_data >= 'A' && **_data <= 'F') codepoint |= 10 + (**_data - 'A');
+						else if (**_data >= 'a' && **_data <= 'f') codepoint |= 10 + (**_data - 'a');
+						else return false;
 					}
-					break;
+					(*_data)++;
+
+					if (codepoint <= 0x7F)
+					{
+						_str += static_cast<char_t>(codepoint);
+					}
+					else if (codepoint <= 0x7FF)
+					{
+						_str += static_cast<char_t>(0xC0 | (codepoint >> 6));
+						_str += static_cast<char_t>(0x80 | (codepoint & 0x3F));
+					}
+					else
+					{
+						_str += static_cast<char_t>(0xE0 | (codepoint >> 12));
+						_str += static_cast<char_t>(0x80 | ((codepoint >> 6) & 0x3F));
+						_str += static_cast<char_t>(0x80 | (codepoint & 0x3F));
+					}
+					continue;
 				}
 				default: return false;
 				}
@@ -308,10 +321,9 @@ BEGIN_NS(ne)
 			else if (c == '"')
 			{
 				(*_data)++;
-				_str.reserve();
 				return true;
 			}
-			else if (c < ' ' && c != '\t')
+			else if (static_cast<unsigned char>(c) < 0x20 && c != '\t')
 			{
 				return false;
 			}
@@ -343,60 +355,32 @@ BEGIN_NS(ne)
 	{
 		string_t result = "\"";
 
-		string_t::const_iterator iter = _str.begin();
-		while (iter != _str.end())
+		for (const auto ch : _str)
 		{
-			wchar_t chr = *iter;
+			const auto chr = static_cast<unsigned char>(ch);
 
-			if (chr == '"' || chr == '\\' || chr == '/')
+			if (ch == '"' || ch == '\\' || ch == '/')
 			{
 				result += '\\';
-				result += chr;
+				result += ch;
 			}
-			else if (chr == '\b')
+			else if (ch == '\b') result += "\\b";
+			else if (ch == '\f') result += "\\f";
+			else if (ch == '\n') result += "\\n";
+			else if (ch == '\r') result += "\\r";
+			else if (ch == '\t') result += "\\t";
+			else if (chr < 0x20 || chr == 0x7F)
 			{
-				result += "\\b";
-			}
-			else if (chr == '\f')
-			{
-				result += "\\f";
-			}
-			else if (chr == '\n')
-			{
-				result += "\\n";
-			}
-			else if (chr == '\r')
-			{
-				result += "\\r";
-			}
-			else if (chr == '\t')
-			{
-				result += "\\t";
-			}
-			else if (chr < ' ' || chr > 126)
-			{
-				result += "\\u";
-				for (int_t i = 0; i < 4; i++)
-				{
-					int_t value = (chr >> 12) & 0xf;
-					if (value >= 0 && value <= 9)
-					{
-						result += (char_t)('0' + value);
-					}
-					else if (value >= 10 && value <= 15)
-					{
-						result += (char_t)('A' + (value - 10));
-					}
+				constexpr char_t hex[] = "0123456789ABCDEF";
 
-					chr <<= 4;
-				}
+				result += "\\u00";
+				result += hex[(chr >> 4) & 0xF];
+				result += hex[chr & 0xF];
 			}
 			else
 			{
-				result += chr;
+				result += ch;
 			}
-
-			iter++;
 		}
 
 		result += "\"";
@@ -416,13 +400,13 @@ BEGIN_NS(ne)
 		case JsonType::NULL_DATA: return "null";
 		case JsonType::BOOLEAN: return AsBool() ? "true" : "false";
 		case JsonType::STRING: return StringifyString(*AsString());
-		case JsonType::NUMBER: return (isinf(AsNumber()) || isnan(AsNumber())) ? "null" : std::to_string(AsNumber());
-		case JsonType::POSITIVE_NUMBER: return (isinf(AsPositiveNumber()) || isnan(AsPositiveNumber())) ? "null" : std::to_string(AsPositiveNumber());
-		case JsonType::LARGE_NUMBER: return (isinf(AsLargeNumber()) || isnan(AsLargeNumber())) ? "null" : std::to_string(AsLargeNumber());
-		case JsonType::POSITIVE_LARGE_NUMBER: return (isinf(AsPositiveLargeNumber()) || isnan(AsPositiveLargeNumber())) ? "null" : std::to_string(AsPositiveLargeNumber());
+		case JsonType::NUMBER: return std::to_string(AsNumber());
+		case JsonType::POSITIVE_NUMBER: return std::to_string(AsPositiveNumber());
+		case JsonType::LARGE_NUMBER: return std::to_string(AsLargeNumber());
+		case JsonType::POSITIVE_LARGE_NUMBER: return std::to_string(AsPositiveLargeNumber());
 		case JsonType::REAL:
 		{
-			if (isinf(AsReal()) || isnan(AsReal())) return "null";
+			if (std::isinf(AsReal()) || std::isnan(AsReal())) return "null";
 
 			std::stringstream ss;
 			ss.precision(15);

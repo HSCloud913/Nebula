@@ -8,7 +8,7 @@ BEGIN_NS(ne)
 		if (!SkipWhitespace(&_data)) return {};
 
 		auto value = JsonValue::Parse(&_data);
-		if (value.IsNull()) return {};
+		if (value.IsInvalid()) return {};
 
 		if (SkipWhitespace(&_data)) return {};
 
@@ -17,7 +17,7 @@ BEGIN_NS(ne)
 
 	string_t Json::Stringify(const JsonValue& _value)
 	{
-		if (!_value.IsNull()) return _value.Stringify();
+		if (!_value.IsInvalid()) return _value.Stringify();
 
 		return "";
 	}

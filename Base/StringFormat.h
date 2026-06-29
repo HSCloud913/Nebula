@@ -1,12 +1,11 @@
 //
-// Created by hsclo on 24. 5. 17.
+// Created by nebula on 24. 5. 17.
 //
 
-#ifndef STRINGFORMAT_H
-#define STRINGFORMAT_H
+#ifndef NEBULA_STRINGFORMAT_H
+#define NEBULA_STRINGFORMAT_H
 
 #include <cstring>
-#include <clocale>
 #include <vector>
 #include <memory>
 #if defined(_WIN32)
@@ -91,12 +90,12 @@ BEGIN_NS(ne)
 
         inline static constexpr auto LowerCaseWideTransform = std::views::transform([](const wchar_t _c)
 		{
-			return static_cast<wchar_t>(std::towlower(static_cast<byte_t>(_c)));
+			return static_cast<wchar_t>(std::towlower(static_cast<ushort_t>(_c)));
 		});
 
         inline static constexpr auto UpperCaseWideTransform = std::views::transform([](const wchar_t _c)
 		{
-			return static_cast<wchar_t>(std::towupper(static_cast<byte_t>(_c)));
+			return static_cast<wchar_t>(std::towupper(static_cast<ushort_t>(_c)));
 		});
 
 		[[nodiscard]]
@@ -306,6 +305,7 @@ BEGIN_NS(ne)
 	T& StringFormat::ReplaceInPlace(T& _source, const T& _from, const T& _to, typename T::size_type _start)
 	{
 		T result;
+		result.append(_source, 0, _start);
 
 		typename T::size_type pos = 0;
 		do
@@ -450,13 +450,8 @@ BEGIN_NS(ne)
 #if defined(_WIN32)
 	string_t StringFormat::WCStoMBCS(const wchar_t* _wcs)
 	{
-		setlocale(LC_ALL, "");
-
-		size_t required = 0;
-		if (wcstombs_s(&required, nullptr, 0, _wcs, _TRUNCATE) == 0)
+		if (auto required = WideCharToMultiByte(CP_ACP, 0, _wcs, -1, nullptr, 0, nullptr, nullptr); required)
 		{
-			required++;
-
 			std::shared_ptr<char_t> buffer(new char_t[required], [](const char_t* _p)
 			{
 				delete[] _p;
@@ -464,9 +459,7 @@ BEGIN_NS(ne)
 			if (buffer.get())
 			{
 				memset(buffer.get(), 0, required);
-
-				size_t outLen = 0;
-				if (wcstombs_s(&outLen, buffer.get(), required, _wcs, _TRUNCATE) == 0)
+				if (WideCharToMultiByte(CP_ACP, 0, _wcs, -1, buffer.get(), required, nullptr, nullptr))
 				{
 					return buffer.get();
 				}
@@ -504,7 +497,7 @@ BEGIN_NS(ne)
 	string_t StringFormat::MBCStoUTF8(const char_t* _mbcs)
 	{
 		std::wstring wcs = MBCStoWCS(_mbcs);
-		if (!MBCStoWCS(_mbcs).empty())
+		if (!wcs.empty())
 		{
 			return WCStoUTF8(wcs.c_str());
 		}
@@ -514,13 +507,8 @@ BEGIN_NS(ne)
 
 	std::wstring StringFormat::MBCStoWCS(const char_t* _mbcs)
 	{
-		setlocale(LC_ALL, "");
-
-		size_t required = 0;
-		if (mbstowcs_s(&required, nullptr, 0, _mbcs, _TRUNCATE) == 0)
+		if (auto required = MultiByteToWideChar(CP_ACP, 0, _mbcs, -1, nullptr, 0); required)
 		{
-			required++;
-
 			std::shared_ptr<wchar_t> buffer(new wchar_t[required], [](const wchar_t* _p)
 			{
 				delete[] _p;
@@ -528,9 +516,7 @@ BEGIN_NS(ne)
 			if (buffer.get())
 			{
 				memset(buffer.get(), 0, required * sizeof(wchar_t));
-
-				size_t outLen = 0;
-				if (mbstowcs_s(&outLen, buffer.get(), required, _mbcs, _TRUNCATE) == 0)
+				if (MultiByteToWideChar(CP_ACP, 0, _mbcs, -1, buffer.get(), required))
 				{
 					return buffer.get();
 				}
@@ -579,6 +565,4 @@ BEGIN_NS(ne)
 
 END_NS
 
-typedef ne::StringFormat NebulaStringFormat;
-
-#endif //STRINGFORMAT_H
+#endif //NEBULA_STRINGFORMAT_H

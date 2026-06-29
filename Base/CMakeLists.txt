@@ -23,6 +23,8 @@ SET(SOURCES
         Logger.cpp
         Json.cpp
         JsonValue.cpp
+        ThreadPool.cpp
+        Error.cpp
 )
 
 add_library(${PROJECT_NAME} STATIC ${HEADERS} ${SOURCES})

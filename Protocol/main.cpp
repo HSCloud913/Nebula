@@ -80,7 +80,7 @@ int main()
 	// 						.Send();
 	//
 	// 		std::cout << response.GetBodyString() << std::endl;
-	// 	} catch (const ne::NebulaException& e)
+	// 	} catch (const ne::ne::Exception& e)
 	// 	{
 	// 		std::cout << e.what() << std::endl;
 	// 	}

@@ -15,6 +15,7 @@ add_executable(${PROJECT_NAME}
         test_logger.cpp
         test_stringformat.cpp
         test_json.cpp
+        test_threadpool.cpp
 
         Interface/test_command.cpp
         Interface/test_observer.cpp

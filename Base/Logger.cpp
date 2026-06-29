@@ -1,5 +1,5 @@
 //
-// Created by hsclo on 24. 5. 17.
+// Created by nebula on 24. 5. 17.
 //
 
 #include "Logger.h"
@@ -7,6 +7,9 @@
 #include <iostream>
 #include <format>
 #include <filesystem>
+#include <sstream>
+#include <iomanip>
+#include <ctime>
 
 
 
@@ -18,7 +21,7 @@ BEGIN_NS(ne)
 	Logger::Logger(const string_t& _fileName)
 		: logLevel(LogLevel::TRACE)
 	{
-		if (!Open(fs::current_path().string(), _fileName))
+		if (!Open(_fileName))
 		{
 		}
 	}
@@ -51,19 +54,18 @@ BEGIN_NS(ne)
 
 		std::lock_guard<std::mutex> lockGuard(mutex);
 
-		fs::path path(fs::current_path().string());
+		if (os.is_open()) return true;
+
+		fs::path path = fs::current_path();
 		path /= _fileName;
 
 		try
 		{
 			if (!fs::exists(path.parent_path()))
-			{
 				fs::create_directories(path.parent_path());
-				fs::permissions(path, std::filesystem::perms::all, std::filesystem::perm_options::remove);
-			}
 
 			os.open(path, std::ios_base::out | std::ios_base::app | std::ios_base::binary);
-		} catch (const fs::filesystem_error& e)
+		} catch (const fs::filesystem_error&)
 		{
 			return false;
 		}
@@ -77,19 +79,18 @@ BEGIN_NS(ne)
 
 		std::lock_guard<std::mutex> lockGuard(mutex);
 
+		if (os.is_open()) return true;
+
 		fs::path path(_filePath);
 		path /= _fileName;
 
 		try
 		{
 			if (!fs::exists(path.parent_path()))
-			{
 				fs::create_directories(path.parent_path());
-				fs::permissions(path, std::filesystem::perms::all, std::filesystem::perm_options::remove);
-			}
 
 			os.open(path, std::ios_base::out | std::ios_base::app | std::ios_base::binary);
-		} catch (const fs::filesystem_error& e)
+		} catch (const fs::filesystem_error&)
 		{
 			return false;
 		}
@@ -178,8 +179,15 @@ BEGIN_NS(ne)
 		const std::time_t now = std::chrono::system_clock::to_time_t(_timePoint);
 		auto millisecond = std::chrono::duration_cast<std::chrono::milliseconds>(_timePoint.time_since_epoch()) % 1000;
 
+		std::tm tm{};
+#if defined(_WIN32)
+		localtime_s(&tm, &now);
+#else
+		localtime_r(&now, &tm);
+#endif
+
 		std::ostringstream os;
-		os << "[" << std::put_time(std::localtime(&now), "%Y-%m-%d %H:%M:%S")
+		os << "[" << std::put_time(&tm, "%Y-%m-%d %H:%M:%S")
 		<< ":" << std::setw(3) << std::setfill('0') << millisecond.count() << "]";
 
 		return os.str();

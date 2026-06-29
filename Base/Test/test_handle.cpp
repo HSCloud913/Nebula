@@ -1,5 +1,5 @@
 //
-// Created by hsclo on 24. 10. 21.
+// Created by nebula on 24. 10. 21.
 //
 
 #include <gtest/gtest.h>
@@ -21,7 +21,7 @@ protected:
 	static constexpr HandleType InvalidHandle = -1;
 
 	// 핸들 객체를 테스트하는 데 사용할 수 있습니다.
-	NebulaHandle<HandleType, TestDeleter, InvalidHandle> handle;
+	ne::Handle<HandleType, TestDeleter, InvalidHandle> handle;
 };
 
 
@@ -35,8 +35,8 @@ TEST_F(NebulaHandleTest, DefaultConstructor)
 // 이동 생성자 테스트
 TEST_F(NebulaHandleTest, MoveConstructor)
 {
-	NebulaHandle<HandleType, TestDeleter, InvalidHandle> handle1(42); // 유효한 핸들
-	NebulaHandle handle2(std::move(handle1));
+	ne::Handle<HandleType, TestDeleter, InvalidHandle> handle1(42); // 유효한 핸들
+	ne::Handle handle2(std::move(handle1));
 
 	EXPECT_EQ(handle2.Get(), 42); // 이동 후 핸들 값 확인
 	EXPECT_EQ(handle1.Get(), InvalidHandle); // 원래 핸들은 InvalidHandle이어야 함
@@ -45,8 +45,8 @@ TEST_F(NebulaHandleTest, MoveConstructor)
 // 이동 대입 연산자 테스트
 TEST_F(NebulaHandleTest, MoveAssignmentOperator)
 {
-	NebulaHandle<HandleType, TestDeleter, InvalidHandle> handle1(42);
-	NebulaHandle<HandleType, TestDeleter, InvalidHandle> handle2 = std::move(handle1);
+	ne::Handle<HandleType, TestDeleter, InvalidHandle> handle1(42);
+	ne::Handle<HandleType, TestDeleter, InvalidHandle> handle2 = std::move(handle1);
 
 	EXPECT_EQ(handle2.Get(), 42); // 이동 후 핸들 값 확인
 	EXPECT_EQ(handle1.Get(), InvalidHandle); // 원래 핸들은 InvalidHandle이어야 함
@@ -62,9 +62,9 @@ TEST_F(NebulaHandleTest, AssignmentOperator)
 // Close 메서드 테스트
 TEST_F(NebulaHandleTest, CloseMethod)
 {
-	handle = 42; // 유효한 핸들 설정
-	handle.~NebulaHandle(); // 핸들 닫기
-	EXPECT_EQ(handle.Get(), InvalidHandle); // 닫은 후 핸들은 InvalidHandle이어야 함
+	handle = 42;
+	handle = InvalidHandle; // operator=(T) → Close() 내부 호출 후 InvalidHandle로 리셋
+	EXPECT_EQ(handle.Get(), InvalidHandle);
 }
 
 // 핸들 변환 연산자 테스트
@@ -77,6 +77,6 @@ TEST_F(NebulaHandleTest, ConversionOperator)
 // 존재하지 않는 핸들 테스트
 TEST_F(NebulaHandleTest, InvalidHandle)
 {
-	NebulaHandle<HandleType, TestDeleter, InvalidHandle> invalidHandle; // 기본 생성자로 InvalidHandle 생성
+	ne::Handle<HandleType, TestDeleter, InvalidHandle> invalidHandle; // 기본 생성자로 InvalidHandle 생성
 	EXPECT_TRUE(static_cast<bool>(invalidHandle) == false); // InvalidHandle은 false로 평가되어야 함
 }

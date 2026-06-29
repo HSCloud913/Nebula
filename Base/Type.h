@@ -52,7 +52,11 @@
 #endif
 
 #ifndef NOT_BUILD_NEBULA_DEPRECATE
-#define NOT_BUILD_NEBULA_DEPRECATE __declspec(deprecated)
+#	if defined(_MSC_VER)
+#		define NOT_BUILD_NEBULA_DEPRECATE __declspec(deprecated)
+#	else
+#		define NOT_BUILD_NEBULA_DEPRECATE [[deprecated]]
+#	endif
 #endif
 
 #define NEBULA_DEFAULT_COPY(Class) \
@@ -92,16 +96,16 @@ BEGIN_NS(ne)
 	typedef unsigned char byte_t;
 
 	typedef short short_t, int16_t;
-	typedef unsigned short ushort_t, uint16_t, word_t;
+	typedef unsigned short ushort_t, uint16_t;
 
 	typedef int int_t;
 	typedef unsigned int uint_t;
 
 	typedef long long_t;
-	typedef unsigned long ulong_t, dword_t;
+	typedef unsigned long ulong_t;
 
 	typedef long long longlong_t;
-	typedef unsigned long long ulonglong_t, dwordlong_t;
+	typedef unsigned long long ulonglong_t;
 
 	typedef float float_t;
 	typedef double double_t;

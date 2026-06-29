@@ -1,5 +1,7 @@
 #include "SHA1.h"
 
+#include <cstring>
+
 
 
 inline ne::uint_t SHA1_F1(ne::uint_t b, ne::uint_t c, ne::uint_t d)
@@ -24,6 +26,10 @@ inline ne::uint_t SHA1_Rotate(ne::uint_t a, ne::uint_t c)
 BEGIN_NS(ne::cryptography)
 	void SHA1::Init()
 	{
+		memset(buffer, 0, sizeof(byte_t) * Sha1BlockSize);
+		bufferSize = 0;
+		length = 0;
+
 		sha1Value[0] = 0x67452301;
 		sha1Value[1] = 0xefcdab89;
 		sha1Value[2] = 0x98badcfe;

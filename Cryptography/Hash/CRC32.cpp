@@ -293,12 +293,12 @@ BEGIN_NS(ne::cryptography)
 		hash = 0;
 	}
 
-	void CRC32::AddBuffer(const void* _data, size_t _dataLen)
+	void CRC32::AddBuffer(const void_t* _data, size_t _dataLength)
 	{
 		auto data = static_cast<const uint_t*>(_data);
 
 		uint_t crc = ~hash;
-		while (_dataLen >= 8)
+		while (_dataLength >= 8)
 		{
 			const uint_t one = *data++ ^ crc;
 			const uint_t two = *data++;
@@ -312,11 +312,11 @@ BEGIN_NS(ne::cryptography)
 				Crc32Value[1][(two >> 16) & 0xFF] ^
 				Crc32Value[0][two >> 24];
 
-			_dataLen -= 8;
+			_dataLength -= 8;
 		}
 
 		const auto* currentChar = reinterpret_cast<const byte_t*>(data);
-		while (_dataLen--)
+		while (_dataLength--)
 		{
 			crc = (crc >> 8) ^ Crc32Value[0][(crc & 0xFF) ^ *currentChar++];
 		}

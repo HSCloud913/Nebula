@@ -27,23 +27,23 @@ protected:
 
 TEST_F(LoggerTest, LogLevel)
 {
-    NebulaLogger logger("log_level.txt");
-    logger.SetLogLevel(NebulaLogLevel::DBG);
+    ne::Logger logger("log_level.txt");
+    logger.SetLogLevel(ne::LogLevel::DBG);
 
-    EXPECT_EQ(NebulaLogLevel::DBG, logger.GetLogLevel());
+    EXPECT_EQ(ne::LogLevel::DBG, logger.GetLogLevel());
     EXPECT_TRUE(logger.Close());
 }
 
 TEST_F(LoggerTest, OpenClose)
 {
-    NebulaLogger logger("open_close.txt");
+    ne::Logger logger("open_close.txt");
 
     EXPECT_TRUE(logger.Close());
 }
 
 TEST_F(LoggerTest, Write)
 {
-    NebulaLogger logger("write.txt");
+    ne::Logger logger("write.txt");
 
     logger.Trace("Test message");
     logger.Debug("Test message");
@@ -68,7 +68,7 @@ TEST_F(LoggerTest, Write)
 TEST_F(LoggerTest, MultiThreadedLogging)
 {
     const std::size_t numThreads = 10;
-    NebulaLogger logger("multi_threaded_log.txt");
+    ne::Logger logger("multi_threaded_log.txt");
 
     std::vector<std::thread> threads;
 
@@ -109,7 +109,7 @@ TEST_F(LoggerTest, MultiThreadedLogging)
 
 TEST_F(LoggerTest, ConcurrentOpenClose)
 {
-    NebulaLogger logger("concurrent_open_close.txt");
+    ne::Logger logger("concurrent_open_close.txt");
     EXPECT_TRUE(logger.Close());
 
     auto OpenCloseTask = [&logger]()
@@ -132,19 +132,19 @@ TEST_F(LoggerTest, ConcurrentOpenClose)
 
 TEST_F(LoggerTest, ThreadSafeSetLogLevel)
 {
-    NebulaLogger logger("threadsafe_set_log_level.txt");
+    ne::Logger logger("threadsafe_set_log_level.txt");
 
     auto SetLogLevelTask = [&logger]()
     {
         for (int i = 0; i < 10; ++i)
         {
-            logger.SetLogLevel(NebulaLogLevel::TRACE);
+            logger.SetLogLevel(ne::LogLevel::TRACE);
             logger.Trace("Setting log level to TRACE");
 
-            logger.SetLogLevel(NebulaLogLevel::ERR);
+            logger.SetLogLevel(ne::LogLevel::ERR);
             logger.Error("Setting log level to ERROR");
 
-            logger.SetLogLevel(NebulaLogLevel::DBG);
+            logger.SetLogLevel(ne::LogLevel::DBG);
             logger.Info("Setting log level to DBG");
         }
     };

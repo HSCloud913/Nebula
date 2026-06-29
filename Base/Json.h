@@ -1,5 +1,5 @@
-#ifndef NEBULAJSON_H
-#define NEBULAJSON_H
+#ifndef NEBULA_JSON_H
+#define NEBULA_JSON_H
 
 #include <any>
 #include <vector>
@@ -37,9 +37,4 @@ BEGIN_NS(ne)
 
 END_NS
 
-typedef ne::Json NebulaJson;
-typedef ne::JsonValue NebulaJsonValue;
-typedef ne::JsonObject NebulaJsonObject;
-typedef ne::JsonArray NebulaJsonArray;
-
-#endif //NEBULAJSON_H
+#endif //NEBULA_JSON_H

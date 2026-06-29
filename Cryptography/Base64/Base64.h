@@ -1,5 +1,5 @@
-#ifndef BASE64_H
-#define BASE64_H
+#ifndef NEBULA_BASE64_H
+#define NEBULA_BASE64_H
 
 #include "Type.h"
 
@@ -17,10 +17,11 @@ public:
 
 	static void Decode(lpcstr_t _string, char_t* _buffer, size_t _bufferSize);
 	static string_t Decode(string_t&& _string);
+
+	static string_t EncodeURL(string_t&& _string);
+	static string_t DecodeURL(string_t&& _string);
 };
 
 END_NS
 
-typedef ne::cryptography::Base64 NebulaBase64;
-
-#endif //BASE64_H
+#endif //NEBULA_BASE64_H
