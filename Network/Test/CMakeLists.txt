@@ -11,6 +11,7 @@ add_executable(${PROJECT_NAME}
         test.cpp
         test_socket.cpp
         test_tls_config.cpp
+        test_timer_engine_integration.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE

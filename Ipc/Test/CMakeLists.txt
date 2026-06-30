@@ -17,7 +17,8 @@ add_executable(${PROJECT_NAME}
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/Base)
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/Ipc)
-target_link_libraries(${PROJECT_NAME} gtest gtest_main NebulaBase NebulaIpc)
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/Network)
+target_link_libraries(${PROJECT_NAME} gtest gtest_main NebulaBase NebulaIpc NebulaNetwork)
 
 if (WIN32)
     target_link_libraries(${PROJECT_NAME} Ws2_32 crypt32 bcrypt)

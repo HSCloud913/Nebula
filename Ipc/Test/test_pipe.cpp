@@ -9,7 +9,7 @@
 
 #include "../../Ipc/Pipe.h"
 
-using ne::protocol::Ipc::Pipe;
+using ne::ipc::Pipe;
 
 namespace
 {

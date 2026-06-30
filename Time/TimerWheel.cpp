@@ -4,13 +4,14 @@
 
 #include "TimerWheel.h"
 #include <algorithm>
+#include <limits>
 
 
 
 BEGIN_NS(ne::time)
-	uint64_t TimerWheel::Schedule(const Duration _delay, std::function<void()> _callback)
+	TimerId TimerWheel::Schedule(const Duration _delay, std::function<void()> _callback)
 	{
-		const uint64_t id = nextId.fetch_add(1, std::memory_order_relaxed);
+		const TimerId id = nextId.fetch_add(1, std::memory_order_relaxed);
 		const uint64_t tick = currentTick.load(std::memory_order_relaxed) + static_cast<uint64_t>(_delay.count());
 		const std::size_t bucket = tick & BucketMask;
 
@@ -20,7 +21,7 @@ BEGIN_NS(ne::time)
 		return id;
 	}
 
-	bool_t TimerWheel::Cancel(const uint64_t _id)
+	bool_t TimerWheel::Cancel(const TimerId _id)
 	{
 		std::lock_guard<std::mutex> lock(mutex);
 
@@ -60,5 +61,33 @@ BEGIN_NS(ne::time)
 		}
 
 		for (auto& entry : fired) entry.cb();
+	}
+
+	int_t TimerWheel::NextExpiryMs() const noexcept
+	{
+		std::lock_guard lock(mutex);
+		const uint64_t current = currentTick.load(std::memory_order_relaxed);
+
+		uint64_t earliest = std::numeric_limits<uint64_t>::max();
+		for (const auto& bucket : buckets)
+		{
+			for (const auto& entry : bucket)
+			{
+				if (entry.expireTick < earliest)
+					earliest = entry.expireTick;
+			}
+		}
+
+		if (earliest == std::numeric_limits<uint64_t>::max())
+			return -1;
+
+		if (earliest <= current)
+			return 0;
+
+		const uint64_t delta = earliest - current;
+		if (delta > static_cast<uint64_t>(std::numeric_limits<int_t>::max()))
+			return std::numeric_limits<int_t>::max();
+
+		return static_cast<int_t>(delta);
 	}
 END_NS

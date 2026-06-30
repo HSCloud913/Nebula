@@ -17,7 +17,7 @@
 #	include <cstring>
 #endif
 
-BEGIN_NS(ne::protocol::Ipc)
+BEGIN_NS(ne::ipc)
 #if defined(_WIN32)
 	class Pipe::Impl final
 	{

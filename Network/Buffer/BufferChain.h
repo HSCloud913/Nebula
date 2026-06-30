@@ -51,10 +51,10 @@ BEGIN_NS(ne::network)
 		{ // 연속 메모리가 필요할 때만 사용.
 			const std::size_t totalSize = TotalSize();
 
-			auto rawBuffer = RawBuffer::Acquire(_pool, totalSize);
+			auto rawBuffer = BufferBlock::Acquire(_pool, totalSize);
 			if (rawBuffer.IsError()) return {};
 
-			RawBuffer* buffer = rawBuffer.Value();
+			BufferBlock* buffer = rawBuffer.Value();
 			ne::byte_t* destination = buffer->Data().data();
 			for (const auto& segment : segments)
 			{
@@ -67,6 +67,7 @@ BEGIN_NS(ne::network)
 
 	public:
 		[[nodiscard]] bool_t IsEmpty() const noexcept { return segments.empty(); }
+		[[nodiscard]] const std::vector<BufferView>& Segments() const noexcept { return segments; }
 	};
 
 END_NS

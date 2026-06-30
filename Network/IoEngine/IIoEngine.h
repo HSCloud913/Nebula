@@ -8,6 +8,7 @@
 #include "NetworkType.h"
 #include "Result.h"
 #include "Error.h"
+#include "TimerWheel.h"
 
 BEGIN_NS(ne::network)
 	// I/O 이벤트 플래그 (플랫폼 중립적)
@@ -39,6 +40,8 @@ BEGIN_NS(ne::network)
 		[[nodiscard]] virtual ne::Result<void, ne::OsError> Unwatch(socket_t _fd) = 0;
 		// 준비된 이벤트를 최대 한 번 처리. _timeoutMs = -1 이면 무기한 대기.
 		[[nodiscard]] virtual ne::Result<void, ne::OsError> RunOnce(int_t _timeoutMs = -1) = 0;
+		// TimerWheel을 연결. RunOnce() 호출마다 timeout 조정 및 Tick()이 호출된다.
+		virtual void SetTimerWheel(ne::time::TimerWheel* _wheel) noexcept = 0;
 	};
 
 END_NS

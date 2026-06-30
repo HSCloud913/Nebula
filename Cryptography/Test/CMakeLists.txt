@@ -10,7 +10,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_executable(${PROJECT_NAME}
         test.cpp
         test_hash.cpp
-        test_base64.cpp
         test_aes.cpp
         test_rsa.cpp
 )

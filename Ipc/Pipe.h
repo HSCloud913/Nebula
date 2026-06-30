@@ -10,7 +10,7 @@
 
 #include "Type.h"
 
-BEGIN_NS(ne::protocol::Ipc)
+BEGIN_NS(ne::ipc)
 	class Pipe final
 	{
 		NEBULA_NON_COPYABLE(Pipe)

@@ -13,6 +13,8 @@
 #include "Type.h"
 
 BEGIN_NS(ne::time)
+	using TimerId = uint64_t;
+
 	// Hashed Wheel Timer.
 	// - 버킷 수 : 512 (2의 거듭제곱)
 	// - tick 단위 : 1 ms
@@ -32,7 +34,7 @@ BEGIN_NS(ne::time)
 	private:
 		struct TimerEntry
 		{
-			uint64_t id;
+			TimerId id;
 			uint64_t expireTick;
 			std::function<void()> cb;
 		};
@@ -43,9 +45,13 @@ BEGIN_NS(ne::time)
 		mutable std::mutex mutex;
 
 	public:
-		[[nodiscard]] uint64_t Schedule(Duration _delay, std::function<void()> _callback);
-		bool_t Cancel(uint64_t _id);
+		[[nodiscard]] TimerId Schedule(Duration _delay, std::function<void()> _callback);
+		bool_t Cancel(TimerId _id);
 		void_t Tick();
+
+		// 현재 시각 기준 가장 빠른 타이머의 만료까지 남은 ms를 반환.
+		// 예약된 타이머가 없으면 -1 반환 (무기한 대기 의미).
+		[[nodiscard]] int_t NextExpiryMs() const noexcept;
 	};
 
 END_NS

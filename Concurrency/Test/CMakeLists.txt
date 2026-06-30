@@ -7,6 +7,7 @@ add_executable(NebulaConcurrencyTest
     test.cpp
     test_mpsc.cpp
     test_spsc.cpp
+    test_threadpool.cpp
 )
 target_link_libraries(NebulaConcurrencyTest PRIVATE
     NebulaConcurrency

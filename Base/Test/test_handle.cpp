@@ -3,7 +3,7 @@
 //
 
 #include <gtest/gtest.h>
-#include "NebulaHandle.h"
+#include "Handle.h"
 
 struct TestDeleter
 {

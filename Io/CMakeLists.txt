@@ -3,12 +3,21 @@ project(NebulaIo VERSION 1.0.0.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(SOURCES AsyncFile.cpp MemoryMapFile.cpp SendFile.cpp)
+set(SOURCES
+    File/AsyncFile.cpp
+    File/MemoryMapFile.cpp
+)
+
+if(UNIX AND NOT APPLE)
+    list(APPEND SOURCES Engine/IoUring/IoUringEngine.cpp)
+elseif(WIN32)
+    list(APPEND SOURCES Engine/Iocp/IocpEngine.cpp)
+endif()
+
 add_library(NebulaIo STATIC ${SOURCES})
 target_include_directories(NebulaIo PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../Base
-    ${CMAKE_CURRENT_SOURCE_DIR}/../Network
 )
 
 if(PROJECT_IS_TOP_LEVEL)
@@ -25,7 +34,14 @@ if(PROJECT_IS_TOP_LEVEL)
 endif()
 
 target_link_libraries(NebulaIo PUBLIC NebulaBase)
-if(UNIX)
+if(UNIX AND NOT APPLE)
+    # liburing — 시스템 패키지(liburing-dev) 필요. sudo apt install liburing-dev
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(LIBURING REQUIRED liburing)
+    target_link_libraries(NebulaIo PUBLIC ${LIBURING_LIBRARIES})
+    target_include_directories(NebulaIo PUBLIC ${LIBURING_INCLUDE_DIRS})
+    target_link_libraries(NebulaIo PRIVATE pthread)
+elseif(UNIX)
     target_link_libraries(NebulaIo PRIVATE pthread)
 endif()
 

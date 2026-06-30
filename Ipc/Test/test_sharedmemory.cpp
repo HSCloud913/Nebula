@@ -8,7 +8,7 @@
 
 #include "../../Ipc/SharedMemory.h"
 
-using ne::protocol::Ipc::SharedMemory;
+using ne::ipc::SharedMemory;
 
 namespace
 {

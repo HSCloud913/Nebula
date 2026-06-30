@@ -7,27 +7,20 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Header only 항목만 추가
-SET(HEADERS
+set(HEADERS
         Exception.h
-        NebulaHandle.h
-        StringFormat.h
+        Handle.h
 
         Interface/ICommand.h
         Interface/IObserver.h
         Interface/ISingleton.h
 )
 
-SET(SOURCES
-        Ascii.cpp
-        Logger.cpp
-        Json.cpp
-        JsonValue.cpp
-        ThreadPool.cpp
+set(SOURCES
         Error.cpp
 )
 
 add_library(${PROJECT_NAME} STATIC ${HEADERS} ${SOURCES})
-target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/Base)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_SOURCE_DIR}/Base)
 
 add_subdirectory(Test)

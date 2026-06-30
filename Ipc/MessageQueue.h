@@ -9,9 +9,15 @@
 #include <span>
 #include <vector>
 
+#include "Coroutine/Task.h"
+#include "Result.h"
+#include "Error.h"
 #include "Type.h"
 
-BEGIN_NS(ne::protocol::Ipc)
+// IIoEngine 전방 선언 — 헤더 체인을 최소화하기 위해 IoEngine/IIoEngine.h 는 .cpp 에서만 include
+namespace ne::network { class IIoEngine; }
+
+BEGIN_NS(ne::ipc)
 	class MessageQueue final
 	{
 		NEBULA_NON_COPYABLE(MessageQueue)
@@ -28,8 +34,17 @@ BEGIN_NS(ne::protocol::Ipc)
 		void_t Connect();
 
 	public:
+		// 기존 동기 API — 호환성 유지
 		void_t Send(std::span<const std::byte> _message) const;
 		[[nodiscard]] std::vector<std::byte> Receive() const;
+
+		// 비동기 API — IIoEngine 기반
+		// POSIX: mqd_t 를 IIoEngine::Watch 로 직접 감시 (approach a)
+		// Windows: bridge 스레드가 blocking ReadFile/WriteFile 수행 후 resume (approach b, engine 미사용)
+		[[nodiscard]] ne::Task<ne::Result<void, ne::OsError>>
+			SendAsync(std::span<const std::byte> _message, ne::network::IIoEngine& _engine);
+		[[nodiscard]] ne::Task<ne::Result<std::vector<std::byte>, ne::OsError>>
+			ReceiveAsync(ne::network::IIoEngine& _engine);
 
 	private:
 		class Impl;

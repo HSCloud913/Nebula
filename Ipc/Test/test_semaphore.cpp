@@ -7,7 +7,7 @@
 
 #include "../../Ipc/Semaphore.h"
 
-using ne::protocol::Ipc::Semaphore;
+using ne::ipc::Semaphore;
 
 TEST(SemaphoreTest, AcquireReleaseCycle)
 {

@@ -4,7 +4,6 @@
 
 #pragma once
 #include <cstddef>
-#include <span>
 #include "IStream.h"
 #include "Socket/Socket.h"
 #include "IoEngine/IIoEngine.h"
@@ -21,19 +20,21 @@ BEGIN_NS(ne::network)
 		NEBULA_NON_COPYABLE(PlainStream)
 
 	private:
-		explicit PlainStream(Socket&& _socket, IIoEngine& _engine) noexcept;
+		explicit PlainStream(Socket&& _socket, IIoEngine& _engine, ne::memory::IAllocator* _allocator) noexcept;
 
 	public:
-		[[nodiscard]] static ne::Result<PlainStream, ne::OsError> Create(Socket&& _socket, IIoEngine& _engine) noexcept;
+		[[nodiscard]] static ne::Result<PlainStream, ne::OsError> Create(Socket&& _socket, IIoEngine& _engine, ne::memory::IAllocator* _allocator = nullptr) noexcept;
 
 	private:
 		Socket socket;
 		IIoEngine* engine;
+		ne::memory::IAllocator* allocator{ nullptr };
 
 	public:
 		virtual ne::Task<ne::Result<void, ne::OsError>> Handshake() override;
-		virtual Task<Result<std::size_t, OsError>> Send(std::span<const ne::byte_t> _data) override;
-		virtual Task<Result<std::size_t, OsError>> Receive(std::span<ne::byte_t> _data) override;
+		virtual Task<Result<std::size_t, OsError>> Send(BufferView _data) override;
+		virtual Task<Result<std::size_t, OsError>> Sendv(const BufferChain& _chain) override;
+		virtual Task<Result<std::size_t, OsError>> Receive(BufferView _data) override;
 		virtual ne::Task<ne::Result<void, ne::OsError>> Shutdown() override;
 		virtual Result<void, OsError> Close() override;
 

@@ -17,6 +17,7 @@ set(SOURCES
 add_library(${PROJECT_NAME} STATIC ${HEADERS} ${SOURCES})
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/Base)
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/Ipc)
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/Network)
 
 if (WIN32)
     target_sources(${PROJECT_NAME} PRIVATE ${WINDOWS_HEADERS} ${WINDOWS_SOURCES})

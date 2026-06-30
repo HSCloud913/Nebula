@@ -12,17 +12,19 @@ add_executable(${PROJECT_NAME}
         test_ascii.cpp
         test_exception.cpp
         test_handle.cpp
-        test_logger.cpp
         test_stringformat.cpp
         test_json.cpp
-        test_threadpool.cpp
 
         Interface/test_command.cpp
         Interface/test_observer.cpp
         Interface/test_singleton.cpp
 )
 
-target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/Base)
-target_link_libraries(${PROJECT_NAME} gtest gtest_main NebulaBase)
+target_include_directories(${PROJECT_NAME} PRIVATE
+        ${CMAKE_SOURCE_DIR}/Base
+        ${CMAKE_SOURCE_DIR}/Util
+        ${CMAKE_SOURCE_DIR}/Json
+)
+target_link_libraries(${PROJECT_NAME} gtest gtest_main NebulaBase NebulaUtil NebulaJson)
 
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})

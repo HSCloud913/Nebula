@@ -4,11 +4,12 @@
 
 #pragma once
 #include <cstddef>
-#include <span>
 #include "Coroutine/Task.h"
 #include "Result.h"
 #include "Error.h"
 #include "Type.h"
+#include "Buffer/BufferView.h"
+#include "Buffer/BufferChain.h"
 
 BEGIN_NS(ne::network)
 	// 바이트 스트림 추상 인터페이스.
@@ -23,8 +24,9 @@ BEGIN_NS(ne::network)
 
 	public:
 		virtual ne::Task<ne::Result<void, ne::OsError>> Handshake() = 0;
-		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Send(std::span<const ne::byte_t> _data) = 0;
-		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Receive(std::span<ne::byte_t> _data) = 0;
+		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Send(BufferView _data) = 0;
+		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Sendv(const BufferChain& _chain) = 0;
+		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Receive(BufferView _data) = 0;
 		virtual ne::Task<ne::Result<void, ne::OsError>> Shutdown() = 0;
 		virtual ne::Result<void, ne::OsError> Close() = 0;
 

@@ -6,7 +6,7 @@
 #include <chrono>
 #include <cstdint>
 #include "NetworkType.h"
-#include "NebulaHandle.h"
+#include "Handle.h"
 #include "Result.h"
 #include "Error.h"
 

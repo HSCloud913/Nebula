@@ -13,8 +13,6 @@ set(HEADERS
 )
 
 set(SOURCES
-        Base64/Base64.cpp
-
         Hash/CRC32.cpp
         Hash/MD5.cpp
         Hash/SHA1.cpp

@@ -6,8 +6,16 @@
 
 #include "Exception.h"
 #include "StringFormat.h"
+#include "IoEngine/IIoEngine.h"
+
+#include <coroutine>
+#include <thread>
 
 #if defined(_WIN32)
+#	ifndef WIN32_LEAN_AND_MEAN
+#	define WIN32_LEAN_AND_MEAN
+#	endif
+#	include <winsock2.h>
 #	include <windows.h>
 #elif defined(IS_POSIX)
 #	include <mqueue.h>
@@ -15,7 +23,10 @@
 #	include <cerrno>
 #endif
 
-BEGIN_NS(ne::protocol::Ipc)
+BEGIN_NS(ne::ipc)
+
+// ─── Impl ───────────────────────────────────────────────────────────────────
+
 #if defined(_WIN32)
 	class MessageQueue::Impl final
 	{
@@ -34,6 +45,10 @@ BEGIN_NS(ne::protocol::Ipc)
 		HANDLE handle = INVALID_HANDLE_VALUE;
 
 	public:
+		[[nodiscard]] HANDLE Handle() const noexcept { return handle; }
+		static constexpr DWORD MaxMsg = 65536;
+
+	public:
 		void_t Listen()
 		{
 			handle = ::CreateNamedPipeW(
@@ -41,8 +56,8 @@ BEGIN_NS(ne::protocol::Ipc)
 				PIPE_ACCESS_DUPLEX,
 				PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
 				1,
-				MaxMessageSize,
-				MaxMessageSize,
+				MaxMsg,
+				MaxMsg,
 				0,
 				nullptr
 			);
@@ -86,7 +101,7 @@ BEGIN_NS(ne::protocol::Ipc)
 
 		[[nodiscard]] std::vector<std::byte> Receive() const
 		{
-			auto buffer = std::vector<std::byte>(MaxMessageSize);
+			auto buffer = std::vector<std::byte>(MaxMsg);
 
 			auto bytesRead = DWORD{};
 			if (!::ReadFile(handle, buffer.data(), static_cast<DWORD>(buffer.size()), &bytesRead, nullptr))
@@ -97,10 +112,8 @@ BEGIN_NS(ne::protocol::Ipc)
 			buffer.resize(bytesRead);
 			return buffer;
 		}
-
-	private:
-		static constexpr DWORD MaxMessageSize = 65536;
 	};
+
 #elif defined(IS_POSIX)
 	class MessageQueue::Impl final
 	{
@@ -119,6 +132,16 @@ BEGIN_NS(ne::protocol::Ipc)
 
 		string_t name;
 		mqd_t handle = InvalidHandle;
+
+	public:
+		[[nodiscard]] mqd_t Handle() const noexcept { return handle; }
+
+		[[nodiscard]] long MsgSize() const noexcept
+		{
+			mq_attr attr{};
+			::mq_getattr(handle, &attr);
+			return attr.mq_msgsize;
+		}
 
 	public:
 		void_t Listen()
@@ -174,6 +197,8 @@ BEGIN_NS(ne::protocol::Ipc)
 
 
 
+// ─── 공개 메서드 ─────────────────────────────────────────────────────────────
+
 	MessageQueue::MessageQueue(const string_view_t _name)
 		: impl(std::make_unique<Impl>(_name))
 	{
@@ -204,5 +229,220 @@ BEGIN_NS(ne::protocol::Ipc)
 	{
 		return impl->Receive();
 	}
+
+
+
+// ─── 비동기 awaitable ────────────────────────────────────────────────────────
+
+#if defined(IS_POSIX)
+// POSIX: mqd_t 는 Linux 에서 진짜 fd → epoll 감시 가능 (approach a)
+
+namespace
+{
+	// 단일 I/O 이벤트를 IIoEngine::Watch 로 감시하는 awaitable
+	struct MqWatchAwaitable
+	{
+		ne::network::IIoEngine& engine;
+		int fd; // mqd_t == int on Linux
+		uint32_t targetEvent;
+		uint32_t triggeredEvents{};
+		ne::OsError watchErr{ 0, "" };
+		bool hasError{ false };
+
+		[[nodiscard]] bool await_ready() const noexcept { return false; }
+
+		bool await_suspend(std::coroutine_handle<> _h) noexcept
+		{
+			auto r = engine.Watch(
+				static_cast<ne::network::socket_t>(fd),
+				targetEvent,
+				[this, _h](ne::network::socket_t, const uint32_t _events) mutable
+				{
+					(void)engine.Unwatch(static_cast<ne::network::socket_t>(fd));
+					triggeredEvents = _events;
+					_h.resume(); // await_resume() 실행 후 this 에 접근 불가
+				});
+
+			if (r.IsError())
+			{
+				hasError = true;
+				watchErr = std::move(r.Error());
+				return false;
+			}
+			return true;
+		}
+
+		[[nodiscard]] ne::Result<uint32_t, ne::OsError> await_resume() noexcept
+		{
+			if (hasError)
+				return ne::Result<uint32_t, ne::OsError>::Error(std::move(watchErr));
+			return ne::Result<uint32_t, ne::OsError>::Ok(triggeredEvents);
+		}
+	};
+} // anonymous namespace
+
+	ne::Task<ne::Result<void, ne::OsError>>
+	MessageQueue::SendAsync(const std::span<const std::byte> _message, ne::network::IIoEngine& _engine)
+	{
+		auto watched = co_await MqWatchAwaitable{
+			_engine, static_cast<int>(impl->Handle()), ne::network::IoEvent::Write };
+		if (watched.IsError())
+			co_return ne::Result<void, ne::OsError>::Error(std::move(watched.Error()));
+		if (watched.Value() & (ne::network::IoEvent::Error | ne::network::IoEvent::HangUp))
+			co_return ne::Result<void, ne::OsError>::Error(
+				ne::OsError{ 0, "[MessageQueue/SendAsync] mq error" });
+
+		if (::mq_send(impl->Handle(),
+			reinterpret_cast<const char_t*>(_message.data()), _message.size(), 0) == -1)
+		{
+			co_return ne::Result<void, ne::OsError>::Error(
+				ne::OsError{ static_cast<ne::ulong_t>(errno) }.Context("[MessageQueue/SendAsync]"));
+		}
+		co_return ne::Result<void, ne::OsError>::Ok();
+	}
+
+	ne::Task<ne::Result<std::vector<std::byte>, ne::OsError>>
+	MessageQueue::ReceiveAsync(ne::network::IIoEngine& _engine)
+	{
+		auto watched = co_await MqWatchAwaitable{
+			_engine, static_cast<int>(impl->Handle()), ne::network::IoEvent::Read };
+		if (watched.IsError())
+			co_return ne::Result<std::vector<std::byte>, ne::OsError>::Error(std::move(watched.Error()));
+		if (watched.Value() & (ne::network::IoEvent::Error | ne::network::IoEvent::HangUp))
+			co_return ne::Result<std::vector<std::byte>, ne::OsError>::Error(
+				ne::OsError{ 0, "[MessageQueue/ReceiveAsync] mq error" });
+
+		// epoll 이 EPOLLIN 을 확인했으므로 mq_receive 는 즉시 반환
+		const auto msgSize = impl->MsgSize();
+		auto buffer = std::vector<std::byte>(static_cast<std::size_t>(msgSize));
+		const auto received = ::mq_receive(
+			impl->Handle(),
+			reinterpret_cast<char_t*>(buffer.data()),
+			static_cast<std::size_t>(msgSize),
+			nullptr);
+
+		if (received < 0)
+			co_return ne::Result<std::vector<std::byte>, ne::OsError>::Error(
+				ne::OsError{ static_cast<ne::ulong_t>(errno) }.Context("[MessageQueue/ReceiveAsync]"));
+
+		buffer.resize(static_cast<std::size_t>(received));
+		co_return ne::Result<std::vector<std::byte>, ne::OsError>::Ok(std::move(buffer));
+	}
+
+#elif defined(_WIN32)
+// Windows: 명명 파이프 HANDLE — IocpEngine 은 WSARecv 사용으로 pipe 에 적용 불가
+// approach (b): bridge 스레드가 blocking Read/Write 후 coroutine_handle::resume()
+// _engine 파라미터는 API 일관성을 위해 수락하나 사용하지 않음
+
+namespace
+{
+	struct MqSendBridgeAwaitable
+	{
+		HANDLE pipeHandle;
+		const std::byte* data;
+		DWORD dataSize;
+		DWORD lastError{ 0 };
+		bool hasError{ false };
+		std::coroutine_handle<> handle{};
+
+		[[nodiscard]] bool await_ready() const noexcept { return false; }
+
+		bool await_suspend(std::coroutine_handle<> _h) noexcept
+		{
+			handle = _h;
+			// C++ 표준: 코루틴은 await_suspend 진입 전에 이미 suspended → 스레드에서 resume() 안전
+			std::thread([this]
+			{
+				DWORD written{};
+				if (!::WriteFile(pipeHandle, data, dataSize, &written, nullptr))
+					{ hasError = true; lastError = ::GetLastError(); }
+				handle.resume();
+			}).detach();
+			return true;
+		}
+
+		[[nodiscard]] ne::Result<void, ne::OsError> await_resume() noexcept
+		{
+			if (hasError)
+				return ne::Result<void, ne::OsError>::Error(
+					ne::OsError{ lastError }.Context("[MessageQueue/SendAsync]"));
+			return ne::Result<void, ne::OsError>::Ok();
+		}
+	};
+
+	struct MqReceiveBridgeAwaitable
+	{
+		HANDLE pipeHandle;
+		DWORD maxMsgSize;
+		std::vector<std::byte> result;
+		DWORD lastError{ 0 };
+		bool hasError{ false };
+		std::coroutine_handle<> handle{};
+
+		[[nodiscard]] bool await_ready() const noexcept { return false; }
+
+		bool await_suspend(std::coroutine_handle<> _h) noexcept
+		{
+			handle = _h;
+			std::thread([this]
+			{
+				auto buf = std::vector<std::byte>(maxMsgSize);
+				DWORD bytesRead{};
+				if (!::ReadFile(pipeHandle, buf.data(), maxMsgSize, &bytesRead, nullptr))
+				{
+					hasError = true;
+					lastError = ::GetLastError();
+				}
+				else
+				{
+					buf.resize(bytesRead);
+					result = std::move(buf);
+				}
+				handle.resume();
+			}).detach();
+			return true;
+		}
+
+		[[nodiscard]] ne::Result<std::vector<std::byte>, ne::OsError> await_resume() noexcept
+		{
+			if (hasError)
+				return ne::Result<std::vector<std::byte>, ne::OsError>::Error(
+					ne::OsError{ lastError }.Context("[MessageQueue/ReceiveAsync]"));
+			return ne::Result<std::vector<std::byte>, ne::OsError>::Ok(std::move(result));
+		}
+	};
+} // anonymous namespace
+
+	ne::Task<ne::Result<void, ne::OsError>>
+	MessageQueue::SendAsync(const std::span<const std::byte> _message, ne::network::IIoEngine& /*_engine*/)
+	{
+		co_return co_await MqSendBridgeAwaitable{
+			impl->Handle(),
+			_message.data(),
+			static_cast<DWORD>(_message.size())
+		};
+	}
+
+	ne::Task<ne::Result<std::vector<std::byte>, ne::OsError>>
+	MessageQueue::ReceiveAsync(ne::network::IIoEngine& /*_engine*/)
+	{
+		co_return co_await MqReceiveBridgeAwaitable{ impl->Handle(), Impl::MaxMsg };
+	}
+
+#else
+	ne::Task<ne::Result<void, ne::OsError>>
+	MessageQueue::SendAsync(const std::span<const std::byte>, ne::network::IIoEngine&)
+	{
+		co_return ne::Result<void, ne::OsError>::Error(
+			ne::OsError{ 0, "[MessageQueue/SendAsync] not supported on this platform" });
+	}
+
+	ne::Task<ne::Result<std::vector<std::byte>, ne::OsError>>
+	MessageQueue::ReceiveAsync(ne::network::IIoEngine&)
+	{
+		co_return ne::Result<std::vector<std::byte>, ne::OsError>::Error(
+			ne::OsError{ 0, "[MessageQueue/ReceiveAsync] not supported on this platform" });
+	}
+#endif
 
 END_NS
