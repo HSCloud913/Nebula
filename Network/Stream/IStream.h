@@ -17,14 +17,15 @@ BEGIN_NS(ne::network)
 	class IStream
 	{
 	public:
-		NEBULA_NON_COPYABLE_MOVABLE(IStream)
-
 		IStream() = default;
 		virtual ~IStream() = default;
+		NEBULA_NON_COPYABLE_MOVABLE(IStream)
 
 	public:
+		virtual ne::Task<ne::Result<void, ne::OsError>> Handshake() = 0;
 		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Send(std::span<const ne::byte_t> _data) = 0;
 		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Receive(std::span<ne::byte_t> _data) = 0;
+		virtual ne::Task<ne::Result<void, ne::OsError>> Shutdown() = 0;
 		virtual ne::Result<void, ne::OsError> Close() = 0;
 
 	public:

@@ -6,7 +6,6 @@
 #define NEBULA_HANDLE_H
 
 #include <type_traits>
-#include <iostream>
 #include <memory>
 #include "Type.h"
 
@@ -99,23 +98,11 @@ BEGIN_NS(ne)
 		[[nodiscard]] constexpr ne::bool_t operator==(const Handle&) const noexcept requires std::equality_comparable<T> = default;
 
 	private:
-		constexpr ne::void_t Close()
+		constexpr ne::void_t Close() noexcept
 		{
 			if (handle != InvalidHandle)
 			{
-				try
-				{
-					Deleter{}(handle);
-				}
-				catch (std::exception& e)
-				{
-					std::cerr << "NebulaHandle exception: " << e.what() << std::endl;
-				}
-				catch (...)
-				{
-					std::cerr << "NebulaHandle unknown exception" << std::endl;
-				}
-
+				Deleter{}(handle);
 				handle = InvalidHandle;
 			}
 		}

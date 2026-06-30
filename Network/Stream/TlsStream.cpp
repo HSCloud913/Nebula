@@ -7,6 +7,7 @@
 #include <utility>
 #include <cstring>
 #include <vector>
+#include <fstream>
 
 #if defined(_WIN32)
 #	include "Schannel/SspiWrapper.h"
@@ -30,20 +31,20 @@ BEGIN_NS(ne::network)
 
 
 
-	TlsStream::TlsStream(Socket&& _socket, IIoEngine& _engine,
-		void* _cred, void* _ctx, void* _buf) noexcept
+	TlsStream::TlsStream(Socket&& _socket, IIoEngine& _engine, void* _credHandle, void* _ctxHandle, void* _messageBuffer) noexcept
 		: socket(std::move(_socket))
 		, engine(&_engine)
-		, credHandle(_cred)
-		, ctxHandle(_ctx)
-		, msgBuffer(_buf) {}
+		, credHandle(_credHandle)
+		, ctxHandle(_ctxHandle)
+		, messageBuffer(_messageBuffer) {}
 
 	TlsStream::TlsStream(TlsStream&& _other) noexcept
 		: socket(std::move(_other.socket))
 		, engine(_other.engine)
+		, sniHost(std::move(_other.sniHost))
 		, credHandle(std::exchange(_other.credHandle, nullptr))
 		, ctxHandle(std::exchange(_other.ctxHandle, nullptr))
-		, msgBuffer(std::exchange(_other.msgBuffer, nullptr)) {}
+		, messageBuffer(std::exchange(_other.messageBuffer, nullptr)) {}
 
 	TlsStream& TlsStream::operator=(TlsStream&& _other) noexcept
 	{
@@ -52,9 +53,10 @@ BEGIN_NS(ne::network)
 			(void)Close();
 			socket = std::move(_other.socket);
 			engine = _other.engine;
+			sniHost = std::move(_other.sniHost);
 			credHandle = std::exchange(_other.credHandle, nullptr);
 			ctxHandle = std::exchange(_other.ctxHandle, nullptr);
-			msgBuffer = std::exchange(_other.msgBuffer, nullptr);
+			messageBuffer = std::exchange(_other.messageBuffer, nullptr);
 		}
 
 		return *this;
@@ -64,23 +66,30 @@ BEGIN_NS(ne::network)
 	{
 		if (ctxHandle)
 		{
-			if (auto* fn = SspiWrapper::Get()) fn->DeleteSecurityContext(static_cast<CtxtHandle*>(ctxHandle));
+			if (const auto* functionTable = SspiWrapper::Get())
+			{
+				functionTable->DeleteSecurityContext(static_cast<CtxtHandle*>(ctxHandle));
+			}
 			delete static_cast<CtxtHandle*>(ctxHandle);
 		}
 		if (credHandle)
 		{
-			if (auto* fn = SspiWrapper::Get()) fn->FreeCredentialHandle(static_cast<CredHandle*>(credHandle));
+			if (const auto* functionTable = SspiWrapper::Get())
+			{
+				functionTable->FreeCredentialHandle(static_cast<CredHandle*>(credHandle));
+			}
 			delete static_cast<CredHandle*>(credHandle);
 		}
-		delete static_cast<TlsMessageBuffer*>(msgBuffer);
+
+		delete static_cast<TlsMessageBuffer*>(messageBuffer);
 	}
 
 
 
 	ne::Task<ne::Result<TlsStream, ne::OsError>> TlsStream::Connect(Socket&& _socket, IIoEngine& _engine, string_view_t _host, const TlsConfig& _config)
 	{
-		auto* fn = SspiWrapper::Get();
-		if (!fn)
+		const auto* functionTable = SspiWrapper::Get();
+		if (!functionTable)
 			co_return ne::Result<TlsStream, ne::OsError>::Error(
 				ne::OsError{ 0, "SChannel: secur32.dll load failed" });
 
@@ -92,144 +101,285 @@ BEGIN_NS(ne::network)
 		if (_config.verifyPeer) credData.dwFlags |= SCH_CRED_AUTO_CRED_VALIDATION;
 		else credData.dwFlags |= SCH_CRED_MANUAL_CRED_VALIDATION | SCH_CRED_NO_SERVERNAME_CHECK;
 
-		auto rawCred = std::unique_ptr<CredHandle>(new CredHandle{});
+		auto tempCredHandle = std::unique_ptr<CredHandle>(new CredHandle{});
 		TimeStamp timeLimit{};
-		SECURITY_STATUS ss = fn->AcquireCredentialsHandleW(
-			nullptr, const_cast<wchar_t*>(UNISP_NAME_W), SECPKG_CRED_OUTBOUND,
-			nullptr, &credData, nullptr, nullptr, rawCred.get(), &timeLimit);
+
+		SECURITY_STATUS ss = functionTable->AcquireCredentialsHandleW(nullptr, const_cast<wchar_t*>(UNISP_NAME_W), SECPKG_CRED_OUTBOUND, nullptr, &credData, nullptr, nullptr, tempCredHandle.get(), &timeLimit);
 		if (ss != SEC_E_OK)
 			co_return ne::Result<TlsStream, ne::OsError>::Error(
 				SchannelError(ss, "[TlsStream/Connect/AcquireCred]"));
 
-		auto rawCtx = std::unique_ptr<CtxtHandle>(new CtxtHandle{});
-		auto rawBuf = std::unique_ptr<TlsMessageBuffer>(new TlsMessageBuffer(TlsMessageBuffer::Allocate()));
+		auto tempMessageBuffer = std::unique_ptr<TlsMessageBuffer>(new TlsMessageBuffer(TlsMessageBuffer::Allocate()));
 
-		std::wstring whost = ne::StringFormat::UTF8toWCS(string_t(_host).c_str());
-		wchar_t* phost = whost.empty() ? nullptr : whost.data();
+		TlsStream stream(std::move(_socket), _engine, tempCredHandle.release(), nullptr, tempMessageBuffer.release());
+		stream.sniHost = string_t(_host);
 
-		constexpr ULONG kReqFlags =
-		ISC_REQ_SEQUENCE_DETECT | ISC_REQ_REPLAY_DETECT | ISC_REQ_CONFIDENTIALITY |
-		ISC_REQ_EXTENDED_ERROR | ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_STREAM;
+		if (auto result = co_await stream.Handshake(); result.IsError())
+			co_return ne::Result<TlsStream, ne::OsError>::Error(std::move(result.Error()));
 
-		bool firstCall = true;
-		std::size_t dataInBuf = 0;
+		co_return ne::Result<TlsStream, ne::OsError>::Ok(std::move(stream));
+	}
 
-		// ── 핸드셰이크 루프 ──
+	ne::Task<ne::Result<TlsStream, ne::OsError>> TlsStream::Accept(Socket&& _socket, IIoEngine& _engine, const TlsConfig& _config)
+	{
+		const auto* functionTable = SspiWrapper::Get();
+		if (!functionTable)
+			co_return ne::Result<TlsStream, ne::OsError>::Error(
+				ne::OsError{ 0, "SChannel: secur32.dll load failed" });
+
+		std::ifstream pfxFile(_config.certFile, std::ios::binary);
+		if (!pfxFile)
+			co_return ne::Result<TlsStream, ne::OsError>::Error(
+				ne::OsError{ 0, "SChannel: failed to open PFX file" });
+
+		std::vector<BYTE> pfxBytes((std::istreambuf_iterator<char>(pfxFile)), std::istreambuf_iterator<char>{});
+
+		CRYPT_DATA_BLOB blob{ static_cast<DWORD>(pfxBytes.size()), pfxBytes.data() };
+		HCERTSTORE certStore = ::PFXImportCertStore(&blob, _config.pfxPassword.empty() ? nullptr : StringFormat::UTF8toWCS(_config.pfxPassword.c_str()).c_str(), PKCS12_INCLUDE_EXTENDED_PROPERTIES);
+		if (!certStore)
+			co_return ne::Result<TlsStream, ne::OsError>::Error(
+				ne::OsError{ ::GetLastError(), "SChannel: PFXImportCertStore failed" });
+
+		PCCERT_CONTEXT certCtx = ::CertFindCertificateInStore(certStore, X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, 0, CERT_FIND_HAS_PRIVATE_KEY, nullptr, nullptr);
+		if (!certCtx)
+		{
+			::CertCloseStore(certStore, 0);
+
+			co_return ne::Result<TlsStream, ne::OsError>::Error(
+				ne::OsError{ ::GetLastError(), "SChannel: no cert with private key in PFX" });
+		}
+
+		SCHANNEL_CRED credData{};
+		credData.dwVersion = SCHANNEL_CRED_VERSION;
+		credData.cCreds = 1;
+		credData.paCred = &certCtx;
+		credData.grbitEnabledProtocols = SP_PROT_TLS1_2_SERVER | SP_PROT_TLS1_3_SERVER;
+		credData.dwFlags = SCH_CRED_NO_SYSTEM_MAPPER;
+
+		auto tempCredHandle = std::unique_ptr<CredHandle>(new CredHandle{});
+
+		TimeStamp timeLimit{};
+		SECURITY_STATUS ss = functionTable->AcquireCredentialsHandleW(nullptr, const_cast<wchar_t*>(UNISP_NAME_W), SECPKG_CRED_INBOUND, nullptr, &credData, nullptr, nullptr, tempCredHandle.get(), &timeLimit);
+
+		::CertFreeCertificateContext(certCtx);
+		::CertCloseStore(certStore, 0);
+
+		if (ss != SEC_E_OK)
+			co_return ne::Result<TlsStream, ne::OsError>::Error(
+				SchannelError(ss, "[TlsStream/Accept/AcquireCred]"));
+
+		auto tempMessageBuffer = std::unique_ptr<TlsMessageBuffer>(new TlsMessageBuffer(TlsMessageBuffer::Allocate()));
+		TlsStream stream(std::move(_socket), _engine, tempCredHandle.release(), nullptr, tempMessageBuffer.release());
+
+		auto tempCtxHandle = std::unique_ptr<CtxtHandle>(new CtxtHandle{});
+		auto* nativeCredHandle = static_cast<CredHandle*>(stream.credHandle);
+		auto* nativeMessageBuffer = static_cast<TlsMessageBuffer*>(stream.messageBuffer);
+		auto span = nativeMessageBuffer->GetBuffer();
+		bool_t isFirstCall = true;
+		std::size_t dataInBuffer = 0;
+
 		while (true)
 		{
-			// 입력 버퍼 준비 (첫 호출은 null)
-			std::array<SecBuffer, 2> inBufs{};
+			if (dataInBuffer >= span.size())
+			{
+				nativeMessageBuffer->Resize(span.size() * 2);
+				span = nativeMessageBuffer->GetBuffer();
+			}
+
+			if (auto result = co_await RecvAwaitable{ stream.socket.Handle(), _engine }; result.IsError())
+				co_return ne::Result<TlsStream, ne::OsError>::Error(std::move(result.Error()));
+
+			const int received = ::recv(stream.socket.Handle(), reinterpret_cast<char*>(span.data() + dataInBuffer), static_cast<int>(span.size() - dataInBuffer), 0);
+			if (received <= 0)
+				co_return ne::Result<TlsStream, ne::OsError>::Error(
+					ne::OsError{ ne::LastOsError() }.Context("[TlsStream/Accept/Recv]"));
+
+			dataInBuffer += static_cast<std::size_t>(received);
+
+			std::array<SecBuffer, 2> inBuffers{};
+			inBuffers[0] = { static_cast<ULONG>(dataInBuffer), SECBUFFER_TOKEN, span.data() };
+			inBuffers[1] = { 0, SECBUFFER_EMPTY, nullptr };
+			SecBufferDesc inDesc = { SECBUFFER_VERSION, 2, inBuffers.data() };
+
+			std::array<SecBuffer, 2> outBuffers{};
+			outBuffers[0] = { 0, SECBUFFER_TOKEN, nullptr };
+			outBuffers[1] = { 0, SECBUFFER_ALERT, nullptr };
+			SecBufferDesc outDesc = { SECBUFFER_VERSION, 2, outBuffers.data() };
+
+			ULONG retFlags = 0;
+			ss = functionTable->AcceptSecurityContext(
+				nativeCredHandle,
+				isFirstCall ? nullptr : tempCtxHandle.get(),
+				&inDesc,
+				ASC_REQ_SEQUENCE_DETECT | ASC_REQ_REPLAY_DETECT | ASC_REQ_CONFIDENTIALITY | ASC_REQ_EXTENDED_ERROR | ASC_REQ_ALLOCATE_MEMORY | ASC_REQ_STREAM,
+				SECURITY_NATIVE_DREP,
+				isFirstCall ? tempCtxHandle.get() : nullptr,
+				&outDesc,
+				&retFlags,
+				nullptr);
+			isFirstCall = false;
+
+			if (ss == SEC_I_COMPLETE_AND_CONTINUE || ss == SEC_I_COMPLETE_NEEDED)
+			{
+				functionTable->CompleteAuthToken(tempCtxHandle.get(), &outDesc);
+				ss = (ss == SEC_I_COMPLETE_AND_CONTINUE) ? SEC_I_CONTINUE_NEEDED : SEC_E_OK;
+			}
+
+			// 잔여 데이터 보존(EXTRA) 또는 폐기
+			if (inBuffers[1].BufferType == SECBUFFER_EXTRA && inBuffers[1].cbBuffer > 0)
+			{
+				std::memmove(span.data(), span.data() + (dataInBuffer - inBuffers[1].cbBuffer), inBuffers[1].cbBuffer);
+				dataInBuffer = inBuffers[1].cbBuffer;
+			}
+			else if (ss != SEC_E_INCOMPLETE_MESSAGE) dataInBuffer = 0;
+
+			// 서버 토큰 전송
+			if (outBuffers[0].pvBuffer && outBuffers[0].cbBuffer > 0)
+			{
+				if (auto r = co_await SendAwaitable{ stream.socket.Handle(), _engine }; r.IsError())
+				{
+					functionTable->FreeContextBuffer(outBuffers[0].pvBuffer);
+					co_return ne::Result<TlsStream, ne::OsError>::Error(std::move(r.Error()));
+				}
+				const int sent = ::send(stream.socket.Handle(), static_cast<const char*>(outBuffers[0].pvBuffer), static_cast<int>(outBuffers[0].cbBuffer), 0);
+				functionTable->FreeContextBuffer(outBuffers[0].pvBuffer);
+				if (sent < 0)
+					co_return ne::Result<TlsStream, ne::OsError>::Error(
+						ne::OsError{ ne::LastOsError() }.Context("[TlsStream/Accept/Send]"));
+			}
+
+			if (ss == SEC_E_OK) break;
+			if (ss == SEC_I_CONTINUE_NEEDED || ss == SEC_E_INCOMPLETE_MESSAGE) continue;
+
+			co_return ne::Result<TlsStream, ne::OsError>::Error(SchannelError(ss, "[TlsStream/Accept]"));
+		}
+
+		stream.ctxHandle = tempCtxHandle.release();
+
+		co_return ne::Result<TlsStream, ne::OsError>::Ok(std::move(stream));
+	}
+
+
+	ne::Task<ne::Result<void, ne::OsError>> TlsStream::Handshake()
+	{
+		const auto* functionTable = SspiWrapper::Get();
+		if (!functionTable) co_return ne::Result<void, ne::OsError>::Error(ne::OsError{ 0, "SChannel: secur32.dll load failed" });
+
+		auto whost = ne::StringFormat::UTF8toWCS(sniHost.c_str());
+		const lpwstr_t host = whost.empty() ? nullptr : whost.data();
+
+		auto rawCtx = std::unique_ptr<CtxtHandle>(new CtxtHandle{});
+		auto* rawCred = static_cast<CredHandle*>(credHandle);
+		auto* rawBuffer = static_cast<TlsMessageBuffer*>(messageBuffer);
+		auto span = rawBuffer->GetBuffer();
+		bool_t isFirstCall = true;
+		std::size_t dataInBuffer = 0;
+
+		while (true)
+		{
+			std::array<SecBuffer, 2> inBuffers{};
 			SecBufferDesc inDesc{};
 			PSecBufferDesc pInDesc = nullptr;
 
-			if (!firstCall)
+			if (!isFirstCall)
 			{
-				inBufs[0] = { static_cast<ULONG>(dataInBuf), SECBUFFER_TOKEN, rawBuf->GetBuffer().data() };
-				inBufs[1] = { 0, SECBUFFER_EMPTY, nullptr };
-				inDesc = { SECBUFFER_VERSION, 2, inBufs.data() };
+				inBuffers[0] = { static_cast<ULONG>(dataInBuffer), SECBUFFER_TOKEN, span.data() };
+				inBuffers[1] = { 0, SECBUFFER_EMPTY, nullptr };
+				inDesc = { SECBUFFER_VERSION, 2, inBuffers.data() };
 				pInDesc = &inDesc;
 			}
 
-			// 출력 버퍼 (SSPI가 할당)
-			std::array<SecBuffer, 2> outBufs{};
-			outBufs[0] = { 0, SECBUFFER_TOKEN, nullptr };
-			outBufs[1] = { 0, SECBUFFER_ALERT, nullptr };
-			SecBufferDesc outDesc = { SECBUFFER_VERSION, 2, outBufs.data() };
+			std::array<SecBuffer, 2> outBuffers{};
+			outBuffers[0] = { 0, SECBUFFER_TOKEN, nullptr };
+			outBuffers[1] = { 0, SECBUFFER_ALERT, nullptr };
+			SecBufferDesc outDesc = { SECBUFFER_VERSION, 2, outBuffers.data() };
 
 			ULONG retFlags = 0;
-			ss = fn->InitializeSecurityContextW(
-				rawCred.get(),
-				firstCall ? nullptr : rawCtx.get(),
-				phost,
-				kReqFlags, 0, 0,
+			SECURITY_STATUS ss = functionTable->InitializeSecurityContextW(
+				rawCred,
+				isFirstCall ? nullptr : rawCtx.get(),
+				host,
+				ISC_REQ_SEQUENCE_DETECT | ISC_REQ_REPLAY_DETECT | ISC_REQ_CONFIDENTIALITY | ISC_REQ_EXTENDED_ERROR | ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_STREAM,
+				0,
+				0,
 				pInDesc,
 				0,
-				firstCall ? rawCtx.get() : nullptr,
+				isFirstCall ? rawCtx.get() : nullptr,
 				&outDesc,
 				&retFlags,
 				nullptr);
 
 			if (ss == SEC_I_COMPLETE_AND_CONTINUE || ss == SEC_I_COMPLETE_NEEDED)
 			{
-				fn->CompleteAuthToken(rawCtx.get(), &outDesc);
+				functionTable->CompleteAuthToken(rawCtx.get(), &outDesc);
 				ss = (ss == SEC_I_COMPLETE_AND_CONTINUE) ? SEC_I_CONTINUE_NEEDED : SEC_E_OK;
 			}
 
-			// SECBUFFER_EXTRA 처리: 남은 데이터를 버퍼 앞으로 이동
-			if (!firstCall && inBufs[1].BufferType == SECBUFFER_EXTRA && inBufs[1].cbBuffer > 0)
+			if (!isFirstCall && inBuffers[1].BufferType == SECBUFFER_EXTRA && inBuffers[1].cbBuffer > 0)
 			{
-				auto span = rawBuf->GetBuffer();
-				std::memmove(span.data(),
-							span.data() + (dataInBuf - inBufs[1].cbBuffer),
-							inBufs[1].cbBuffer);
-				dataInBuf = inBufs[1].cbBuffer;
+				std::memmove(span.data(), span.data() + (dataInBuffer - inBuffers[1].cbBuffer), inBuffers[1].cbBuffer);
+				dataInBuffer = inBuffers[1].cbBuffer;
 			}
-			else if (!firstCall)
+			else if (!isFirstCall)
 			{
-				dataInBuf = 0;
+				dataInBuffer = 0;
 			}
 
-			// 출력 데이터 전송
-			if (outBufs[0].pvBuffer && outBufs[0].cbBuffer > 0)
+			if (outBuffers[0].pvBuffer && outBuffers[0].cbBuffer > 0)
 			{
-				if (auto r = co_await SendAwaitable{ _socket.Handle(), _engine }; r.IsError())
+				if (auto result = co_await SendAwaitable{ socket.Handle(), *engine }; result.IsError())
 				{
-					fn->FreeContextBuffer(outBufs[0].pvBuffer);
-					co_return ne::Result<TlsStream, ne::OsError>::Error(std::move(r.Error()));
+					functionTable->FreeContextBuffer(outBuffers[0].pvBuffer);
+					co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
 				}
-				int n = ::send(_socket.Handle(),
-								static_cast<const char*>(outBufs[0].pvBuffer),
-								static_cast<int>(outBufs[0].cbBuffer), 0);
-				fn->FreeContextBuffer(outBufs[0].pvBuffer);
-				if (n < 0)
-					co_return ne::Result<TlsStream, ne::OsError>::Error(
-						ne::OsError{ ne::LastOsError() }.Context("[TlsStream/Connect/Send]"));
+
+				const int bytes = ::send(socket.Handle(), static_cast<const char*>(outBuffers[0].pvBuffer), static_cast<int>(outBuffers[0].cbBuffer), 0);
+				functionTable->FreeContextBuffer(outBuffers[0].pvBuffer);
+				if (bytes < 0)
+					co_return ne::Result<void, ne::OsError>::Error(
+						ne::OsError{ ne::LastOsError() }.Context("[TlsStream/Handshake/Send]"));
 			}
 
 			if (ss == SEC_E_OK) break;
 
 			if (ss == SEC_I_CONTINUE_NEEDED || ss == SEC_E_INCOMPLETE_MESSAGE)
 			{
-				// 서버 데이터 수신
-				auto span = rawBuf->GetBuffer();
-				if (dataInBuf >= span.size())
+				if (dataInBuffer >= span.size())
 				{
-					rawBuf->Resize(span.size() * 2);
-					span = rawBuf->GetBuffer();
+					rawBuffer->Resize(span.size() * 2);
+					span = rawBuffer->GetBuffer();
 				}
 
-				if (auto r = co_await RecvAwaitable{ _socket.Handle(), _engine }; r.IsError()) co_return ne::Result<TlsStream, ne::OsError>::Error(std::move(r.Error()));
+				if (auto result = co_await RecvAwaitable{ socket.Handle(), *engine }; result.IsError()) co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
 
-				int n = ::recv(_socket.Handle(),
-								reinterpret_cast<char*>(span.data() + dataInBuf),
-								static_cast<int>(span.size() - dataInBuf), 0);
-				if (n <= 0)
-					co_return ne::Result<TlsStream, ne::OsError>::Error(
-						ne::OsError{ ne::LastOsError() }.Context("[TlsStream/Connect/Recv]"));
+				const int bytes = ::recv(socket.Handle(), reinterpret_cast<char*>(span.data() + dataInBuffer), static_cast<int>(span.size() - dataInBuffer), 0);
+				if (bytes <= 0)
+					co_return ne::Result<void, ne::OsError>::Error(
+						ne::OsError{ ne::LastOsError() }.Context("[TlsStream/Handshake/Recv]"));
 
-				dataInBuf += static_cast<std::size_t>(n);
-				firstCall = false;
+				dataInBuffer += static_cast<std::size_t>(bytes);
+				isFirstCall = false;
 				continue;
 			}
 
-			co_return ne::Result<TlsStream, ne::OsError>::Error(
-				SchannelError(ss, "[TlsStream/Connect/Handshake]"));
+			co_return ne::Result<void, ne::OsError>::Error(
+				SchannelError(ss, "[TlsStream/Handshake]"));
 		}
 
-		co_return ne::Result<TlsStream, ne::OsError>::Ok(
-			TlsStream{ std::move(_socket), _engine,
-						rawCred.release(), rawCtx.release(), rawBuf.release() });
+		ctxHandle = rawCtx.release();
+
+		co_return ne::Result<void, ne::OsError>::Ok();
 	}
 
 	ne::Task<ne::Result<std::size_t, ne::OsError>> TlsStream::Send(const std::span<const byte_t> _data)
 	{
 		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "TLS stream closed" });
 
-		auto* fn = SspiWrapper::Get();
-		auto* ctx = static_cast<CtxtHandle*>(ctxHandle);
+		const auto* functionTable = SspiWrapper::Get();
+		auto* nativeCtxHandle = static_cast<CtxtHandle*>(ctxHandle);
 
 		SecPkgContext_StreamSizes sizes{};
-		SECURITY_STATUS ss = fn->QueryContextAttributesW(ctx, SECPKG_ATTR_STREAM_SIZES, &sizes);
+		SECURITY_STATUS ss = functionTable->QueryContextAttributesW(nativeCtxHandle, SECPKG_ATTR_STREAM_SIZES, &sizes);
 		if (ss != SEC_E_OK)
 			co_return ne::Result<std::size_t, ne::OsError>::Error(
 				SchannelError(ss, "[TlsStream/Send/QueryAttr]"));
@@ -240,28 +390,29 @@ BEGIN_NS(ne::network)
 		while (totalSent < _data.size())
 		{
 			const std::size_t chunk = std::min(_data.size() - totalSent, maxMsg);
-			std::vector<byte_t> encBuf(sizes.cbHeader + chunk + sizes.cbTrailer);
+			std::vector<byte_t> encodeBuffer(sizes.cbHeader + chunk + sizes.cbTrailer);
 
-			std::memcpy(encBuf.data() + sizes.cbHeader, _data.data() + totalSent, chunk);
+			std::memcpy(encodeBuffer.data() + sizes.cbHeader, _data.data() + totalSent, chunk);
 
-			std::array<SecBuffer, 4> bufs{};
-			bufs[0] = { sizes.cbHeader, SECBUFFER_STREAM_HEADER, encBuf.data() };
-			bufs[1] = { static_cast<ULONG>(chunk), SECBUFFER_DATA, encBuf.data() + sizes.cbHeader };
-			bufs[2] = { sizes.cbTrailer, SECBUFFER_STREAM_TRAILER, encBuf.data() + sizes.cbHeader + chunk };
-			bufs[3] = { 0, SECBUFFER_EMPTY, nullptr };
-			SecBufferDesc desc = { SECBUFFER_VERSION, 4, bufs.data() };
+			std::array<SecBuffer, 4> buffers{};
+			buffers[0] = { sizes.cbHeader, SECBUFFER_STREAM_HEADER, encodeBuffer.data() };
+			buffers[1] = { static_cast<ULONG>(chunk), SECBUFFER_DATA, encodeBuffer.data() + sizes.cbHeader };
+			buffers[2] = { sizes.cbTrailer, SECBUFFER_STREAM_TRAILER, encodeBuffer.data() + sizes.cbHeader + chunk };
+			buffers[3] = { 0, SECBUFFER_EMPTY, nullptr };
+			SecBufferDesc desc = { SECBUFFER_VERSION, 4, buffers.data() };
 
-			ss = fn->EncryptMessage(ctx, 0, &desc, 0);
+			ss = functionTable->EncryptMessage(nativeCtxHandle, 0, &desc, 0);
 			if (ss != SEC_E_OK)
 				co_return ne::Result<std::size_t, ne::OsError>::Error(
 					SchannelError(ss, "[TlsStream/Send/Encrypt]"));
 
-			const ULONG encSize = bufs[0].cbBuffer + bufs[1].cbBuffer + bufs[2].cbBuffer;
+			const ULONG encodeSize = buffers[0].cbBuffer + buffers[1].cbBuffer + buffers[2].cbBuffer;
 
-			if (auto r = co_await SendAwaitable{ socket.Handle(), *engine }; r.IsError()) co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(r.Error()));
+			if (auto result = co_await SendAwaitable{ socket.Handle(), *engine }; result.IsError())
+				co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
 
-			int n = ::send(socket.Handle(), reinterpret_cast<const char*>(encBuf.data()), static_cast<int>(encSize), 0);
-			if (n < 0)
+			const int bytes = ::send(socket.Handle(), reinterpret_cast<const char*>(encodeBuffer.data()), static_cast<int>(encodeSize), 0);
+			if (bytes < 0)
 				co_return ne::Result<std::size_t, ne::OsError>::Error(
 					ne::OsError{ ne::LastOsError() }.Context("[TlsStream/Send]"));
 
@@ -275,86 +426,87 @@ BEGIN_NS(ne::network)
 	{
 		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "TLS stream closed" });
 
-		auto* fn = SspiWrapper::Get();
-		auto* ctx = static_cast<CtxtHandle*>(ctxHandle);
-		auto* mbuf = static_cast<TlsMessageBuffer*>(msgBuffer);
-		auto span = mbuf->GetBuffer();
+		const auto* functionTable = SspiWrapper::Get();
+		auto* nativeCtxHandle = static_cast<CtxtHandle*>(ctxHandle);
+		auto* nativeMessageBuffer = static_cast<TlsMessageBuffer*>(messageBuffer);
+		auto span = nativeMessageBuffer->GetBuffer();
+		std::size_t dataInBuffer = 0;
 
-		// 이전 DecryptMessage 에서 남은 extra 데이터를 앞으로 이동
-		std::size_t dataInBuf = 0;
-		if (!mbuf->data.empty())
+		if (!nativeMessageBuffer->data.empty())
 		{
-			dataInBuf = mbuf->data.size();
-			std::memmove(span.data(), mbuf->data.data(), dataInBuf);
-			mbuf->data = {};
+			dataInBuffer = nativeMessageBuffer->data.size();
+			std::memmove(span.data(), nativeMessageBuffer->data.data(), dataInBuffer);
+			nativeMessageBuffer->data = {};
 		}
 
 		while (true)
 		{
-			// 버퍼가 비어 있으면 소켓에서 수신
-			if (dataInBuf == 0)
+			if (dataInBuffer == 0)
 			{
-				if (auto r = co_await RecvAwaitable{ socket.Handle(), *engine }; r.IsError()) co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(r.Error()));
+				if (auto result = co_await RecvAwaitable{ socket.Handle(), *engine }; result.IsError())
+					co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
 
-				int n = ::recv(socket.Handle(), reinterpret_cast<char*>(span.data()), static_cast<int>(span.size()), 0);
-				if (n <= 0) co_return ne::Result<std::size_t, ne::OsError>::Ok(0); // EOF / clean close
-				dataInBuf = static_cast<std::size_t>(n);
+				const int bytes = ::recv(socket.Handle(), reinterpret_cast<char*>(span.data()), static_cast<int>(span.size()), 0);
+				if (bytes <= 0)
+					co_return ne::Result<std::size_t, ne::OsError>::Ok(0);
+
+				dataInBuffer = static_cast<std::size_t>(bytes);
 			}
 
-			std::array<SecBuffer, 4> bufs{};
-			bufs[0] = { static_cast<ULONG>(dataInBuf), SECBUFFER_DATA, span.data() };
-			bufs[1] = { 0, SECBUFFER_EMPTY, nullptr };
-			bufs[2] = { 0, SECBUFFER_EMPTY, nullptr };
-			bufs[3] = { 0, SECBUFFER_EMPTY, nullptr };
-			SecBufferDesc desc = { SECBUFFER_VERSION, 4, bufs.data() };
+			std::array<SecBuffer, 4> buffers{};
+			buffers[0] = { static_cast<ULONG>(dataInBuffer), SECBUFFER_DATA, span.data() };
+			buffers[1] = { 0, SECBUFFER_EMPTY, nullptr };
+			buffers[2] = { 0, SECBUFFER_EMPTY, nullptr };
+			buffers[3] = { 0, SECBUFFER_EMPTY, nullptr };
+			SecBufferDesc desc = { SECBUFFER_VERSION, 4, buffers.data() };
 
-			SECURITY_STATUS ss = fn->DecryptMessage(ctx, &desc, 0, nullptr);
-
+			SECURITY_STATUS ss = functionTable->DecryptMessage(nativeCtxHandle, &desc, 0, nullptr);
 			if (ss == SEC_E_OK)
 			{
-				// 복호화된 평문 + extra 처리
 				for (int i = 0; i < 4; ++i)
 				{
-					if (bufs[i].BufferType == SECBUFFER_DATA && bufs[i].pvBuffer)
+					if (buffers[i].BufferType == SECBUFFER_DATA && buffers[i].pvBuffer)
 					{
-						const std::size_t plainLen = std::min<std::size_t>(bufs[i].cbBuffer, _data.size());
-						std::memcpy(_data.data(), bufs[i].pvBuffer, plainLen);
+						const std::size_t plainLength = std::min<std::size_t>(buffers[i].cbBuffer, _data.size());
+						std::memcpy(_data.data(), buffers[i].pvBuffer, plainLength);
 
 						for (int j = 0; j < 4; ++j)
 						{
-							if (bufs[j].BufferType == SECBUFFER_EXTRA && bufs[j].pvBuffer && bufs[j].cbBuffer > 0)
+							if (buffers[j].BufferType == SECBUFFER_EXTRA && buffers[j].pvBuffer && buffers[j].cbBuffer > 0)
 							{
-								const auto* p = static_cast<const byte_t*>(bufs[j].pvBuffer);
-								mbuf->data = span.subspan(static_cast<std::size_t>(p - span.data()), bufs[j].cbBuffer);
+								const auto* p = static_cast<const byte_t*>(buffers[j].pvBuffer);
+								nativeMessageBuffer->data = span.subspan(static_cast<std::size_t>(p - span.data()), buffers[j].cbBuffer);
 							}
 						}
-						co_return ne::Result<std::size_t, ne::OsError>::Ok(plainLen);
+
+						co_return ne::Result<std::size_t, ne::OsError>::Ok(plainLength);
 					}
 				}
-				// SECBUFFER_DATA 없음 → 재협상 등, 다시 읽기
-				dataInBuf = 0;
+
+				dataInBuffer = 0;
 				continue;
 			}
 
-			if (ss == SEC_I_CONTEXT_EXPIRED) co_return ne::Result<std::size_t, ne::OsError>::Ok(0); // TLS close_notify
+			if (ss == SEC_I_CONTEXT_EXPIRED)
+				co_return ne::Result<std::size_t, ne::OsError>::Ok(0);
 
 			if (ss == SEC_E_INCOMPLETE_MESSAGE)
 			{
-				if (dataInBuf >= span.size())
+				if (dataInBuffer >= span.size())
 				{
-					mbuf->Resize(span.size() * 2);
-					span = mbuf->GetBuffer();
+					nativeMessageBuffer->Resize(span.size() * 2);
+					span = nativeMessageBuffer->GetBuffer();
 				}
 
-				if (auto r = co_await RecvAwaitable{ socket.Handle(), *engine }; r.IsError()) co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(r.Error()));
+				if (auto result = co_await RecvAwaitable{ socket.Handle(), *engine }; result.IsError())
+					co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
 
-				int n = ::recv(socket.Handle(),
-								reinterpret_cast<char*>(span.data() + dataInBuf),
-								static_cast<int>(span.size() - dataInBuf), 0);
-				if (n <= 0)
+				const int bytes = ::recv(socket.Handle(), reinterpret_cast<char*>(span.data() + dataInBuffer), static_cast<int>(span.size() - dataInBuffer), 0);
+				if (bytes <= 0)
 					co_return ne::Result<std::size_t, ne::OsError>::Error(
 						ne::OsError{ ne::LastOsError() }.Context("[TlsStream/Receive/Recv]"));
-				dataInBuf += static_cast<std::size_t>(n);
+
+				dataInBuffer += static_cast<std::size_t>(bytes);
 				continue;
 			}
 
@@ -363,52 +515,60 @@ BEGIN_NS(ne::network)
 		}
 	}
 
+	ne::Task<ne::Result<void, ne::OsError>> TlsStream::Shutdown()
+	{
+		(void)Close();
+		co_return ne::Result<void, ne::OsError>::Ok();
+	}
+
 	ne::Result<void, ne::OsError> TlsStream::Close()
 	{
 		if (!IsOpen()) return ne::Result<void, ne::OsError>::Ok();
 
-		auto* fn = SspiWrapper::Get();
-		auto* cred = static_cast<CredHandle*>(credHandle);
-		auto* ctx = static_cast<CtxtHandle*>(ctxHandle);
+		const auto* functionTable = SspiWrapper::Get();
+		auto* rawCred = static_cast<CredHandle*>(credHandle);
+		auto* rawCtx = static_cast<CtxtHandle*>(ctxHandle);
 
-		// close_notify 전송
-		if (fn)
+		if (functionTable)
 		{
-			DWORD dwType = SCHANNEL_SHUTDOWN;
-			SecBuffer shut = { sizeof(dwType), SECBUFFER_TOKEN, &dwType };
-			SecBufferDesc shutDesc = { SECBUFFER_VERSION, 1, &shut };
-			fn->ApplyControlToken(ctx, &shutDesc);
+			DWORD type = SCHANNEL_SHUTDOWN;
+			SecBuffer shutdown = { sizeof(type), SECBUFFER_TOKEN, &type };
+			SecBufferDesc shutdownDesc = { SECBUFFER_VERSION, 1, &shutdown };
+			functionTable->ApplyControlToken(rawCtx, &shutdownDesc);
 
-			std::array<SecBuffer, 2> outBufs{};
-			outBufs[0] = { 0, SECBUFFER_TOKEN, nullptr };
-			outBufs[1] = { 0, SECBUFFER_ALERT, nullptr };
-			SecBufferDesc outDesc = { SECBUFFER_VERSION, 2, outBufs.data() };
+			std::array<SecBuffer, 2> outBuffers{};
+			outBuffers[0] = { 0, SECBUFFER_TOKEN, nullptr };
+			outBuffers[1] = { 0, SECBUFFER_ALERT, nullptr };
+			SecBufferDesc outDesc = { SECBUFFER_VERSION, 2, outBuffers.data() };
 
-			constexpr ULONG kReqFlags =
-			ISC_REQ_SEQUENCE_DETECT | ISC_REQ_REPLAY_DETECT | ISC_REQ_CONFIDENTIALITY |
-			ISC_REQ_EXTENDED_ERROR | ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_STREAM;
 			ULONG retFlags = 0;
+			functionTable->InitializeSecurityContextW(
+				rawCred,
+				rawCtx,
+				nullptr,
+				ISC_REQ_SEQUENCE_DETECT | ISC_REQ_REPLAY_DETECT | ISC_REQ_CONFIDENTIALITY | ISC_REQ_EXTENDED_ERROR | ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_STREAM,
+				0,
+				0,
+				nullptr,
+				0, nullptr,
+				&outDesc,
+				&retFlags,
+				nullptr);
 
-			fn->InitializeSecurityContextW(
-				cred, ctx, nullptr, kReqFlags, 0, 0,
-				nullptr, 0, nullptr, &outDesc, &retFlags, nullptr);
-
-			if (outBufs[0].pvBuffer && outBufs[0].cbBuffer > 0)
+			if (outBuffers[0].pvBuffer && outBuffers[0].cbBuffer > 0)
 			{
-				::send(socket.Handle(),
-						static_cast<const char*>(outBufs[0].pvBuffer),
-						static_cast<int>(outBufs[0].cbBuffer), 0);
-				fn->FreeContextBuffer(outBufs[0].pvBuffer);
+				::send(socket.Handle(), static_cast<const char*>(outBuffers[0].pvBuffer), static_cast<int>(outBuffers[0].cbBuffer), 0);
+				functionTable->FreeContextBuffer(outBuffers[0].pvBuffer);
 			}
 
-			fn->DeleteSecurityContext(ctx);
-			fn->FreeCredentialHandle(cred);
+			functionTable->DeleteSecurityContext(rawCtx);
+			functionTable->FreeCredentialHandle(rawCred);
 		}
 
 		delete static_cast<CtxtHandle*>(ctxHandle);
 		delete static_cast<CredHandle*>(credHandle);
-		delete static_cast<TlsMessageBuffer*>(msgBuffer);
-		ctxHandle = credHandle = msgBuffer = nullptr;
+		delete static_cast<TlsMessageBuffer*>(messageBuffer);
+		ctxHandle = credHandle = messageBuffer = nullptr;
 
 		(void)engine->Unwatch(socket.Handle());
 		[[maybe_unused]] auto closing = std::move(socket);
@@ -427,8 +587,7 @@ BEGIN_NS(ne::network)
 
 
 
-	TlsStream::TlsStream(Socket&& _socket, IIoEngine& _engine,
-		void* _ctx, void* _ssl) noexcept
+	TlsStream::TlsStream(Socket&& _socket, IIoEngine& _engine, void* _ctx, void* _ssl) noexcept
 		: socket(std::move(_socket))
 		, engine(&_engine)
 		, ctx(_ctx)
@@ -437,6 +596,7 @@ BEGIN_NS(ne::network)
 	TlsStream::TlsStream(TlsStream&& _other) noexcept
 		: socket(std::move(_other.socket))
 		, engine(_other.engine)
+		, sniHost(std::move(_other.sniHost))
 		, ctx(std::exchange(_other.ctx, nullptr))
 		, ssl(std::exchange(_other.ssl, nullptr)) {}
 
@@ -449,12 +609,19 @@ BEGIN_NS(ne::network)
 				SSL_shutdown(static_cast<SSL*>(ssl));
 				SSL_free(static_cast<SSL*>(ssl));
 			}
-			if (ctx) { SSL_CTX_free(static_cast<SSL_CTX*>(ctx)); }
+
+			if (ctx)
+			{
+				SSL_CTX_free(static_cast<SSL_CTX*>(ctx));
+			}
+
 			socket = std::move(_other.socket);
 			engine = _other.engine;
+			sniHost = std::move(_other.sniHost);
 			ctx = std::exchange(_other.ctx, nullptr);
 			ssl = std::exchange(_other.ssl, nullptr);
 		}
+
 		return *this;
 	}
 
@@ -465,7 +632,11 @@ BEGIN_NS(ne::network)
 			SSL_shutdown(static_cast<SSL*>(ssl));
 			SSL_free(static_cast<SSL*>(ssl));
 		}
-		if (ctx) { SSL_CTX_free(static_cast<SSL_CTX*>(ctx)); }
+
+		if (ctx)
+		{
+			SSL_CTX_free(static_cast<SSL_CTX*>(ctx));
+		}
 	}
 
 
@@ -473,12 +644,12 @@ BEGIN_NS(ne::network)
 	ne::Task<ne::Result<TlsStream, ne::OsError>> TlsStream::Connect(Socket&& _socket, IIoEngine& _engine, string_view_t _host, const TlsConfig& _config)
 	{
 		SSL_CTX* sslCtx = SSL_CTX_new(TLS_client_method());
-		if (!sslCtx) co_return ne::Result<TlsStream, ne::OsError>::Error(SslError("[TlsStream/Connect]"));
+		if (!sslCtx)
+			co_return ne::Result<TlsStream, ne::OsError>::Error(SslError("[TlsStream/Connect]"));
 
 		SSL_CTX_set_verify(sslCtx, _config.verifyPeer ? SSL_VERIFY_PEER : SSL_VERIFY_NONE, nullptr);
 
-		if (!_config.caFile.empty() &&
-			SSL_CTX_load_verify_locations(sslCtx, _config.caFile.c_str(), nullptr) != 1)
+		if (!_config.caFile.empty() && SSL_CTX_load_verify_locations(sslCtx, _config.caFile.c_str(), nullptr) != 1)
 		{
 			SSL_CTX_free(sslCtx);
 			co_return ne::Result<TlsStream, ne::OsError>::Error(SslError("[TlsStream/Connect/CA]"));
@@ -493,76 +664,139 @@ BEGIN_NS(ne::network)
 			}
 		}
 
-		SSL* s = SSL_new(sslCtx);
-		if (!s)
+		SSL* tempSsl = SSL_new(sslCtx);
+		if (!tempSsl)
 		{
 			SSL_CTX_free(sslCtx);
 			co_return ne::Result<TlsStream, ne::OsError>::Error(SslError("[TlsStream/Connect/SSL]"));
 		}
 
-		SSL_set_fd(s, static_cast<int>(_socket.Handle()));
-		if (!_host.empty()) SSL_set_tlsext_host_name(s, _host.data());
+		SSL_set_fd(tempSsl, static_cast<int>(_socket.Handle()));
+		if (!_host.empty()) SSL_set_tlsext_host_name(tempSsl, _host.data());
 
+		TlsStream stream(std::move(_socket), _engine, sslCtx, tempSsl);
+		stream.sniHost = string_t(_host);
+
+		auto result = co_await stream.Handshake();
+		if (result.IsError())
+			co_return ne::Result<TlsStream, ne::OsError>::Error(std::move(result.Error()));
+
+		co_return ne::Result<TlsStream, ne::OsError>::Ok(std::move(stream));
+	}
+
+	ne::Task<ne::Result<TlsStream, ne::OsError>> TlsStream::Accept(Socket&& _socket, IIoEngine& _engine, const TlsConfig& _config)
+	{
+		SSL_CTX* sslCtx = SSL_CTX_new(TLS_server_method());
+		if (!sslCtx)
+			co_return ne::Result<TlsStream, ne::OsError>::Error(SslError("[TlsStream/Accept]"));
+
+		SSL_CTX_set_verify(sslCtx, _config.verifyPeer ? SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT : SSL_VERIFY_NONE, nullptr);
+		if (!_config.caFile.empty() && SSL_CTX_load_verify_locations(sslCtx, _config.caFile.c_str(), nullptr) != 1)
+		{
+			SSL_CTX_free(sslCtx);
+			co_return ne::Result<TlsStream, ne::OsError>::Error(SslError("[TlsStream/Accept/CA]"));
+		}
+		if (SSL_CTX_use_certificate_file(sslCtx, _config.certFile.c_str(), SSL_FILETYPE_PEM) != 1 || SSL_CTX_use_PrivateKey_file(sslCtx, _config.keyFile.c_str(), SSL_FILETYPE_PEM) != 1)
+		{
+			SSL_CTX_free(sslCtx);
+			co_return ne::Result<TlsStream, ne::OsError>::Error(SslError("[TlsStream/Accept/Cert]"));
+		}
+	
+		SSL* tempSsl = SSL_new(sslCtx);
+		if (!tempSsl)
+		{
+			SSL_CTX_free(sslCtx);
+			co_return ne::Result<TlsStream, ne::OsError>::Error(SslError("[TlsStream/Accept/SSL]"));
+		}
+		SSL_set_fd(tempSsl, static_cast<int>(_socket.Handle()));
+
+		TlsStream stream(std::move(_socket), _engine, sslCtx, tempSsl);
 		while (true)
 		{
-			const int ret = SSL_connect(s);
-			if (ret == 1) break;
-			const int err = SSL_get_error(s, ret);
-			if (err == SSL_ERROR_WANT_READ)
+			const int sslResult = SSL_accept(tempSsl);
+			if (sslResult == 1) break;
+
+			const int sslError = SSL_get_error(tempSsl, sslResult);
+			if (sslError == SSL_ERROR_WANT_READ)
 			{
-				if (auto r = co_await RecvAwaitable{ _socket.Handle(), _engine }; r.IsError())
-				{
-					SSL_free(s);
-					SSL_CTX_free(sslCtx);
-					co_return ne::Result<TlsStream, ne::OsError>::Error(std::move(r.Error()));
-				}
+				if (auto result = co_await RecvAwaitable{ stream.socket.Handle(), _engine }; result.IsError())
+					co_return ne::Result<TlsStream, ne::OsError>::Error(std::move(result.Error()));
 			}
-			else if (err == SSL_ERROR_WANT_WRITE)
+			else if (sslError == SSL_ERROR_WANT_WRITE)
 			{
-				if (auto r = co_await SendAwaitable{ _socket.Handle(), _engine }; r.IsError())
-				{
-					SSL_free(s);
-					SSL_CTX_free(sslCtx);
-					co_return ne::Result<TlsStream, ne::OsError>::Error(std::move(r.Error()));
-				}
+				if (auto result = co_await SendAwaitable{ stream.socket.Handle(), _engine }; result.IsError())
+					co_return ne::Result<TlsStream, ne::OsError>::Error(std::move(result.Error()));
 			}
 			else
 			{
-				SSL_free(s);
-				SSL_CTX_free(sslCtx);
-				co_return ne::Result<TlsStream, ne::OsError>::Error(SslError("[TlsStream/Connect/Handshake]"));
+				co_return ne::Result<TlsStream, ne::OsError>::Error(SslError("[TlsStream/Accept/Handshake]"));
 			}
 		}
 
-		co_return ne::Result<TlsStream, ne::OsError>::Ok(TlsStream{ std::move(_socket), _engine, sslCtx, s });
+		co_return ne::Result<TlsStream, ne::OsError>::Ok(std::move(stream));
+	}
+
+
+
+	ne::Task<ne::Result<void, ne::OsError>> TlsStream::Handshake()
+	{
+		auto* nativeSsl = static_cast<SSL*>(ssl);
+		while (true)
+		{
+			const int sslResult = SSL_connect(nativeSsl);
+			if (sslResult == 1) break;
+
+			const int sslError = SSL_get_error(nativeSsl, sslResult);
+			if (sslError == SSL_ERROR_WANT_READ)
+			{
+				if (auto result = co_await RecvAwaitable{ socket.Handle(), *engine }; result.IsError())
+					co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
+			}
+			else if (sslError == SSL_ERROR_WANT_WRITE)
+			{
+				if (auto result = co_await SendAwaitable{ socket.Handle(), *engine }; result.IsError())
+					co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
+			}
+			else
+			{
+				co_return ne::Result<void, ne::OsError>::Error(SslError("[TlsStream/Handshake]"));
+			}
+		}
+
+		co_return ne::Result<void, ne::OsError>::Ok();
 	}
 
 	ne::Task<ne::Result<std::size_t, ne::OsError>> TlsStream::Send(std::span<const byte_t> _data)
 	{
 		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "TLS stream closed" });
 
-		auto* s = static_cast<SSL*>(ssl);
 		std::size_t sent = 0;
 
+		auto* nativeSsl = static_cast<SSL*>(ssl);
 		while (sent < _data.size())
 		{
-			const int bytes = SSL_write(s, _data.data() + sent, static_cast<int>(_data.size() - sent));
+			const int bytes = SSL_write(nativeSsl, _data.data() + sent, static_cast<int>(_data.size() - sent));
 			if (bytes > 0)
 			{
 				sent += static_cast<std::size_t>(bytes);
 				continue;
 			}
 
-			const int err = SSL_get_error(s, bytes);
-			if (err == SSL_ERROR_WANT_WRITE)
+			const int sslError = SSL_get_error(nativeSsl, bytes);
+			if (sslError == SSL_ERROR_WANT_WRITE)
 			{
-				if (auto r = co_await SendAwaitable{ socket.Handle(), *engine }; r.IsError()) co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(r.Error()));
+				if (auto result = co_await SendAwaitable{ socket.Handle(), *engine }; result.IsError())
+					co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
 			}
-			else if (err == SSL_ERROR_WANT_READ)
+			else if (sslError == SSL_ERROR_WANT_READ)
 			{
-				if (auto r = co_await RecvAwaitable{ socket.Handle(), *engine }; r.IsError()) co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(r.Error()));
+				if (auto result = co_await RecvAwaitable{ socket.Handle(), *engine }; result.IsError())
+					co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
 			}
-			else co_return ne::Result<std::size_t, ne::OsError>::Error(SslError("[TlsStream/Send]"));
+			else
+			{
+				co_return ne::Result<std::size_t, ne::OsError>::Error(SslError("[TlsStream/Send]"));
+			}
 		}
 
 		co_return ne::Result<std::size_t, ne::OsError>::Ok(sent);
@@ -572,24 +806,35 @@ BEGIN_NS(ne::network)
 	{
 		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "TLS stream closed" });
 
-		auto* s = static_cast<SSL*>(ssl);
+		auto* nativeSsl = static_cast<SSL*>(ssl);
 		while (true)
 		{
-			const int bytes = SSL_read(s, _data.data(), static_cast<int>(_data.size()));
+			const int bytes = SSL_read(nativeSsl, _data.data(), static_cast<int>(_data.size()));
 			if (bytes > 0) co_return ne::Result<std::size_t, ne::OsError>::Ok(static_cast<std::size_t>(bytes));
 			if (bytes == 0) co_return ne::Result<std::size_t, ne::OsError>::Ok(0);
 
-			const int err = SSL_get_error(s, n);
-			if (err == SSL_ERROR_WANT_READ)
+			const int sslError = SSL_get_error(nativeSsl, bytes);
+			if (sslError == SSL_ERROR_WANT_READ)
 			{
-				if (auto r = co_await RecvAwaitable{ socket.Handle(), *engine }; r.IsError()) co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(r.Error()));
+				if (auto result = co_await RecvAwaitable{ socket.Handle(), *engine }; result.IsError())
+					co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
 			}
-			else if (err == SSL_ERROR_WANT_WRITE)
+			else if (sslError == SSL_ERROR_WANT_WRITE)
 			{
-				if (auto r = co_await SendAwaitable{ socket.Handle(), *engine }; r.IsError()) co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(r.Error()));
+				if (auto result = co_await SendAwaitable{ socket.Handle(), *engine }; result.IsError())
+					co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
 			}
-			else co_return ne::Result<std::size_t, ne::OsError>::Error(SslError("[TlsStream/Receive]"));
+			else
+			{
+				co_return ne::Result<std::size_t, ne::OsError>::Error(SslError("[TlsStream/Receive]"));
+			}
 		}
+	}
+
+	ne::Task<ne::Result<void, ne::OsError>> TlsStream::Shutdown()
+	{
+		(void)Close();
+		co_return ne::Result<void, ne::OsError>::Ok();
 	}
 
 	ne::Result<void, ne::OsError> TlsStream::Close()
@@ -597,10 +842,13 @@ BEGIN_NS(ne::network)
 		if (!IsOpen()) return ne::Result<void, ne::OsError>::Ok();
 
 		SSL_shutdown(static_cast<SSL*>(ssl));
+
 		SSL_free(static_cast<SSL*>(ssl));
 		ssl = nullptr;
+
 		SSL_CTX_free(static_cast<SSL_CTX*>(ctx));
 		ctx = nullptr;
+
 		(void)engine->Unwatch(socket.Handle());
 		[[maybe_unused]] auto closing = std::move(socket);
 
@@ -629,7 +877,17 @@ BEGIN_NS(ne::network)
 		co_return ne::Result<TlsStream, ne::OsError>::Error(NoTls("[TlsStream/Connect]"));
 	}
 
+	ne::Task<ne::Result<TlsStream, ne::OsError>> TlsStream::Accept(Socket&&, IIoEngine&, const TlsConfig&)
+	{
+		co_return ne::Result<TlsStream, ne::OsError>::Error(NoTls("[TlsStream/Accept]"));
+	}
 
+
+
+	ne::Task<ne::Result<void, ne::OsError>> TlsStream::Handshake()
+	{
+		co_return ne::Result<void, ne::OsError>::Error(NoTls("[TlsStream/Handshake]"));
+	}
 
 	ne::Task<ne::Result<std::size_t, ne::OsError>> TlsStream::Send(std::span<const byte_t>)
 	{
@@ -639,6 +897,11 @@ BEGIN_NS(ne::network)
 	ne::Task<ne::Result<std::size_t, ne::OsError>> TlsStream::Receive(std::span<byte_t>)
 	{
 		co_return ne::Result<std::size_t, ne::OsError>::Error(NoTls("[TlsStream/Receive]"));
+	}
+
+	ne::Task<ne::Result<void, ne::OsError>> TlsStream::Shutdown()
+	{
+		co_return ne::Result<void, ne::OsError>::Ok();
 	}
 
 	ne::Result<void, ne::OsError> TlsStream::Close()

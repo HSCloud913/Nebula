@@ -3,6 +3,7 @@
 //
 
 #pragma once
+#include <cassert>
 #include <optional>
 #include <variant>
 #include <type_traits>
@@ -40,11 +41,27 @@ BEGIN_NS(ne)
 		[[nodiscard]] bool_t IsError() const noexcept { return !std::holds_alternative<T>(storage); }
 		[[nodiscard]] explicit operator bool_t() const noexcept { return IsOk(); }
 
-		[[nodiscard]] T& Value() noexcept { return *std::get_if<T>(&storage); } // 호출 전 IsOk() 확인 필수. 에러 상태에서 호출하면 UB.
-		[[nodiscard]] const T& Value() const noexcept { return *std::get_if<T>(&storage); } // 호출 전 IsOk() 확인 필수. 에러 상태에서 호출하면 UB.
+		[[nodiscard]] T& Value() noexcept
+		{
+			assert(IsOk() && "Result::Value() called in error state");
+			return *std::get_if<T>(&storage);
+		}
+		[[nodiscard]] const T& Value() const noexcept
+		{
+			assert(IsOk() && "Result::Value() called in error state");
+			return *std::get_if<T>(&storage);
+		}
 
-		[[nodiscard]] E& Error() noexcept { return *std::get_if<E>(&storage); } // 호출 전 IsError() 확인 필수. 성공 상태에서 호출하면 UB.
-		[[nodiscard]] const E& Error() const noexcept { return *std::get_if<E>(&storage); } // 호출 전 IsError() 확인 필수. 성공 상태에서 호출하면 UB.
+		[[nodiscard]] E& Error() noexcept
+		{
+			assert(IsError() && "Result::Error() called in ok state");
+			return *std::get_if<E>(&storage);
+		}
+		[[nodiscard]] const E& Error() const noexcept
+		{
+			assert(IsError() && "Result::Error() called in ok state");
+			return *std::get_if<E>(&storage);
+		}
 	};
 
 	template <typename E>
@@ -69,8 +86,16 @@ BEGIN_NS(ne)
 		[[nodiscard]] bool_t IsError() const noexcept { return errorStorage.has_value(); }
 		[[nodiscard]] explicit operator bool_t() const noexcept { return IsOk(); }
 
-		[[nodiscard]] E& Error() noexcept { return *errorStorage; } // 호출 전 IsError() 확인 필수.
-		[[nodiscard]] const E& Error() const noexcept { return *errorStorage; } // 호출 전 IsError() 확인 필수.
+		[[nodiscard]] E& Error() noexcept
+		{
+			assert(IsError() && "Result::Error() called in ok state");
+			return *errorStorage;
+		}
+		[[nodiscard]] const E& Error() const noexcept
+		{
+			assert(IsError() && "Result::Error() called in ok state");
+			return *errorStorage;
+		}
 	};
 
 END_NS

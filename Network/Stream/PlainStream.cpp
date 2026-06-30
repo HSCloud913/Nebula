@@ -14,10 +14,6 @@
 
 
 BEGIN_NS(ne::network)
-	PlainStream::PlainStream(Socket&& _socket, IIoEngine& _engine) noexcept
-		: socket(std::move(_socket))
-		, engine(&_engine) {}
-
 	PlainStream::PlainStream(PlainStream&& _other) noexcept
 		: socket(std::move(_other.socket))
 		, engine(_other.engine) {}
@@ -32,6 +28,10 @@ BEGIN_NS(ne::network)
 		return *this;
 	}
 
+	PlainStream::PlainStream(Socket&& _socket, IIoEngine& _engine) noexcept
+		: socket(std::move(_socket))
+		, engine(&_engine) {}
+
 
 
 	ne::Result<PlainStream, ne::OsError> PlainStream::Create(Socket&& _socket, IIoEngine& _engine) noexcept
@@ -42,6 +42,11 @@ BEGIN_NS(ne::network)
 	}
 
 
+
+	ne::Task<ne::Result<void, ne::OsError>> PlainStream::Handshake()
+	{
+		co_return ne::Result<void, ne::OsError>::Ok();
+	}
 
 	ne::Task<ne::Result<std::size_t, ne::OsError>> PlainStream::Send(std::span<const ne::byte_t> _data)
 	{
@@ -71,6 +76,12 @@ BEGIN_NS(ne::network)
 			);
 
 		co_return ne::Result<std::size_t, ne::OsError>::Ok(static_cast<std::size_t>(n));
+	}
+
+	ne::Task<ne::Result<void, ne::OsError>> PlainStream::Shutdown()
+	{
+		(void)Close();
+		co_return ne::Result<void, ne::OsError>::Ok();
 	}
 
 	ne::Result<void, ne::OsError> PlainStream::Close()

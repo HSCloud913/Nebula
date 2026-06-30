@@ -5,8 +5,6 @@
 #pragma once
 #include <coroutine>
 #include <optional>
-#include <chrono>
-#include <thread>
 #include "IoEngine/IIoEngine.h"
 #include "Result.h"
 #include "Error.h"
@@ -104,31 +102,8 @@ BEGIN_NS(ne::network)
 	};
 
 
-	// 지정 시간 대기. 별도 스레드 sleep 후 재개 (플랫폼 중립).
-	// 주의: 재개 스레드가 RunOnce 스레드와 다를 수 있으므로
-	//       단일 스레드 이벤트 루프 외부에서는 동기화 필요.
-	class TimerAwaitable
-	{
-	public:
-		explicit TimerAwaitable(std::chrono::milliseconds _duration) noexcept
-			: duration(_duration) {}
-
-	private:
-		std::chrono::milliseconds duration;
-
-	public:
-		[[nodiscard]] bool_t await_ready() const noexcept { return duration.count() <= 0; }
-
-		void await_suspend(std::coroutine_handle<> _handle) const noexcept
-		{
-			std::thread([_handle, d = duration]() mutable
-			{
-				std::this_thread::sleep_for(d);
-				_handle.resume();
-			}).detach();
-		}
-
-		void await_resume() const noexcept {}
-	};
-
 END_NS
+
+// TimerAwaitable 은 Time/TimerAwaitable.h 로 이전.
+// 타이머가 필요할 때: #include "TimerAwaitable.h"  (ne::time::SleepFor / Deadline)
+

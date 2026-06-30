@@ -5,6 +5,7 @@
 #ifndef NEBULA_LOGGER_H
 #define NEBULA_LOGGER_H
 
+#include <atomic>
 #include <fstream>
 #include <mutex>
 #include "Type.h"
@@ -30,7 +31,7 @@ BEGIN_NS(ne)
     private:
         std::mutex mutex;
         std::ofstream os;
-        LogLevel logLevel;
+        std::atomic<LogLevel> logLevel;
 
     public:
         LogLevel GetLogLevel() const;

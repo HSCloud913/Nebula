@@ -10,6 +10,7 @@
 #include "Error.h"
 #include <functional>
 #include <cstddef>
+#include "Socket/Socket.h"
 
 BEGIN_NS(ne::network::http_1)
 	// HTTP/1.1 서버.

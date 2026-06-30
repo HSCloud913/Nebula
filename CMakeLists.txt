@@ -29,9 +29,13 @@ FetchContent_MakeAvailable(libssh2)
 
 enable_testing()
 
+# 의존 순서대로 추가
 add_subdirectory(Base)
-add_subdirectory(Network)
+add_subdirectory(Memory)
+add_subdirectory(Concurrency)
+add_subdirectory(Time)
+add_subdirectory(Io)
 add_subdirectory(Cryptography)
 add_subdirectory(Ipc)
-#add_subdirectory(Protocol)
-#add_subdirectory(ProtocolRunner)
+add_subdirectory(Network)
+# Compress 는 구현 후 추가

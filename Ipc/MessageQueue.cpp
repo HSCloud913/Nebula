@@ -4,7 +4,6 @@
 
 #include "MessageQueue.h"
 
-#include <thread>
 #include "Exception.h"
 #include "StringFormat.h"
 
@@ -66,7 +65,7 @@ BEGIN_NS(ne::protocol::Ipc)
 				{
 					throw ne::Exception("[MessageQueue/Connect]", std::format("Failed to WaitNamedPipeW function (error: {})", error));
 				}
-				std::this_thread::sleep_for(std::chrono::milliseconds(1));
+				Sleep(1);
 			}
 
 			handle = ::CreateFileW(pipeName.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);

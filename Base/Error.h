@@ -60,4 +60,18 @@ BEGIN_NS(ne)
 	[[nodiscard]] inline ulong_t LastOsError() noexcept { return static_cast<ulong_t>(errno); }
 #endif
 
+	class HttpError : public Error
+	{
+	public:
+		explicit HttpError(string_view_t _message);
+		HttpError(uint16_t _statusCode, string_view_t _message);
+
+		HttpError& Context(string_view_t _context) { Error::Context(_context); return *this; }
+
+		[[nodiscard]] uint16_t StatusCode() const noexcept { return statusCode; }
+
+	private:
+		uint16_t statusCode{};
+	};
+
 END_NS

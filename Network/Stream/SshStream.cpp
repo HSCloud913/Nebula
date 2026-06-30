@@ -22,24 +22,26 @@ BEGIN_NS(ne::network)
 	static ne::OsError Ssh2Error(LIBSSH2_SESSION* _session, string_view_t _ctx) noexcept
 	{
 		char* msg = nullptr;
-		int code = libssh2_session_last_error(_session, &msg, nullptr, 0);
-		auto err = ne::OsError{ static_cast<ne::ulong_t>(code), msg ? msg : "libssh2 error" };
-		err.Context(_ctx);
-		return err;
+		const int code = libssh2_session_last_error(_session, &msg, nullptr, 0);
+
+		auto error = ne::OsError{ static_cast<ne::ulong_t>(code), msg ? msg : "libssh2 error" };
+		error.Context(_ctx);
+
+		return error;
 	}
 
-	static ne::Task<ne::Result<void, ne::OsError>> WaitSocket(
-		socket_t _fd, IIoEngine& _engine, LIBSSH2_SESSION* _session)
+	static ne::Task<ne::Result<void, ne::OsError>> WaitSocket(const socket_t _fd, IIoEngine& _engine, LIBSSH2_SESSION* _session)
 	{
 		const int dir = libssh2_session_block_directions(_session);
 		if (dir & LIBSSH2_SESSION_BLOCK_INBOUND)
 		{
-			if (auto r = co_await RecvAwaitable{ _fd, _engine }; r.IsError()) co_return ne::Result<void, ne::OsError>::Error(std::move(r.Error()));
+			if (auto result = co_await RecvAwaitable{ _fd, _engine }; result.IsError()) co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
 		}
 		if (dir & LIBSSH2_SESSION_BLOCK_OUTBOUND)
 		{
-			if (auto r = co_await SendAwaitable{ _fd, _engine }; r.IsError()) co_return ne::Result<void, ne::OsError>::Error(std::move(r.Error()));
+			if (auto result = co_await SendAwaitable{ _fd, _engine }; result.IsError()) co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
 		}
+
 		co_return ne::Result<void, ne::OsError>::Ok();
 	}
 
@@ -54,6 +56,7 @@ BEGIN_NS(ne::network)
 	SshStream::SshStream(SshStream&& _other) noexcept
 		: socket(std::move(_other.socket))
 		, engine(_other.engine)
+		, sshConfig(std::move(_other.sshConfig))
 		, session(std::exchange(_other.session, nullptr))
 		, channel(std::exchange(_other.channel, nullptr)) {}
 
@@ -64,6 +67,7 @@ BEGIN_NS(ne::network)
 			(void)Close();
 			socket = std::move(_other.socket);
 			engine = _other.engine;
+			sshConfig = std::move(_other.sshConfig);
 			session = std::exchange(_other.session, nullptr);
 			channel = std::exchange(_other.channel, nullptr);
 		}
@@ -73,7 +77,11 @@ BEGIN_NS(ne::network)
 
 	SshStream::~SshStream()
 	{
-		if (channel) libssh2_channel_free(static_cast<LIBSSH2_CHANNEL*>(channel));
+		if (channel)
+		{
+			libssh2_channel_free(static_cast<LIBSSH2_CHANNEL*>(channel));
+		}
+
 		if (session)
 		{
 			libssh2_session_disconnect(static_cast<LIBSSH2_SESSION*>(session), "Bye");
@@ -87,215 +95,202 @@ BEGIN_NS(ne::network)
 	{
 		libssh2_init(0);
 
-		LIBSSH2_SESSION* sess = libssh2_session_init();
-		if (!sess)
+		LIBSSH2_SESSION* tempSession = libssh2_session_init();
+		if (!tempSession)
 			co_return ne::Result<SshStream, ne::OsError>::Error(
 				ne::OsError{ 0, "libssh2_session_init failed" });
 
-		libssh2_session_set_blocking(sess, 0);
+		libssh2_session_set_blocking(tempSession, 0);
+
+		SshStream stream(std::move(_socket), _engine, tempSession, nullptr);
+		stream.sshConfig = _config;
+
+		if (auto result = co_await stream.Handshake(); result.IsError()) co_return ne::Result<SshStream, ne::OsError>::Error(std::move(result.Error()));
+
+		co_return ne::Result<SshStream, ne::OsError>::Ok(std::move(stream));
+	}
+
+
+
+	ne::Task<ne::Result<void, ne::OsError>> SshStream::Handshake()
+	{
+		auto* nativeSession = static_cast<LIBSSH2_SESSION*>(session);
 
 		// SSH 계층 핸드셰이크
 		while (true)
 		{
-			int rc = libssh2_session_handshake(sess,
-												static_cast<libssh2_socket_t>(_socket.Handle()));
-			if (rc == 0) break;
-			if (rc == LIBSSH2_ERROR_EAGAIN)
+			int sshResult = libssh2_session_handshake(nativeSession, socket.Handle());
+			if (sshResult == 0) break;
+
+			if (sshResult == LIBSSH2_ERROR_EAGAIN)
 			{
-				if (auto r = co_await WaitSocket(_socket.Handle(), _engine, sess); r.IsError())
-				{
-					libssh2_session_free(sess);
-					co_return ne::Result<SshStream, ne::OsError>::Error(std::move(r.Error()));
-				}
+				if (auto result = co_await WaitSocket(socket.Handle(), *engine, nativeSession); result.IsError()) co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
 			}
 			else
 			{
-				auto e = Ssh2Error(sess, "[SshStream/Connect/Handshake]");
-				libssh2_session_free(sess);
-				co_return ne::Result<SshStream, ne::OsError>::Error(std::move(e));
+				co_return ne::Result<void, ne::OsError>::Error(
+					Ssh2Error(nativeSession, "[SshStream/Handshake/SessionHandshake]"));
 			}
 		}
 
 		// 인증 — 공개키 우선, 없으면 비밀번호
-		if (!_config.privateKeyFile.empty())
+		if (!sshConfig.privateKeyFile.empty())
 		{
 			while (true)
 			{
-				int rc = libssh2_userauth_publickey_fromfile(
-					sess,
-					_config.username.c_str(),
-					_config.publicKeyFile.empty() ? nullptr : _config.publicKeyFile.c_str(),
-					_config.privateKeyFile.c_str(),
-					nullptr);
-				if (rc == 0) break;
-				if (rc == LIBSSH2_ERROR_EAGAIN)
+				int sshResult = libssh2_userauth_publickey_fromfile(nativeSession, sshConfig.username.c_str(), sshConfig.publicKeyFile.empty() ? nullptr : sshConfig.publicKeyFile.c_str(), sshConfig.privateKeyFile.c_str(), nullptr);
+				if (sshResult == 0) break;
+
+				if (sshResult == LIBSSH2_ERROR_EAGAIN)
 				{
-					if (auto r = co_await WaitSocket(_socket.Handle(), _engine, sess); r.IsError())
-					{
-						libssh2_session_free(sess);
-						co_return ne::Result<SshStream, ne::OsError>::Error(std::move(r.Error()));
-					}
+					if (auto result = co_await WaitSocket(socket.Handle(), *engine, nativeSession); result.IsError()) co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
 				}
 				else
 				{
-					auto e = Ssh2Error(sess, "[SshStream/Connect/PubkeyAuth]");
-					libssh2_session_free(sess);
-					co_return ne::Result<SshStream, ne::OsError>::Error(std::move(e));
+					co_return ne::Result<void, ne::OsError>::Error(
+						Ssh2Error(nativeSession, "[SshStream/Handshake/PubkeyAuth]"));
 				}
 			}
 		}
-		else if (!_config.password.empty())
+		else if (!sshConfig.password.empty())
 		{
 			while (true)
 			{
-				int rc = libssh2_userauth_password(sess,
-													_config.username.c_str(), _config.password.c_str());
-				if (rc == 0) break;
-				if (rc == LIBSSH2_ERROR_EAGAIN)
+				int sshResult = libssh2_userauth_password(nativeSession, sshConfig.username.c_str(), sshConfig.password.c_str());
+				if (sshResult == 0) break;
+
+				if (sshResult == LIBSSH2_ERROR_EAGAIN)
 				{
-					if (auto r = co_await WaitSocket(_socket.Handle(), _engine, sess); r.IsError())
-					{
-						libssh2_session_free(sess);
-						co_return ne::Result<SshStream, ne::OsError>::Error(std::move(r.Error()));
-					}
+					if (auto result = co_await WaitSocket(socket.Handle(), *engine, nativeSession); result.IsError()) co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
 				}
 				else
 				{
-					auto e = Ssh2Error(sess, "[SshStream/Connect/PasswordAuth]");
-					libssh2_session_free(sess);
-					co_return ne::Result<SshStream, ne::OsError>::Error(std::move(e));
+					co_return ne::Result<void, ne::OsError>::Error(
+						Ssh2Error(nativeSession, "[SshStream/Handshake/PasswordAuth]"));
 				}
 			}
 		}
 
-		// 채널 열기
-		LIBSSH2_CHANNEL* ch = nullptr;
+		LIBSSH2_CHANNEL* tempChannel = nullptr;
 		while (true)
 		{
-			ch = libssh2_channel_open_session(sess);
-			if (ch) break;
-			if (libssh2_session_last_errno(sess) == LIBSSH2_ERROR_EAGAIN)
+			tempChannel = libssh2_channel_open_session(nativeSession);
+			if (tempChannel) break;
+
+			if (libssh2_session_last_errno(nativeSession) == LIBSSH2_ERROR_EAGAIN)
 			{
-				if (auto r = co_await WaitSocket(_socket.Handle(), _engine, sess); r.IsError())
-				{
-					libssh2_session_free(sess);
-					co_return ne::Result<SshStream, ne::OsError>::Error(std::move(r.Error()));
-				}
+				if (auto result = co_await WaitSocket(socket.Handle(), *engine, nativeSession); result.IsError()) co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
 			}
 			else
 			{
-				auto e = Ssh2Error(sess, "[SshStream/Connect/OpenChannel]");
-				libssh2_session_free(sess);
-				co_return ne::Result<SshStream, ne::OsError>::Error(std::move(e));
+				co_return ne::Result<void, ne::OsError>::Error(
+					Ssh2Error(nativeSession, "[SshStream/Handshake/OpenChannel]"));
 			}
 		}
 
-		// exec 또는 shell 요청
-		if (!_config.command.empty())
+		if (!sshConfig.command.empty())
 		{
 			while (true)
 			{
-				int rc = libssh2_channel_exec(ch, _config.command.c_str());
-				if (rc == 0) break;
-				if (rc == LIBSSH2_ERROR_EAGAIN)
+				int sshResult = libssh2_channel_exec(tempChannel, sshConfig.command.c_str());
+				if (sshResult == 0) break;
+
+				if (sshResult == LIBSSH2_ERROR_EAGAIN)
 				{
-					if (auto r = co_await WaitSocket(_socket.Handle(), _engine, sess); r.IsError())
+					if (auto result = co_await WaitSocket(socket.Handle(), *engine, nativeSession); result.IsError())
 					{
-						libssh2_channel_free(ch);
-						libssh2_session_free(sess);
-						co_return ne::Result<SshStream, ne::OsError>::Error(std::move(r.Error()));
+						libssh2_channel_free(tempChannel);
+						co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
 					}
 				}
 				else
 				{
-					auto e = Ssh2Error(sess, "[SshStream/Connect/Exec]");
-					libssh2_channel_free(ch);
-					libssh2_session_free(sess);
-					co_return ne::Result<SshStream, ne::OsError>::Error(std::move(e));
+					auto e = Ssh2Error(nativeSession, "[SshStream/Handshake/Exec]");
+					libssh2_channel_free(tempChannel);
+					co_return ne::Result<void, ne::OsError>::Error(std::move(e));
 				}
 			}
 		}
 		else
 		{
-			// pty 요청 후 shell (실패해도 shell은 시도)
-			bool ptyOk = false;
-			while (!ptyOk)
+			bool isPtyOk = false;
+			while (!isPtyOk)
 			{
-				int rc = libssh2_channel_request_pty(ch, "xterm");
-				if (rc == 0)
+				int sshResult = libssh2_channel_request_pty(tempChannel, "xterm");
+				if (sshResult == 0)
 				{
-					ptyOk = true;
+					isPtyOk = true;
 					break;
 				}
-				if (rc == LIBSSH2_ERROR_EAGAIN)
-				{
-					if (auto r = co_await WaitSocket(_socket.Handle(), _engine, sess); r.IsError())
-					{
-						libssh2_channel_free(ch);
-						libssh2_session_free(sess);
-						co_return ne::Result<SshStream, ne::OsError>::Error(std::move(r.Error()));
-					}
-				}
-				else break; // pty 실패 무시, shell은 시도
-			}
 
-			while (true)
-			{
-				int rc = libssh2_channel_shell(ch);
-				if (rc == 0) break;
-				if (rc == LIBSSH2_ERROR_EAGAIN)
+				if (sshResult == LIBSSH2_ERROR_EAGAIN)
 				{
-					if (auto r = co_await WaitSocket(_socket.Handle(), _engine, sess); r.IsError())
+					if (auto result = co_await WaitSocket(socket.Handle(), *engine, nativeSession); result.IsError())
 					{
-						libssh2_channel_free(ch);
-						libssh2_session_free(sess);
-						co_return ne::Result<SshStream, ne::OsError>::Error(std::move(r.Error()));
+						libssh2_channel_free(tempChannel);
+						co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
 					}
 				}
 				else
 				{
-					auto e = Ssh2Error(sess, "[SshStream/Connect/Shell]");
-					libssh2_channel_free(ch);
-					libssh2_session_free(sess);
-					co_return ne::Result<SshStream, ne::OsError>::Error(std::move(e));
+					break;
+				}
+			}
+
+			while (true)
+			{
+				int sshResult = libssh2_channel_shell(tempChannel);
+				if (sshResult == 0) break;
+
+				if (sshResult == LIBSSH2_ERROR_EAGAIN)
+				{
+					if (auto result = co_await WaitSocket(socket.Handle(), *engine, nativeSession); result.IsError())
+					{
+						libssh2_channel_free(tempChannel);
+						co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
+					}
+				}
+				else
+				{
+					auto sshError = Ssh2Error(nativeSession, "[SshStream/Handshake/Shell]");
+					libssh2_channel_free(tempChannel);
+
+					co_return ne::Result<void, ne::OsError>::Error(std::move(sshError));
 				}
 			}
 		}
 
-		co_return ne::Result<SshStream, ne::OsError>::Ok(
-			SshStream{ std::move(_socket), _engine, sess, ch });
+		channel = tempChannel;
+
+		co_return ne::Result<void, ne::OsError>::Ok();
 	}
-
-
 
 	ne::Task<ne::Result<std::size_t, ne::OsError>> SshStream::Send(std::span<const byte_t> _data)
 	{
 		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "SSH stream closed" });
 
-		auto* sess = static_cast<LIBSSH2_SESSION*>(session);
-		auto* ch = static_cast<LIBSSH2_CHANNEL*>(channel);
+		auto* nativeSession = static_cast<LIBSSH2_SESSION*>(session);
+		auto* nativeChannel = static_cast<LIBSSH2_CHANNEL*>(channel);
 		std::size_t totalSent = 0;
 
 		while (totalSent < _data.size())
 		{
-			libssh2_ssize_t n = libssh2_channel_write(ch,
-													reinterpret_cast<const char*>(_data.data() + totalSent),
-													_data.size() - totalSent);
-
-			if (n >= 0)
+			const auto bytes = libssh2_channel_write(nativeChannel, reinterpret_cast<const char*>(_data.data() + totalSent), _data.size() - totalSent);
+			if (bytes >= 0)
 			{
-				totalSent += static_cast<std::size_t>(n);
+				totalSent += static_cast<std::size_t>(bytes);
 			}
-			else if (n == LIBSSH2_ERROR_EAGAIN)
+			else if (bytes == LIBSSH2_ERROR_EAGAIN)
 			{
-				if (auto r = co_await WaitSocket(socket.Handle(), *engine, sess); r.IsError()) co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(r.Error()));
+				if (auto result = co_await WaitSocket(socket.Handle(), *engine, nativeSession); result.IsError()) co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
 			}
 			else
 			{
 				co_return ne::Result<std::size_t, ne::OsError>::Error(
-					Ssh2Error(sess, "[SshStream/Send]"));
+					Ssh2Error(nativeSession, "[SshStream/Send]"));
 			}
 		}
+
 		co_return ne::Result<std::size_t, ne::OsError>::Ok(totalSent);
 	}
 
@@ -303,45 +298,57 @@ BEGIN_NS(ne::network)
 	{
 		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "SSH stream closed" });
 
-		auto* sess = static_cast<LIBSSH2_SESSION*>(session);
-		auto* ch = static_cast<LIBSSH2_CHANNEL*>(channel);
+		auto* nativeSession = static_cast<LIBSSH2_SESSION*>(session);
+		auto* nativeChannel = static_cast<LIBSSH2_CHANNEL*>(channel);
 
 		while (true)
 		{
-			libssh2_ssize_t n = libssh2_channel_read(ch,
-													reinterpret_cast<char*>(_data.data()), _data.size());
-
-			if (n > 0) co_return ne::Result<std::size_t, ne::OsError>::Ok(static_cast<std::size_t>(n));
-			if (n == 0 || libssh2_channel_eof(ch)) co_return ne::Result<std::size_t, ne::OsError>::Ok(0);
-			if (n == LIBSSH2_ERROR_EAGAIN)
+			const auto bytes = libssh2_channel_read(nativeChannel, reinterpret_cast<char*>(_data.data()), _data.size());
+			if (bytes > 0)
 			{
-				if (auto r = co_await WaitSocket(socket.Handle(), *engine, sess); r.IsError()) co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(r.Error()));
+				co_return ne::Result<std::size_t, ne::OsError>::Ok(static_cast<std::size_t>(bytes));
+			}
+			if (bytes == 0 || libssh2_channel_eof(nativeChannel))
+			{
+				co_return ne::Result<std::size_t, ne::OsError>::Ok(0);
+			}
+
+			if (bytes == LIBSSH2_ERROR_EAGAIN)
+			{
+				if (auto result = co_await WaitSocket(socket.Handle(), *engine, nativeSession); result.IsError()) co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
 			}
 			else
 			{
 				co_return ne::Result<std::size_t, ne::OsError>::Error(
-					Ssh2Error(sess, "[SshStream/Receive]"));
+					Ssh2Error(nativeSession, "[SshStream/Receive]"));
 			}
 		}
+	}
+
+	ne::Task<ne::Result<void, ne::OsError>> SshStream::Shutdown()
+	{
+		(void)Close();
+		co_return ne::Result<void, ne::OsError>::Ok();
 	}
 
 	ne::Result<void, ne::OsError> SshStream::Close()
 	{
 		if (!IsOpen()) return ne::Result<void, ne::OsError>::Ok();
 
-		auto* sess = static_cast<LIBSSH2_SESSION*>(session);
-		auto* ch = static_cast<LIBSSH2_CHANNEL*>(channel);
+		auto* nativeSession = static_cast<LIBSSH2_SESSION*>(session);
+		auto* nativeChannel = static_cast<LIBSSH2_CHANNEL*>(channel);
 
-		libssh2_channel_send_eof(ch);
-		libssh2_channel_free(ch);
+		libssh2_channel_send_eof(nativeChannel);
+		libssh2_channel_free(nativeChannel);
 		channel = nullptr;
 
-		libssh2_session_disconnect(sess, "Bye");
-		libssh2_session_free(sess);
+		libssh2_session_disconnect(nativeSession, "Bye");
+		libssh2_session_free(nativeSession);
 		session = nullptr;
 
 		(void)engine->Unwatch(socket.Handle());
 		[[maybe_unused]] auto closing = std::move(socket);
+
 		return ne::Result<void, ne::OsError>::Ok();
 	}
 
@@ -356,6 +363,8 @@ BEGIN_NS(ne::network)
 
 
 	SshStream::SshStream(Socket&&, IIoEngine&, void*, void*) noexcept {}
+	SshStream::SshStream(SshStream&&) noexcept = default;
+	SshStream& SshStream::operator=(SshStream&&) noexcept = default;
 	SshStream::~SshStream() = default;
 
 
@@ -365,7 +374,10 @@ BEGIN_NS(ne::network)
 		co_return ne::Result<SshStream, ne::OsError>::Error(NoLibssh2("[SshStream/Connect]"));
 	}
 
-
+	ne::Task<ne::Result<void, ne::OsError>> SshStream::Handshake()
+	{
+		co_return ne::Result<void, ne::OsError>::Error(NoLibssh2("[SshStream/Handshake]"));
+	}
 
 	ne::Task<ne::Result<std::size_t, ne::OsError>> SshStream::Send(std::span<const byte_t>)
 	{
@@ -375,6 +387,11 @@ BEGIN_NS(ne::network)
 	ne::Task<ne::Result<std::size_t, ne::OsError>> SshStream::Receive(std::span<byte_t>)
 	{
 		co_return ne::Result<std::size_t, ne::OsError>::Error(NoLibssh2("[SshStream/Receive]"));
+	}
+
+	ne::Task<ne::Result<void, ne::OsError>> SshStream::Shutdown()
+	{
+		co_return ne::Result<void, ne::OsError>::Ok();
 	}
 
 	ne::Result<void, ne::OsError> SshStream::Close()

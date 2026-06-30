@@ -13,6 +13,14 @@ set(SOURCES
     Stream/SshStream.cpp
     Http/Http1/Client.cpp
     Http/Http1/Server.cpp
+    #Http/Http2/Hpack.cpp
+    #Http/Http2/Stream.cpp
+    #Http/Http2/FlowControl.cpp
+    #Http/Http2/Client.cpp
+    #Http/Http2/Server.cpp
+    Buffer/RawBuffer.cpp
+        Ftp/Client.cpp
+        Sftp/Client.cpp
 )
 
 if (UNIX)
@@ -29,15 +37,21 @@ endif()
 add_library(NebulaNetwork STATIC ${SOURCES})
 
 target_include_directories(NebulaNetwork PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}   # Network/ 루트 (NetworkType.h, IoEngine/, Socket/)
+    ${CMAKE_CURRENT_SOURCE_DIR}   # Network/ 루트
     ${BASE_DIR}                   # NebulaHandle.h, Result.h, Error.h, Type.h
 )
 
-target_link_libraries(NebulaNetwork PUBLIC NebulaBase)
+target_link_libraries(NebulaNetwork PUBLIC
+    NebulaBase
+    NebulaMemory
+    NebulaConcurrency
+    NebulaTime
+    NebulaIo
+)
 
 # ── Windows: SChannel ────────────────────────────────────────
 if (WIN32)
-    target_link_libraries(NebulaNetwork PRIVATE Ws2_32 Secur32)
+    target_link_libraries(NebulaNetwork PRIVATE Ws2_32 Secur32 Crypt32)
 endif()
 
 # ── POSIX: OpenSSL (TLS) ─────────────────────────────────────
@@ -54,3 +68,5 @@ if (TARGET libssh2::libssh2)
     target_compile_definitions(NebulaNetwork PRIVATE NEBULA_WITH_LIBSSH2)
     target_link_libraries(NebulaNetwork PRIVATE libssh2::libssh2)
 endif()
+
+add_subdirectory(Test)

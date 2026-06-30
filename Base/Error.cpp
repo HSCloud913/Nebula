@@ -77,4 +77,18 @@ BEGIN_NS(ne)
 #endif
 	}
 
+
+
+
+	/*--------------------------------------------------*/
+
+
+
+	HttpError::HttpError(const string_view_t _message)
+		: Error(_message) {}
+
+	HttpError::HttpError(const uint16_t _statusCode, const string_view_t _message)
+		: Error(_message)
+		, statusCode(_statusCode) {}
+
 END_NS

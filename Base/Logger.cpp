@@ -38,12 +38,12 @@ BEGIN_NS(ne)
 
 	LogLevel Logger::GetLogLevel() const
 	{
-		return logLevel;
+		return logLevel.load(std::memory_order_relaxed);
 	}
 
 	void_t Logger::SetLogLevel(const LogLevel& _logLevel)
 	{
-		logLevel = _logLevel;
+		logLevel.store(_logLevel, std::memory_order_relaxed);
 	}
 
 
@@ -147,7 +147,7 @@ BEGIN_NS(ne)
 
 	void_t Logger::Write(LogLevel _logLevel, const string_t& _message)
 	{
-		if (_logLevel < logLevel || !os.is_open()) return;
+		if (_logLevel < logLevel.load(std::memory_order_relaxed) || !os.is_open()) return;
 
 		std::lock_guard<std::mutex> lockGuard(mutex);
 
@@ -155,7 +155,9 @@ BEGIN_NS(ne)
 						GetDateTime(std::chrono::system_clock::now()),
 						LogLevelToString(_logLevel),
 						_message)
-		<< std::endl;
+		<< '\n';
+
+		if (_logLevel >= LogLevel::FATAL) os.flush();
 	}
 
 

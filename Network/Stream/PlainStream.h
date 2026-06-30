@@ -15,15 +15,13 @@ BEGIN_NS(ne::network)
 	class PlainStream final :public IStream
 	{
 	public:
+		PlainStream(PlainStream&& _other) noexcept;
+		PlainStream& operator=(PlainStream&& _other) noexcept;
+		virtual ~PlainStream() override = default;
 		NEBULA_NON_COPYABLE(PlainStream)
 
 	private:
 		explicit PlainStream(Socket&& _socket, IIoEngine& _engine) noexcept;
-
-	public:
-		PlainStream(PlainStream&& _other) noexcept;
-		PlainStream& operator=(PlainStream&& _other) noexcept;
-		~PlainStream() override = default;
 
 	public:
 		[[nodiscard]] static ne::Result<PlainStream, ne::OsError> Create(Socket&& _socket, IIoEngine& _engine) noexcept;
@@ -33,8 +31,10 @@ BEGIN_NS(ne::network)
 		IIoEngine* engine;
 
 	public:
+		virtual ne::Task<ne::Result<void, ne::OsError>> Handshake() override;
 		virtual Task<Result<std::size_t, OsError>> Send(std::span<const ne::byte_t> _data) override;
 		virtual Task<Result<std::size_t, OsError>> Receive(std::span<ne::byte_t> _data) override;
+		virtual ne::Task<ne::Result<void, ne::OsError>> Shutdown() override;
 		virtual Result<void, OsError> Close() override;
 
 	public:

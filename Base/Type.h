@@ -75,6 +75,10 @@ Class &operator=(const Class &) = delete;
 Class(Class &&) noexcept = delete; \
 Class &operator=(Class &&) noexcept = delete;
 
+#define NEBULA_DEFAULT_COPY_MOVE(Class) \
+NEBULA_DEFAULT_COPY(Class) \
+NEBULA_DEFAULT_MOVE(Class)
+
 #define NEBULA_NON_COPYABLE_MOVABLE(Class) \
 NEBULA_NON_COPYABLE(Class) \
 NEBULA_NON_MOVABLE(Class)

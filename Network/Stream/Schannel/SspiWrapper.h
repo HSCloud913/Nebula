@@ -21,24 +21,24 @@
 #include "Type.h"
 
 BEGIN_NS(ne::network)
-
-struct SspiWrapper
-{
-	[[nodiscard]] static PSecurityFunctionTableW Get() noexcept
+	struct SspiWrapper
 	{
-		static PSecurityFunctionTableW fn = []() noexcept -> PSecurityFunctionTableW
+		[[nodiscard]] static PSecurityFunctionTableW Get() noexcept
 		{
-			HMODULE h = ::LoadLibraryA("secur32.dll");
-			if (!h) return nullptr;
+			static PSecurityFunctionTableW function = []() noexcept -> PSecurityFunctionTableW
+			{
+				const HMODULE handle = ::LoadLibraryA("secur32.dll");
+				if (!handle) return nullptr;
 
-			using InitFn = PSecurityFunctionTableW(WINAPI*)();
-			auto* init = reinterpret_cast<InitFn>(
-				::GetProcAddress(h, "InitSecurityInterfaceW"));
-			return init ? init() : nullptr;
-		}();
-		return fn;
-	}
-};
+				using FunctionTable = PSecurityFunctionTableW(WINAPI*)();
+				auto* functionTable = reinterpret_cast<FunctionTable>(::GetProcAddress(handle, "InitSecurityInterfaceW"));
+
+				return functionTable ? functionTable() : nullptr;
+			}();
+
+			return function;
+		}
+	};
 
 END_NS
 #endif // _WIN32

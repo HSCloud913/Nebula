@@ -24,30 +24,29 @@ BEGIN_NS(ne::network)
 	// Receive → channel stdout
 	class SshStream final :public IStream
 	{
-	public:
-		NEBULA_NON_COPYABLE(SshStream)
-
-	private:
-		explicit SshStream(Socket&& _socket, IIoEngine& _engine,
-			void* _session, void* _channel) noexcept;
+		explicit SshStream(Socket&& _socket, IIoEngine& _engine, void* _session, void* _channel) noexcept;
 
 	public:
 		SshStream(SshStream&& _other) noexcept;
 		SshStream& operator=(SshStream&& _other) noexcept;
 		~SshStream() override;
-
-	public:
-		[[nodiscard]] static ne::Task<ne::Result<SshStream, ne::OsError>> Connect(Socket&& _socket, IIoEngine& _engine, const SshConfig& _config);
+		NEBULA_NON_COPYABLE(SshStream)
 
 	private:
 		Socket socket;
 		IIoEngine* engine;
+		SshConfig sshConfig;
 		void* session{};  // LIBSSH2_SESSION*
 		void* channel{};  // LIBSSH2_CHANNEL*
 
 	public:
+		[[nodiscard]] static ne::Task<ne::Result<SshStream, ne::OsError>> Connect(Socket&& _socket, IIoEngine& _engine, const SshConfig& _config);
+
+	public:
+		virtual ne::Task<ne::Result<void, ne::OsError>> Handshake() override;
 		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Send(std::span<const byte_t> _data) override;
 		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Receive(std::span<byte_t> _data) override;
+		virtual ne::Task<ne::Result<void, ne::OsError>> Shutdown() override;
 		virtual ne::Result<void, ne::OsError> Close() override;
 
 	public:
