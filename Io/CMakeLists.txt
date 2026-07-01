@@ -7,7 +7,6 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-
 set(HEADERS
         IoType.h
 
@@ -25,30 +24,32 @@ set(SOURCES
         File/MemoryMapFile.cpp
 )
 
-if(UNIX AND NOT APPLE)
+if (WIN32)
+    list(APPEND SOURCES Engine/Iocp/IocpEngine.cpp)
+elseif (UNIX AND NOT APPLE)
     list(APPEND SOURCES Engine/Epoll/EpollEngine.cpp)
     list(APPEND SOURCES Engine/IoUring/IoUringEngine.cpp)
-elseif(WIN32)
-    list(APPEND SOURCES Engine/Iocp/IocpEngine.cpp)
-endif()
+endif ()
 
-add_library(NebulaIo STATIC ${HEADERS} ${SOURCES})
-target_include_directories(NebulaIo PUBLIC
+add_library(${PROJECT_NAME} STATIC ${HEADERS} ${SOURCES})
+target_include_directories(${PROJECT_NAME} PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/Base
+        ${CMAKE_SOURCE_DIR}/Concurrency
+        ${CMAKE_SOURCE_DIR}/Time
 )
-target_link_libraries(NebulaIo PUBLIC NebulaBase NebulaTime NebulaConcurrency)
+target_link_libraries(${PROJECT_NAME} PUBLIC NebulaBase NebulaConcurrency NebulaTime)
 
-if(UNIX AND NOT APPLE)
+if (UNIX AND NOT APPLE)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(LIBURING REQUIRED liburing)
-    target_link_libraries(NebulaIo PUBLIC ${LIBURING_LIBRARIES})
-    target_include_directories(NebulaIo PUBLIC ${LIBURING_INCLUDE_DIRS})
-    target_link_libraries(NebulaIo PRIVATE pthread)
-elseif(UNIX)
-    target_link_libraries(NebulaIo PRIVATE pthread)
-endif()
+    target_link_libraries(${PROJECT_NAME} PUBLIC ${LIBURING_LIBRARIES})
+    target_include_directories(${PROJECT_NAME} PUBLIC ${LIBURING_INCLUDE_DIRS})
+endif ()
 
-if(TARGET GTest::gtest_main AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Test)
+target_link_libraries(${PROJECT_NAME} PRIVATE pthread)
+
+
+if (TARGET GTest::gtest_main AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Test)
     add_subdirectory(Test)
-endif()
+endif ()

@@ -2,11 +2,15 @@
 // Created by hscloud on 25. 6. 29.
 //
 
-#if defined(IS_POSIX)
 #include "EpollEngine.h"
+
+#if defined(IS_POSIX)
 #include <cerrno>
 #include <sys/epoll.h>
-#include "TimerWheel.h"
+#include <sys/socket.h>
+#include "Timer/TimerWheel.h"
+
+
 
 BEGIN_NS(ne::io)
 	static constexpr int MaxEvents = 64;
@@ -81,6 +85,65 @@ BEGIN_NS(ne::io)
 
 		if (timerWheel) timerWheel->Tick();
 		return ne::Result<void, ne::OsError>::Ok();
+	}
+
+
+
+	// Proactor 에뮬레이션: epoll Read/Write 이벤트 대기 후 recv/send 를 내부에서 처리.
+	// 호출자(PlainStream)는 Proactor 인터페이스만 사용 — 2단계 syscall 은 이 함수 내부에 감춰진다.
+
+	ne::Result<void, ne::OsError> EpollEngine::SubmitRecv(
+		const socket_t _fd, void* _buf, const std::size_t _len, IoCtx* _ctx) noexcept
+	{
+		return Watch(_fd, IoEvent::Read | IoEvent::HangUp,
+			[this, _fd, _buf, _len, _ctx](socket_t _f, const uint32_t _events)
+			{
+				(void)Unwatch(_f);
+
+				if (_events & IoEvent::Error)
+				{
+					_ctx->result = ne::Result<std::size_t, ne::OsError>::Error(
+						ne::OsError{ static_cast<ne::ulong_t>(errno) }.Context("[EpollEngine/SubmitRecv]"));
+				}
+				else
+				{
+					const ssize_t n = ::recv(_fd, _buf, _len, 0);
+					if (n < 0)
+						_ctx->result = ne::Result<std::size_t, ne::OsError>::Error(
+							ne::OsError{ static_cast<ne::ulong_t>(errno) }.Context("[EpollEngine/SubmitRecv]"));
+					else
+						_ctx->result = ne::Result<std::size_t, ne::OsError>::Ok(static_cast<std::size_t>(n));
+				}
+
+				if (_ctx->handle && !_ctx->handle.done()) _ctx->handle.resume();
+			});
+	}
+
+	ne::Result<void, ne::OsError> EpollEngine::SubmitSend(
+		const socket_t _fd, const void* _buf, const std::size_t _len, IoCtx* _ctx) noexcept
+	{
+		return Watch(_fd, IoEvent::Write | IoEvent::Error,
+			[this, _fd, _buf, _len, _ctx](socket_t _f, const uint32_t _events)
+			{
+				(void)Unwatch(_f);
+
+				if (_events & IoEvent::Error)
+				{
+					_ctx->result = ne::Result<std::size_t, ne::OsError>::Error(
+						ne::OsError{ static_cast<ne::ulong_t>(errno) }.Context("[EpollEngine/SubmitSend]"));
+				}
+				else
+				{
+					const ssize_t n = ::send(_fd, _buf, _len, MSG_NOSIGNAL);
+					if (n < 0)
+						_ctx->result = ne::Result<std::size_t, ne::OsError>::Error(
+							ne::OsError{ static_cast<ne::ulong_t>(errno) }.Context("[EpollEngine/SubmitSend]"));
+					else
+						_ctx->result = ne::Result<std::size_t, ne::OsError>::Ok(static_cast<std::size_t>(n));
+				}
+
+				if (_ctx->handle && !_ctx->handle.done()) _ctx->handle.resume();
+			});
 	}
 
 

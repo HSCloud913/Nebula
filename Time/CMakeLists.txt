@@ -1,31 +1,28 @@
 cmake_minimum_required(VERSION 3.28)
-project(NebulaTime VERSION 1.0.0.0 LANGUAGES CXX)
+project(NebulaTime
+        VERSION 1.0.0.0
+        LANGUAGES CXX)
+
+set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_library(NebulaTime STATIC
-    TimerWheel.cpp
-)
-target_include_directories(NebulaTime PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/../Base
+set(HEADERS
+        Timer/Awaitable.h
+        Timer/TimerWheel.h
 )
 
-if(PROJECT_IS_TOP_LEVEL)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../Base ${CMAKE_CURRENT_BINARY_DIR}/_Base)
-    include(FetchContent)
-    FetchContent_Declare(
-        googletest
-        GIT_REPOSITORY https://github.com/google/googletest.git
-        GIT_TAG        v1.15.2
-    )
-    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-    FetchContent_MakeAvailable(googletest)
-    enable_testing()
-endif()
+set(SOURCES
+        Timer/TimerWheel.cpp
+)
 
-target_link_libraries(NebulaTime PUBLIC NebulaBase)
+add_library(${PROJECT_NAME} STATIC ${HEADERS} ${SOURCES})
+target_include_directories(${PROJECT_NAME} PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/Base)
+target_link_libraries(NebulaUtil PUBLIC NebulaBase)
 
-if(TARGET GTest::gtest_main)
+
+if(TARGET GTest::gtest_main AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Test)
     add_subdirectory(Test)
 endif()

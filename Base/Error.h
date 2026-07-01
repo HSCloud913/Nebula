@@ -7,6 +7,7 @@
 #include "Type.h"
 
 #if defined(_WIN32)
+#	include <windef.h>
 #	include <errhandlingapi.h>
 #	include <winbase.h>
 #elif defined(IS_POSIX)

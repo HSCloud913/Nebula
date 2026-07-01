@@ -18,31 +18,39 @@ BEGIN_NS(ne::network)
 	PlainStream::PlainStream(PlainStream&& _other) noexcept
 		: socket(std::move(_other.socket))
 		, engine(_other.engine)
-		, allocator(_other.allocator) {}
+		, allocator(_other.allocator)
+		, ioMode(_other.ioMode) {}
 
 	PlainStream& PlainStream::operator=(PlainStream&& _other) noexcept
 	{
 		if (this != &_other)
 		{
-			socket = std::move(_other.socket);
-			engine = _other.engine;
+			socket    = std::move(_other.socket);
+			engine    = _other.engine;
 			allocator = _other.allocator;
+			ioMode    = _other.ioMode;
 		}
 		return *this;
 	}
 
-	PlainStream::PlainStream(Socket&& _socket, ne::io::IIoEngine& _engine, ne::memory::IAllocator* _allocator) noexcept
+	PlainStream::PlainStream(Socket&& _socket, ne::io::Engine& _engine,
+	                         ne::memory::IAllocator* _allocator, const IoMode _mode) noexcept
 		: socket(std::move(_socket))
 		, engine(&_engine)
-		, allocator(_allocator) {}
+		, allocator(_allocator)
+		, ioMode(_mode) {}
 
 
 
-	ne::Result<PlainStream, ne::OsError> PlainStream::Create(Socket&& _socket, ne::io::IIoEngine& _engine, ne::memory::IAllocator* _allocator) noexcept
+	ne::Result<PlainStream, ne::OsError> PlainStream::Create(
+		Socket&& _socket, ne::io::Engine& _engine,
+		ne::memory::IAllocator* _allocator, const IoMode _mode) noexcept
 	{
-		if (!_socket.IsValid()) return ne::Result<PlainStream, ne::OsError>::Error(ne::OsError{ 0, "socket is not valid" });
+		if (!_socket.IsValid())
+			return ne::Result<PlainStream, ne::OsError>::Error(ne::OsError{ 0, "socket is not valid" });
 
-		return ne::Result<PlainStream, ne::OsError>::Ok(PlainStream{ std::move(_socket), _engine, _allocator });
+		return ne::Result<PlainStream, ne::OsError>::Ok(
+			PlainStream{ std::move(_socket), _engine, _allocator, _mode });
 	}
 
 
@@ -56,6 +64,14 @@ BEGIN_NS(ne::network)
 	{
 		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "stream is closed" });
 
+		if (ioMode == IoMode::Proactor)
+		{
+			co_return co_await ne::io::SocketSendAwaitable{
+				*engine, socket.Handle(),
+				_data.Span().data(), _data.Span().size() };
+		}
+
+		// Reactor 경로: poll + send
 		if (auto ready = co_await ne::io::SendAwaitable{ socket.Handle(), *engine }; ready.IsError())
 			co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(ready.Error()));
 
@@ -106,6 +122,13 @@ BEGIN_NS(ne::network)
 	{
 		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "stream is closed" });
 
+		if (ioMode == IoMode::Proactor)
+		{
+			co_return co_await ne::io::SocketRecvAwaitable{
+				*engine, socket.Handle(), _data.ptr, _data.length };
+		}
+
+		// Reactor 경로: poll + recv
 		if (auto ready = co_await ne::io::RecvAwaitable{ socket.Handle(), *engine }; ready.IsError())
 			co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(ready.Error()));
 

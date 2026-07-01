@@ -66,7 +66,7 @@ TEST(TimerEngineIntegrationTest, NextExpiryMsReturnsZeroForOverdueTimer)
 #include <atomic>
 #include <chrono>
 #include "Engine/Iocp/IocpEngine.h"
-#include "TimerWheel.h"
+#include "../../Time/Timer/TimerWheel.h"
 
 using namespace ne::time;
 using namespace ne::io;

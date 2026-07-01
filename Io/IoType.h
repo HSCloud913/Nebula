@@ -20,7 +20,7 @@ END_NS
 #   include <sys/socket.h>
 
 BEGIN_NS(ne::io)
-	using file_t = int;
+	using file_t = int_t;
 	using socket_t = int_t;
 	inline constexpr file_t InvalidFile = -1;
 	inline constexpr socket_t InvalidSocket = -1;

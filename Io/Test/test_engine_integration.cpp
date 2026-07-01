@@ -322,6 +322,7 @@ TEST(IoEngineIntegration, IocpResumeInRunOnceThread)
         << "handle.resume() must be called from the RunOnce() thread";
     EXPECT_EQ(rbuf[0], static_cast<ne::byte_t>(0xCA));
 
+    (void)file.Close();
     fs::remove(path);
 }
 
@@ -380,6 +381,7 @@ TEST(IoEngineIntegration, IocpSocketAndFileConcurrent)
     EXPECT_TRUE(fileDone.load()) << "File read must complete";
     EXPECT_GT(socketFired.load(), 0) << "Socket event must have fired";
 
+    (void)file.Close();
     ::closesocket(s1);
     ::closesocket(s2);
     fs::remove(path);

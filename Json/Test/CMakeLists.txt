@@ -9,7 +9,7 @@ add_executable(${PROJECT_NAME}
         test.cpp
         test_json.cpp
 )
-target_link_libraries(${PROJECT_NAME} NebulaBase NebulaJson gtest gtest_main)
+target_link_libraries(${PROJECT_NAME} PRIVATE NebulaBase NebulaJson GTest::gtest_main)
 
 
 include(GoogleTest)

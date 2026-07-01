@@ -190,5 +190,6 @@ TEST(AsyncFileTest, TrueAsyncRead)
     EXPECT_TRUE(aResult.IsOk());
     EXPECT_EQ(rbuf[0], static_cast<ne::byte_t>(0xAB));
 
+    (void)file.Close();
     fs::remove(path);
 }

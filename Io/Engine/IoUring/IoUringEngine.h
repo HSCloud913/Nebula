@@ -6,40 +6,32 @@
 #if defined(IS_POSIX)
 
 #include <coroutine>
-#include <thread>
-#include <atomic>
 #include <unordered_map>
 #include <liburing.h>
 #include "Engine/IIoEngine.h"
-#include "Queue/MpscQueue.h"
-#include "Handle.h"
 #include "Result.h"
 #include "Error.h"
 #include "Type.h"
 
 BEGIN_NS(ne::io)
-	// 파일 I/O 완료 컨텍스트. FileReadAwaitable / FileWriteAwaitable 이 소유.
-	struct FileIoCtx
-	{
-		std::coroutine_handle<>              handle;
-		ne::Result<std::size_t, ne::OsError> result{ ne::Result<std::size_t, ne::OsError>::Ok(0) };
-	};
-
-	// Linux io_uring + epoll 기반 통합 I/O 엔진.
+	// Linux io_uring 단일 경로 통합 I/O 엔진.
 	//
-	// 소켓 이벤트 (IIoEngine — reactor):
-	//   Watch/Unwatch → 내부 epollFd 에 등록/해제
-	//   RunOnce       → epoll_wait → 소켓 콜백 디스패치
-	//                             → completionEventFd 수신 시 DrainCompletions()
+	// 소켓 Reactor (IIoEngine — POLL_ADD):
+	//   Watch   → IORING_OP_POLL_ADD SQE 제출 (one-shot)
+	//   Unwatch → IORING_OP_POLL_REMOVE SQE 제출 (best-effort)
 	//
-	// 파일 I/O (proactor):
-	//   SubmitRead/SubmitWrite → io_uring SQE 제출
-	//   ThreadLoop            → CQE 처리 → completionQueue 에 handle 적재
-	//                         → completionEventFd 에 신호
-	//   DrainCompletions()    → RunOnce 스레드에서 handle.resume() 호출
+	// 소켓 Proactor (IIoEngine — RECV/SEND):
+	//   SubmitRecv/SubmitSend → IORING_OP_RECV/SEND, user_data = IoCtx*
 	//
-	// 모든 코루틴 resume 은 RunOnce() 호출 스레드에서 발생함이 보장된다.
-	class IoUringEngine final : public IIoEngine
+	// 파일 Proactor (IIoEngine 외부 — AsyncFile 전용):
+	//   SubmitRead/SubmitWrite → IORING_OP_READ/WRITE, user_data = IoCtx*
+	//
+	// RunOnce: io_uring_wait_cqe_timeout → io_uring_peek_batch_cqe → CQE 분류:
+	//   user_data bit63=1  → 소켓 POLL_ADD CQE → watches 맵 조회 후 콜백 디스패치
+	//   user_data bit63=0  → IoCtx* (소켓 proactor or 파일) → result 저장 → handle.resume()
+	//
+	// x86-64 사용자 공간 주소는 최대 2^47 이므로 비트 47 이상은 항상 0.
+	class IoUringEngine final : public IIoEngine<>
 	{
 		NEBULA_NON_COPYABLE_MOVABLE(IoUringEngine)
 
@@ -50,54 +42,57 @@ BEGIN_NS(ne::io)
 	private:
 		struct WatchEntry
 		{
+			uint32_t   generation{};
 			uint32_t   events{};
 			IoCallback callback;
 		};
 
-		using EpollFdHandle = ne::Handle<
-			int_t,
-			decltype([](const int_t _fd) { ::close(_fd); }),
-			-1
-		>;
+		// user_data 구분 태그:
+		//   비트 63 = 1  → 소켓 POLL_ADD CQE  (MakePollUserData 인코딩)
+		//   비트 63 = 0  → IoCtx* (소켓 proactor recv/send 또는 파일 read/write)
+		static constexpr uint64_t kSocketPollTag = 1ULL << 63;
 
-		// 파일 I/O용 io_uring
-		io_uring            ring{};
-		bool_t              valid{ false };
-		std::thread         thread;
-		std::atomic<bool_t> running{ false };
+		io_uring ring{};
+		bool_t   valid{ false };
 
-		// 소켓 이벤트용 epoll
-		EpollFdHandle                            epollFd;
 		std::unordered_map<socket_t, WatchEntry> watches;
-
-		// io_uring CQE 스레드 → RunOnce 스레드 브릿지
-		ne::concurrency::MpscQueue<std::coroutine_handle<>> completionQueue;
-		int completionEventFd{ -1 };
+		uint32_t                                 nextGeneration{ 0 };
 
 		ne::time::TimerWheel* timerWheel{ nullptr };
 
 	public:
 		[[nodiscard]] bool_t IsValid() const noexcept { return valid; }
 
-		// ── Proactor (파일 I/O) ───────────────────────────────────────────────
+		// ── Proactor: 파일 I/O (IIoEngine 외부 — AsyncFile 전용) ─────────────
 		[[nodiscard]] ne::Result<void, ne::OsError>
-			SubmitRead(int _fd, void* _buf, std::size_t _len, std::size_t _offset, FileIoCtx* _ctx) noexcept;
+			SubmitRead(int _fd, void* _buf, std::size_t _len, std::size_t _offset, IoCtx* _ctx) noexcept;
 
 		[[nodiscard]] ne::Result<void, ne::OsError>
-			SubmitWrite(int _fd, const void* _buf, std::size_t _len, std::size_t _offset, FileIoCtx* _ctx) noexcept;
+			SubmitWrite(int _fd, const void* _buf, std::size_t _len, std::size_t _offset, IoCtx* _ctx) noexcept;
 
-		// ── IIoEngine: Reactor (소켓) + 이벤트 루프 구동 ─────────────────────
+		// ── IIoEngine<>: Reactor (POLL_ADD) ─────────────────────────────────
 		[[nodiscard]] ne::Result<void, ne::OsError> Watch(socket_t _fd, uint32_t _events, IoCallback _cb) override;
 		[[nodiscard]] ne::Result<void, ne::OsError> Unwatch(socket_t _fd) override;
+
+		// ── IIoEngine<>: Proactor (소켓 RECV/SEND) ───────────────────────────
+		[[nodiscard]] ne::Result<void, ne::OsError> SubmitRecv(socket_t _fd, void* _buf, std::size_t _len, IoCtx* _ctx) noexcept override;
+		[[nodiscard]] ne::Result<void, ne::OsError> SubmitSend(socket_t _fd, const void* _buf, std::size_t _len, IoCtx* _ctx) noexcept override;
+
+		// ── IIoEngine<>: 공통 ────────────────────────────────────────────────
 		[[nodiscard]] ne::Result<void, ne::OsError> RunOnce(ne::int_t _timeoutMs = -1) override;
 		void SetTimerWheel(ne::time::TimerWheel* _wheel) noexcept override { timerWheel = _wheel; }
 
 	private:
-		void ThreadLoop();
-		void DrainCompletions() noexcept;
+		void ProcessCqe(io_uring_cqe* _cqe) noexcept;
 
-		static uint32_t ToEpollEvents(uint32_t _events) noexcept;
-		static uint32_t FromEpollEvents(uint32_t _events) noexcept;
+		// user_data 인코딩: [63] kSocketPollTag | [32-62] generation | [0-31] fd
+		[[nodiscard]] static uint64_t MakePollUserData(socket_t _fd, uint32_t _gen) noexcept;
+		[[nodiscard]] static socket_t GetPollFd(uint64_t _userData) noexcept;
+		[[nodiscard]] static uint32_t GetPollGen(uint64_t _userData) noexcept;
+		[[nodiscard]] static bool_t   IsSocketPoll(uint64_t _userData) noexcept;
+
+		static uint32_t ToPollEvents(uint32_t _events) noexcept;
+		static uint32_t FromPollEvents(uint32_t _events) noexcept;
 	};
 END_NS
 
