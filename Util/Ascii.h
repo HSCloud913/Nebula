@@ -2,9 +2,7 @@
 // Created by nebula on 24. 5. 17.
 //
 
-#ifndef NEBULA_ASCII_H
-#define NEBULA_ASCII_H
-
+#pragma once
 #include <algorithm>
 #include <ranges>
 #include "Type.h"
@@ -143,5 +141,3 @@ BEGIN_NS(ne)
 	}
 
 END_NS
-
-#endif //NEBULA_ASCII_H

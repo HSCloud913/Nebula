@@ -1,23 +1,28 @@
-#ifndef NEBULA_HMAC_H
-#define NEBULA_HMAC_H
-
+#pragma once
 #include "Type.h"
-#include "Hash/Factory/HashFactory.h"
+#include "Hash/Hash.h"
 
-BEGIN_NS(ne::cryptography)
+BEGIN_NS(ne::crypto)
+	class HMACKey final
+	{
+	private:
+		explicit HMACKey(HashType _type, string_t&& _ipad, string_t&& _opad) noexcept;
 
-class HMAC final
-{
-	NEBULA_NON_COPYABLE_MOVABLE(HMAC)
+	public:
+		~HMACKey() = default;
 
-private:
-	explicit HMAC() = default;
-	~HMAC() = default;
+		NEBULA_NON_COPYABLE_MOVABLE(HMACKey)
 
-public:
-	static string_t Compute(HashType _type, string_t&& _key, string_t&& _message);
-};
+	private:
+		HashType type;
+		string_t ipad;
+		string_t opad;
+
+	public:
+		[[nodiscard]] static HMACKey Create(HashType _type, string_t&& _key);
+
+	public:
+		[[nodiscard]] string_t Generate(string_t&& _message) const;
+	};
 
 END_NS
-
-#endif //NEBULA_HMAC_H

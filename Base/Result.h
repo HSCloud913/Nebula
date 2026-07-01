@@ -18,17 +18,16 @@ BEGIN_NS(ne)
 	template <typename T, typename E = ne::Error>
 	class Result
 	{
-	private:
 		static_assert(!std::is_same_v<T, void>, "void result must use Result<void, E> specialization");
 		static_assert(!std::is_same_v<T, E>, "value type and error type must differ");
-
-	public:
-		NEBULA_DEFAULT_COPY(Result)
-		NEBULA_DEFAULT_MOVE(Result)
 
 	private:
 		explicit Result(T _value) : storage(std::move(_value)) {}
 		explicit Result(E _error) : storage(std::move(_error)) {}
+
+	public:
+		NEBULA_DEFAULT_COPY(Result)
+		NEBULA_DEFAULT_MOVE(Result)
 
 	private:
 		std::variant<T, E> storage;
@@ -67,13 +66,13 @@ BEGIN_NS(ne)
 	template <typename E>
 	class Result<void, E>
 	{
-	public:
-		NEBULA_DEFAULT_COPY(Result)
-		NEBULA_DEFAULT_MOVE(Result)
-
 	private:
 		Result() = default;
 		explicit Result(E _error) : errorStorage(std::move(_error)) {}
+
+	public:
+		NEBULA_DEFAULT_COPY(Result)
+		NEBULA_DEFAULT_MOVE(Result)
 
 	private:
 		std::optional<E> errorStorage;

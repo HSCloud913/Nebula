@@ -7,6 +7,7 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+
 set(SOURCES
         Pipe.cpp
         SharedMemory.cpp
@@ -15,16 +16,22 @@ set(SOURCES
 )
 
 add_library(${PROJECT_NAME} STATIC ${HEADERS} ${SOURCES})
-target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/Base)
-target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/Ipc)
-target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/Network)
+target_include_directories(${PROJECT_NAME} PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/Base
+        ${CMAKE_SOURCE_DIR}/Util
+        ${CMAKE_SOURCE_DIR}/Io)
+target_link_libraries(${PROJECT_NAME} PUBLIC NebulaBase NebulaUtil NebulaIo)
 
 if (WIN32)
-    target_sources(${PROJECT_NAME} PRIVATE ${WINDOWS_HEADERS} ${WINDOWS_SOURCES})
-    target_link_libraries(${PROJECT_NAME} PRIVATE Ws2_32 crypt32 bcrypt NebulaBase)
+    target_link_libraries(${PROJECT_NAME} PRIVATE Ws2_32 crypt32 bcrypt)
 else ()
     find_package(OpenSSL REQUIRED)
-    target_link_libraries(${PROJECT_NAME} PRIVATE pthread rt NebulaBase)
+
+    target_link_libraries(${PROJECT_NAME} PRIVATE pthread rt)
 endif ()
 
-add_subdirectory(Test)
+
+if(TARGET GTest::gtest_main AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Test)
+    add_subdirectory(Test)
+endif()

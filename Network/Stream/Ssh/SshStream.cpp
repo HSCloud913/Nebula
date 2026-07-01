@@ -3,7 +3,7 @@
 //
 
 #include "SshStream.h"
-#include "IoEngine/Awaitable.h"
+#include "Engine/Awaitable.h"
 #include <utility>
 
 #ifdef NEBULA_WITH_LIBSSH2
@@ -30,16 +30,16 @@ BEGIN_NS(ne::network)
 		return error;
 	}
 
-	static ne::Task<ne::Result<void, ne::OsError>> WaitSocket(const socket_t _fd, IIoEngine& _engine, LIBSSH2_SESSION* _session)
+	static ne::Task<ne::Result<void, ne::OsError>> WaitSocket(const socket_t _fd, ne::io::IIoEngine& _engine, LIBSSH2_SESSION* _session)
 	{
 		const int dir = libssh2_session_block_directions(_session);
 		if (dir & LIBSSH2_SESSION_BLOCK_INBOUND)
 		{
-			if (auto result = co_await RecvAwaitable{ _fd, _engine }; result.IsError()) co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
+			if (auto result = co_await ne::io::RecvAwaitable{ _fd, _engine }; result.IsError()) co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
 		}
 		if (dir & LIBSSH2_SESSION_BLOCK_OUTBOUND)
 		{
-			if (auto result = co_await SendAwaitable{ _fd, _engine }; result.IsError()) co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
+			if (auto result = co_await ne::io::SendAwaitable{ _fd, _engine }; result.IsError()) co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
 		}
 
 		co_return ne::Result<void, ne::OsError>::Ok();
@@ -47,7 +47,7 @@ BEGIN_NS(ne::network)
 
 
 
-	SshStream::SshStream(Socket&& _socket, IIoEngine& _engine, void* _session, void* _channel, ne::memory::IAllocator* _allocator) noexcept
+	SshStream::SshStream(Socket&& _socket, ne::io::IIoEngine& _engine, void* _session, void* _channel, ne::memory::IAllocator* _allocator) noexcept
 		: socket(std::move(_socket))
 		, engine(&_engine)
 		, allocator(_allocator)
@@ -94,7 +94,7 @@ BEGIN_NS(ne::network)
 
 
 
-	ne::Task<ne::Result<SshStream, ne::OsError>> SshStream::Connect(Socket&& _socket, IIoEngine& _engine, const SshConfig& _config, ne::memory::IAllocator* _allocator)
+	ne::Task<ne::Result<SshStream, ne::OsError>> SshStream::Connect(Socket&& _socket, ne::io::IIoEngine& _engine, const SshConfig& _config, ne::memory::IAllocator* _allocator)
 	{
 		libssh2_init(0);
 
@@ -381,14 +381,14 @@ BEGIN_NS(ne::network)
 
 
 
-	SshStream::SshStream(Socket&&, IIoEngine&, void*, void*, ne::memory::IAllocator*) noexcept {}
+	SshStream::SshStream(Socket&&, ne::io::IIoEngine&, void*, void*, ne::memory::IAllocator*) noexcept {}
 	SshStream::SshStream(SshStream&&) noexcept = default;
 	SshStream& SshStream::operator=(SshStream&&) noexcept = default;
 	SshStream::~SshStream() = default;
 
 
 
-	ne::Task<ne::Result<SshStream, ne::OsError>> SshStream::Connect(Socket&&, IIoEngine&, const SshConfig&, ne::memory::IAllocator*)
+	ne::Task<ne::Result<SshStream, ne::OsError>> SshStream::Connect(Socket&&, ne::io::IIoEngine&, const SshConfig&, ne::memory::IAllocator*)
 	{
 		co_return ne::Result<SshStream, ne::OsError>::Error(NoLibssh2("[SshStream/Connect]"));
 	}

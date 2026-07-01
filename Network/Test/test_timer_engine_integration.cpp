@@ -4,11 +4,11 @@
 
 #include <atomic>
 #include <chrono>
-#include "IoEngine/EpollEngine.h"
+#include "Engine/Epoll/EpollEngine.h"
 #include "TimerWheel.h"
 
 using namespace ne::time;
-using namespace ne::network;
+using namespace ne::io;
 
 TEST(TimerEngineIntegrationTest, TimerFiresWithoutSocketEvents)
 {
@@ -65,11 +65,11 @@ TEST(TimerEngineIntegrationTest, NextExpiryMsReturnsZeroForOverdueTimer)
 
 #include <atomic>
 #include <chrono>
-#include "IoEngine/IocpEngine.h"
+#include "Engine/Iocp/IocpEngine.h"
 #include "TimerWheel.h"
 
 using namespace ne::time;
-using namespace ne::network;
+using namespace ne::io;
 
 TEST(TimerEngineIntegrationTest, TimerFiresWithoutSocketEvents)
 {

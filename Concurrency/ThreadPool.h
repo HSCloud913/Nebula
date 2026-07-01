@@ -3,7 +3,6 @@
 //
 
 #pragma once
-
 #include <condition_variable>
 #include <functional>
 #include <future>
@@ -17,7 +16,7 @@ BEGIN_NS(ne)
 	{
 	public:
 		explicit ThreadPool(size_t _count);
-		~ThreadPool();
+		~ThreadPool() { Shutdown(); }
 
 	private:
 		std::vector<std::thread> threads;
@@ -28,7 +27,7 @@ BEGIN_NS(ne)
 		bool_t isShutdown;
 
 	public:
-		template<typename F>
+		template <typename F>
 		std::future<std::invoke_result_t<F>> Enqueue(F&& _job)
 		{
 			using R = std::invoke_result_t<F>;

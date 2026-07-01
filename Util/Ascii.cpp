@@ -5,6 +5,7 @@
 #include "Ascii.h"
 
 
+
 BEGIN_NS(ne)
     const int_t Ascii::CharProperties[128] =
         {

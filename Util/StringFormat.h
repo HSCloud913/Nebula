@@ -2,16 +2,12 @@
 // Created by nebula on 24. 5. 17.
 //
 
-#ifndef NEBULA_STRINGFORMAT_H
-#define NEBULA_STRINGFORMAT_H
-
+#pragma once
 #include <cstring>
 #include <vector>
 #include <memory>
 #if defined(_WIN32)
 #	include <Windows.h>
-#elif defined(IS_POSIX)
-
 #endif
 #include "Ascii.h"
 
@@ -31,25 +27,25 @@ BEGIN_NS(ne)
 
 	public:
 		template <class T>
-        inline static T Trim(const T& _source);
+		inline static T Trim(const T& _source);
 		template <class T>
-        inline static T& TrimInPlace(T& _source);
+		inline static T& TrimInPlace(T& _source);
 
 		template <class T>
-        inline static T TrimLeft(const T& _source);
+		inline static T TrimLeft(const T& _source);
 		template <class T>
-        inline static T& TrimLeftInPlace(T& _source);
+		inline static T& TrimLeftInPlace(T& _source);
 
 		template <class T>
-        inline static T TrimRight(const T& _source);
+		inline static T TrimRight(const T& _source);
 		template <class T>
-        inline static T& TrimRightInPlace(T& _source);
+		inline static T& TrimRightInPlace(T& _source);
 
 	public:
 		template <class T>
-        inline static T Lower(const T& _source);
+		inline static T Lower(const T& _source);
 		template <class T>
-        inline static T& LowerInPlace(T& _source);
+		inline static T& LowerInPlace(T& _source);
 
 		template <class T>
 		static T Upper(const T& _source);
@@ -58,42 +54,42 @@ BEGIN_NS(ne)
 
 	public:
 		template <class T>
-        inline static T Replace(T& _source, const T& _from, const T& _to, typename T::size_type _start = 0);
+		inline static T Replace(T& _source, const T& _from, const T& _to, typename T::size_type _start = 0);
 		template <class T>
-        inline static T Replace(T& _source, const typename T::value_type* _from, const typename T::value_type* _to, typename T::size_type _start = 0);
+		inline static T Replace(T& _source, const typename T::value_type* _from, const typename T::value_type* _to, typename T::size_type _start = 0);
 
 		template <class T>
-        inline static T& ReplaceInPlace(T& _source, const T& _from, const T& _to, typename T::size_type _start = 0);
+		inline static T& ReplaceInPlace(T& _source, const T& _from, const T& _to, typename T::size_type _start = 0);
 		template <class T>
-        inline static T& ReplaceInPlace(T& _source, const typename T::value_type* _from, const typename T::value_type* _to, typename T::size_type _start = 0);
-
-	public:
-		template <class T>
-        inline static int_t Compare(const T& _lhs, const T& _rhs);
-		template <class T>
-        inline static int_t CompareIgnoreCase(const T& _lhs, const T& _rhs);
+		inline static T& ReplaceInPlace(T& _source, const typename T::value_type* _from, const typename T::value_type* _to, typename T::size_type _start = 0);
 
 	public:
 		template <class T>
-        inline static bool_t Tokenize(const T& _source, const T& _separators, std::vector<T>& _tokens, TokenizeOption _option = TokenizeOption::NONE);
+		inline static int_t Compare(const T& _lhs, const T& _rhs);
+		template <class T>
+		inline static int_t CompareIgnoreCase(const T& _lhs, const T& _rhs);
 
 	public:
-        inline static constexpr auto LowerCaseTransform = std::views::transform([](const char_t _c)
+		template <class T>
+		inline static bool_t Tokenize(const T& _source, const T& _separators, std::vector<T>& _tokens, TokenizeOption _option = TokenizeOption::NONE);
+
+	public:
+		inline static constexpr auto LowerCaseTransform = std::views::transform([](const char_t _c)
 		{
 			return static_cast<char_t>(std::tolower(static_cast<byte_t>(_c)));
 		});
 
-        inline static constexpr auto UpperCaseTransform = std::views::transform([](const char_t _c)
+		inline static constexpr auto UpperCaseTransform = std::views::transform([](const char_t _c)
 		{
 			return static_cast<char_t>(std::toupper(static_cast<byte_t>(_c)));
 		});
 
-        inline static constexpr auto LowerCaseWideTransform = std::views::transform([](const wchar_t _c)
+		inline static constexpr auto LowerCaseWideTransform = std::views::transform([](const wchar_t _c)
 		{
 			return static_cast<wchar_t>(std::towlower(static_cast<ushort_t>(_c)));
 		});
 
-        inline static constexpr auto UpperCaseWideTransform = std::views::transform([](const wchar_t _c)
+		inline static constexpr auto UpperCaseWideTransform = std::views::transform([](const wchar_t _c)
 		{
 			return static_cast<wchar_t>(std::towupper(static_cast<ushort_t>(_c)));
 		});
@@ -105,6 +101,7 @@ BEGIN_NS(ne)
 		inline static constexpr bool_t EqualCaseInsensitive(wstring_view_t _lhs, wstring_view_t _rhs) noexcept;
 
 #if defined(_WIN32)
+
 	public:
 		inline static string_t WCStoMBCS(const wchar_t* _wcs);
 		inline static string_t WCStoUTF8(const wchar_t* _wcs);
@@ -204,7 +201,6 @@ BEGIN_NS(ne)
 	template <class T>
 	T& StringFormat::TrimRightInPlace(T& _source)
 	{
-
 		int_t pos = static_cast<int_t>(_source.size()) - 1;
 
 		while (pos >= 0 && Ascii::IsSpace(_source[pos]))
@@ -335,7 +331,7 @@ BEGIN_NS(ne)
 		result.append(_source, 0, _start);
 
 		typename T::size_type pos = 0;
-        typename T::size_type length = std::char_traits<typename T::value_type>::length(_from);
+		typename T::size_type length = std::char_traits<typename T::value_type>::length(_from);
 
 		do
 		{
@@ -345,7 +341,6 @@ BEGIN_NS(ne)
 				result.append(_source, _start, pos - _start);
 				result.append(_to);
 				_start = pos + length;
-
 			}
 			else
 			{
@@ -564,5 +559,3 @@ BEGIN_NS(ne)
 #endif
 
 END_NS
-
-#endif //NEBULA_STRINGFORMAT_H

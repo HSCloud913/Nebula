@@ -2,15 +2,14 @@
 // Created by hscloud on 24. 5. 19.
 //
 
-#ifndef NEBULA_TYPE_H
-#define NEBULA_TYPE_H
-
+#pragma once
 #include <string>
-#include <type_traits>
 
 /* OS */
 #if _WIN32
-//define something for Windows (32-bit and 64-bit, this part is common)
+#	ifndef WIN32_LEAN_AND_MEAN
+#		define WIN32_LEAN_AND_MEAN
+#	endif
 #	ifdef _WIN64
 //define something for Windows (64-bit only)
 #	endif
@@ -119,5 +118,3 @@ BEGIN_NS(ne)
 	typedef void void_t;
 
 END_NS
-
-#endif //NEBULA_TYPE_H

@@ -34,8 +34,7 @@ BEGIN_NS(ne)
 					try
 					{
 						job();
-					}
-					catch (...)
+					} catch (...)
 					{
 						// A job's exception must not escape the thread's top-level function:
 						// doing so would call std::terminate() and bring down the whole process.
@@ -43,11 +42,6 @@ BEGIN_NS(ne)
 				}
 			});
 		}
-	}
-
-	ThreadPool::~ThreadPool()
-	{
-		Shutdown();
 	}
 
 
@@ -65,8 +59,7 @@ BEGIN_NS(ne)
 
 		for (auto& thread : threads)
 		{
-			if (thread.joinable())
-				thread.join();
+			if (thread.joinable()) thread.join();
 		}
 	}
 

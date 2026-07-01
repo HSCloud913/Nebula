@@ -2,9 +2,7 @@
 // Created by nebula on 24. 11. 10.
 //
 
-#ifndef ICOMMAND_H
-#define ICOMMAND_H
-
+#pragma once
 #include <stack>
 #include "Type.h"
 
@@ -50,7 +48,7 @@ BEGIN_NS(ne)
 		{
 			if (undoHistory.empty()) return;
 
-			auto command =undoHistory.top();
+			auto command = undoHistory.top();
 			command->Undo();
 			undoHistory.push(std::move(command));
 		}
@@ -67,5 +65,3 @@ BEGIN_NS(ne)
 	};
 
 END_NS
-
-#endif //ICOMMAND_H

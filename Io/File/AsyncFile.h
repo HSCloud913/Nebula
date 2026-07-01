@@ -25,7 +25,7 @@ BEGIN_NS(ne::io)
 #if defined(IS_POSIX)
 		explicit AsyncFile(file_t _fd, IoUringEngine& _engine) noexcept;
 #elif defined(_WIN32)
-		explicit AsyncFile(file_t _fd, FileIocpEngine& _engine) noexcept;
+		explicit AsyncFile(file_t _fd, IocpEngine& _engine) noexcept;
 #else
 		explicit AsyncFile(file_t _fd) noexcept;
 #endif
@@ -43,7 +43,7 @@ BEGIN_NS(ne::io)
 #if defined(IS_POSIX)
 		IoUringEngine* engine{};
 #elif defined(_WIN32)
-		FileIocpEngine* engine{};
+		IocpEngine* engine{};
 #endif
 
 	public:
@@ -54,9 +54,9 @@ BEGIN_NS(ne::io)
 			Open(const ne::string_t& _path, IoUringEngine& _engine, bool_t _readOnly = true) noexcept;
 #elif defined(_WIN32)
 		[[nodiscard]] static ne::Result<AsyncFile, ne::OsError>
-			Create(const ne::string_t& _path, FileIocpEngine& _engine) noexcept;
+			Create(const ne::string_t& _path, IocpEngine& _engine) noexcept;
 		[[nodiscard]] static ne::Result<AsyncFile, ne::OsError>
-			Open(const ne::string_t& _path, FileIocpEngine& _engine, bool_t _readOnly = true) noexcept;
+			Open(const ne::string_t& _path, IocpEngine& _engine, bool_t _readOnly = true) noexcept;
 #else
 		[[nodiscard]] static ne::Result<AsyncFile, ne::OsError>
 			Create(const ne::string_t& _path) noexcept;

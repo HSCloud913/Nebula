@@ -7,12 +7,11 @@
 #include "Type.h"
 
 #if defined(_WIN32)
-#	ifndef WIN32_LEAN_AND_MEAN
-#	define WIN32_LEAN_AND_MEAN
-#	endif
 #	include <errhandlingapi.h>
+#	include <winbase.h>
 #elif defined(IS_POSIX)
 #	include <cerrno>
+#   include <cstring>
 #endif
 
 BEGIN_NS(ne)
@@ -20,7 +19,8 @@ BEGIN_NS(ne)
 	{
 	public:
 		Error() = default;
-		explicit Error(string_view_t _message);
+		explicit Error(string_view_t _message)
+			: message(_message) {}
 
 	protected:
 		string_t message;
@@ -29,49 +29,108 @@ BEGIN_NS(ne)
 		string_t contextChain;
 
 	public:
-		Error& Context(string_view_t _context);
+		Error& Context(string_view_t _context)
+		{
+			if (contextChain.empty())
+			{
+				contextChain = std::format("{} -> ", _context);
+			}
+			else
+			{
+				contextChain = std::format("{} -> {}", _context, contextChain);
+			}
 
-		[[nodiscard]] string_view_t Message() const noexcept;
-		[[nodiscard]] string_t      What()    const;
+			return *this;
+		}
+
+		[[nodiscard]] string_view_t Message() const noexcept { return message; }
+		[[nodiscard]] string_t What() const { return contextChain.empty() ? message : contextChain + message; }
 	};
 
-	class OsError : public Error
+	class OsError :public Error
 	{
 	public:
-		explicit OsError(ulong_t _code);
-		OsError(ulong_t _code, string_view_t _message);
+		explicit OsError(const ulong_t _code)
+			: Error(OsMessage(_code))
+			, code(_code) {}
+
+		OsError(const ulong_t _code, string_view_t _message)
+			: Error(_message)
+			, code(_code) {}
 
 	private:
 		ulong_t code{};
 
 	public:
-		OsError& Context(const string_view_t _context) { Error::Context(_context); return *this; }
+		OsError& Context(string_view_t _context)
+		{
+			Error::Context(_context);
+			return *this;
+		}
 
 		[[nodiscard]] ulong_t Code() const noexcept { return code; }
 
 	private:
-		[[nodiscard]] static string_t OsMessage(ulong_t _code);
+		[[nodiscard]] static string_t OsMessage(const ulong_t _code)
+		{
+#if defined(_WIN32)
+			char_t buffer[512]{};
+			::FormatMessageA(
+				FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+				nullptr,
+				_code,
+				MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+				buffer,
+				sizeof(buffer) - 1,
+				nullptr
+			);
+
+			string_t msg(buffer);
+			while (!msg.empty() && (msg.back() == '\r' || msg.back() == '\n')) msg.pop_back();
+
+			return std::format("[{}] {}", _code, msg.empty() ? "Unknown error" : msg);
+#elif defined(IS_POSIX)
+			return std::format("[{}] {}", _code, ::strerror(static_cast<int>(_code)));
+#else
+			return std::format("OS error [{}]", _code);
+#endif
+		}
 	};
 
-	// OS 에러 코드를 ulong_t 로 반환 (Windows: GetLastError, POSIX: errno)
+	class HttpError :public Error
+	{
+	public:
+		explicit HttpError(string_view_t _message)
+			: Error(_message) {}
+
+		HttpError(const uint16_t _statusCode, string_view_t _message)
+			: Error(HttpMessage(_statusCode, _message))
+			, statusCode(_statusCode) {}
+
+	private:
+		uint16_t statusCode{ 0 };
+
+	public:
+		HttpError& Context(string_view_t _context)
+		{
+			Error::Context(_context);
+			return *this;
+		}
+
+	public:
+		[[nodiscard]] uint16_t StatusCode() const noexcept { return statusCode; }
+
+	private:
+		[[nodiscard]] static string_t HttpMessage(const ulong_t _statusCode, string_view_t _message)
+		{
+			return std::format("[{}] {}", _statusCode, _message.empty() ? "Unknown error" : _message);
+		}
+	};
+
 #if defined(_WIN32)
 	[[nodiscard]] inline ulong_t LastOsError() noexcept { return static_cast<ulong_t>(::GetLastError()); }
 #elif defined(IS_POSIX)
 	[[nodiscard]] inline ulong_t LastOsError() noexcept { return static_cast<ulong_t>(errno); }
 #endif
-
-	class HttpError : public Error
-	{
-	public:
-		explicit HttpError(string_view_t _message);
-		HttpError(uint16_t _statusCode, string_view_t _message);
-
-		HttpError& Context(string_view_t _context) { Error::Context(_context); return *this; }
-
-		[[nodiscard]] uint16_t StatusCode() const noexcept { return statusCode; }
-
-	private:
-		uint16_t statusCode{};
-	};
 
 END_NS

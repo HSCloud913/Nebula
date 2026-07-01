@@ -2,15 +2,11 @@
 // Created by nebula on 24. 11. 10.
 //
 
-#ifndef IOBSERVER_H
-#define IOBSERVER_H
-
+#pragma once
 #include <functional>
-#include <list>
 #include <ranges>
 #include <memory>
 #include <unordered_set>
-
 #include "Type.h"
 
 BEGIN_NS(ne)
@@ -18,19 +14,14 @@ BEGIN_NS(ne)
 	{
 	public:
 		explicit IObserver(const uint_t _id)
-			: id(_id)
-		{
-		};
+			: id(_id) {};
 		virtual ~IObserver() = default;
 
 	protected:
 		uint_t id;
 
 	public:
-		[[nodiscard]] uint_t GetID() const
-		{
-			return id;
-		}
+		[[nodiscard]] uint_t GetID() const { return id; }
 
 		virtual void Update(const std::any& _data) = 0;
 	};
@@ -45,24 +36,16 @@ BEGIN_NS(ne)
 		std::unordered_map<uint_t, std::shared_ptr<IObserver>> observers;
 
 	public:
-		void Attach(const std::shared_ptr<IObserver>& _observer)
-		{
-			observers[_observer->GetID()] = _observer;
-		}
-
-		void Detach(const uint_t _id)
-		{
-			observers.erase(_id);
-		}
+		void Attach(const std::shared_ptr<IObserver>& _observer) { observers[_observer->GetID()] = _observer; }
+		void Detach(const uint_t _id) { observers.erase(_id); }
 
 		void Notify(const std::any& _data)
 		{
-			for (auto& [id, observer] : observers)
+			for (const auto& observer : observers | std::views::values)
 			{
 				observer->Update(_data);
 			}
 		}
-
 		void Notify(const std::unordered_set<uint_t>& _ids, const std::any& _data)
 		{
 			auto ObserverFilter = [&_ids](const auto& _pair)
@@ -78,5 +61,3 @@ BEGIN_NS(ne)
 	};
 
 END_NS
-
-#endif //IOBSERVER_H

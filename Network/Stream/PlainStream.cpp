@@ -3,7 +3,7 @@
 //
 
 #include "PlainStream.h"
-#include "IoEngine/Awaitable.h"
+#include "Engine/Awaitable.h"
 
 #if defined(_WIN32)
 #   include <winsock2.h>
@@ -31,14 +31,14 @@ BEGIN_NS(ne::network)
 		return *this;
 	}
 
-	PlainStream::PlainStream(Socket&& _socket, IIoEngine& _engine, ne::memory::IAllocator* _allocator) noexcept
+	PlainStream::PlainStream(Socket&& _socket, ne::io::IIoEngine& _engine, ne::memory::IAllocator* _allocator) noexcept
 		: socket(std::move(_socket))
 		, engine(&_engine)
 		, allocator(_allocator) {}
 
 
 
-	ne::Result<PlainStream, ne::OsError> PlainStream::Create(Socket&& _socket, IIoEngine& _engine, ne::memory::IAllocator* _allocator) noexcept
+	ne::Result<PlainStream, ne::OsError> PlainStream::Create(Socket&& _socket, ne::io::IIoEngine& _engine, ne::memory::IAllocator* _allocator) noexcept
 	{
 		if (!_socket.IsValid()) return ne::Result<PlainStream, ne::OsError>::Error(ne::OsError{ 0, "socket is not valid" });
 
@@ -56,7 +56,7 @@ BEGIN_NS(ne::network)
 	{
 		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "stream is closed" });
 
-		if (auto ready = co_await SendAwaitable{ socket.Handle(), *engine }; ready.IsError())
+		if (auto ready = co_await ne::io::SendAwaitable{ socket.Handle(), *engine }; ready.IsError())
 			co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(ready.Error()));
 
 		const int bytes = ::send(socket.Handle(), reinterpret_cast<const char*>(_data.Span().data()), static_cast<int>(_data.Span().size()), 0);
@@ -75,7 +75,7 @@ BEGIN_NS(ne::network)
 		std::size_t total = 0;
 		for (const auto& segment : _chain.Segments())
 		{
-			if (auto ready = co_await SendAwaitable{ socket.Handle(), *engine }; ready.IsError())
+			if (auto ready = co_await ne::io::SendAwaitable{ socket.Handle(), *engine }; ready.IsError())
 				co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(ready.Error()));
 
 			const int bytes = ::send(socket.Handle(), reinterpret_cast<const char*>(segment.Span().data()), static_cast<int>(segment.Span().size()), 0);
@@ -88,7 +88,7 @@ BEGIN_NS(ne::network)
 
 		co_return ne::Result<std::size_t, ne::OsError>::Ok(total);
 	#elif defined(IS_POSIX)
-		if (auto ready = co_await SendAwaitable{ socket.Handle(), *engine }; ready.IsError()) co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(ready.Error()));
+		if (auto ready = co_await ne::io::SendAwaitable{ socket.Handle(), *engine }; ready.IsError()) co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(ready.Error()));
 
 		const auto iov = _chain.AsIovec();
 		const ssize_t bytes = ::writev(socket.Handle(), iov.data(), static_cast<int>(iov.size()));
@@ -106,7 +106,7 @@ BEGIN_NS(ne::network)
 	{
 		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "stream is closed" });
 
-		if (auto ready = co_await RecvAwaitable{ socket.Handle(), *engine }; ready.IsError())
+		if (auto ready = co_await ne::io::RecvAwaitable{ socket.Handle(), *engine }; ready.IsError())
 			co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(ready.Error()));
 
 		const int bytes = ::recv(socket.Handle(), reinterpret_cast<char*>(_data.ptr), static_cast<int>(_data.length), 0);

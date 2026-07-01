@@ -33,9 +33,9 @@ protected:
 TEST_F(LoggerTest, LogLevel)
 {
     ne::Logger logger("log_level.txt");
-    logger.SetLogLevel(ne::LogLevel::DBG);
+    logger.SetLogLevel(ne::LogLevel::NE_DEBUG);
 
-    EXPECT_EQ(ne::LogLevel::DBG, logger.GetLogLevel());
+    EXPECT_EQ(ne::LogLevel::NE_DEBUG, logger.GetLogLevel());
     EXPECT_TRUE(logger.Close());
 }
 
@@ -140,13 +140,13 @@ TEST_F(LoggerTest, ThreadSafeSetLogLevel)
     {
         for (int i = 0; i < 10; ++i)
         {
-            logger.SetLogLevel(ne::LogLevel::TRACE);
+            logger.SetLogLevel(ne::LogLevel::NE_TRACE);
             logger.Trace("Setting log level to TRACE");
 
-            logger.SetLogLevel(ne::LogLevel::ERR);
+            logger.SetLogLevel(ne::LogLevel::NE_ERROR);
             logger.Error("Setting log level to ERROR");
 
-            logger.SetLogLevel(ne::LogLevel::DBG);
+            logger.SetLogLevel(ne::LogLevel::NE_DEBUG);
             logger.Info("Setting log level to DBG");
         }
     };

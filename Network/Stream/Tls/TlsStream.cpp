@@ -3,7 +3,7 @@
 //
 
 #include "TlsStream.h"
-#include "IoEngine/Awaitable.h"
+#include "Engine/Awaitable.h"
 #include <utility>
 #include <cstring>
 #include <vector>
@@ -31,7 +31,7 @@ BEGIN_NS(ne::network)
 
 
 
-	TlsStream::TlsStream(Socket&& _socket, IIoEngine& _engine, void* _credHandle, void* _ctxHandle, void* _messageBuffer, ne::memory::IAllocator* _allocator) noexcept
+	TlsStream::TlsStream(Socket&& _socket, ne::io::IIoEngine& _engine, void* _credHandle, void* _ctxHandle, void* _messageBuffer, ne::memory::IAllocator* _allocator) noexcept
 		: socket(std::move(_socket))
 		, engine(&_engine)
 		, credHandle(_credHandle)
@@ -89,7 +89,7 @@ BEGIN_NS(ne::network)
 
 
 
-	ne::Task<ne::Result<TlsStream, ne::OsError>> TlsStream::Connect(Socket&& _socket, IIoEngine& _engine, string_view_t _host, const TlsConfig& _config, ne::memory::IAllocator* _allocator)
+	ne::Task<ne::Result<TlsStream, ne::OsError>> TlsStream::Connect(Socket&& _socket, ne::io::IIoEngine& _engine, string_view_t _host, const TlsConfig& _config, ne::memory::IAllocator* _allocator)
 	{
 		const auto* functionTable = SspiWrapper::Get();
 		if (!functionTable)
@@ -123,7 +123,7 @@ BEGIN_NS(ne::network)
 		co_return ne::Result<TlsStream, ne::OsError>::Ok(std::move(stream));
 	}
 
-	ne::Task<ne::Result<TlsStream, ne::OsError>> TlsStream::Accept(Socket&& _socket, IIoEngine& _engine, const TlsConfig& _config, ne::memory::IAllocator* _allocator)
+	ne::Task<ne::Result<TlsStream, ne::OsError>> TlsStream::Accept(Socket&& _socket, ne::io::IIoEngine& _engine, const TlsConfig& _config, ne::memory::IAllocator* _allocator)
 	{
 		const auto* functionTable = SspiWrapper::Get();
 		if (!functionTable)
@@ -189,7 +189,7 @@ BEGIN_NS(ne::network)
 				span = nativeMessageBuffer->GetBuffer();
 			}
 
-			if (auto result = co_await RecvAwaitable{ stream.socket.Handle(), _engine }; result.IsError())
+			if (auto result = co_await ne::io::RecvAwaitable{ stream.socket.Handle(), _engine }; result.IsError())
 				co_return ne::Result<TlsStream, ne::OsError>::Error(std::move(result.Error()));
 
 			const int received = ::recv(stream.socket.Handle(), reinterpret_cast<char*>(span.data() + dataInBuffer), static_cast<int>(span.size() - dataInBuffer), 0);
@@ -239,7 +239,7 @@ BEGIN_NS(ne::network)
 			// 서버 토큰 전송
 			if (outBuffers[0].pvBuffer && outBuffers[0].cbBuffer > 0)
 			{
-				if (auto r = co_await SendAwaitable{ stream.socket.Handle(), _engine }; r.IsError())
+				if (auto r = co_await ne::io::SendAwaitable{ stream.socket.Handle(), _engine }; r.IsError())
 				{
 					functionTable->FreeContextBuffer(outBuffers[0].pvBuffer);
 					co_return ne::Result<TlsStream, ne::OsError>::Error(std::move(r.Error()));
@@ -330,7 +330,7 @@ BEGIN_NS(ne::network)
 
 			if (outBuffers[0].pvBuffer && outBuffers[0].cbBuffer > 0)
 			{
-				if (auto result = co_await SendAwaitable{ socket.Handle(), *engine }; result.IsError())
+				if (auto result = co_await ne::io::SendAwaitable{ socket.Handle(), *engine }; result.IsError())
 				{
 					functionTable->FreeContextBuffer(outBuffers[0].pvBuffer);
 					co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
@@ -353,7 +353,7 @@ BEGIN_NS(ne::network)
 					span = rawBuffer->GetBuffer();
 				}
 
-				if (auto result = co_await RecvAwaitable{ socket.Handle(), *engine }; result.IsError()) co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
+				if (auto result = co_await ne::io::RecvAwaitable{ socket.Handle(), *engine }; result.IsError()) co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
 
 				const int bytes = ::recv(socket.Handle(), reinterpret_cast<char*>(span.data() + dataInBuffer), static_cast<int>(span.size() - dataInBuffer), 0);
 				if (bytes <= 0)
@@ -412,7 +412,7 @@ BEGIN_NS(ne::network)
 
 			const ULONG encodeSize = buffers[0].cbBuffer + buffers[1].cbBuffer + buffers[2].cbBuffer;
 
-			if (auto result = co_await SendAwaitable{ socket.Handle(), *engine }; result.IsError())
+			if (auto result = co_await ne::io::SendAwaitable{ socket.Handle(), *engine }; result.IsError())
 				co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
 
 			const int bytes = ::send(socket.Handle(), reinterpret_cast<const char*>(encodeBuffer.data()), static_cast<int>(encodeSize), 0);
@@ -462,7 +462,7 @@ BEGIN_NS(ne::network)
 		{
 			if (dataInBuffer == 0)
 			{
-				if (auto result = co_await RecvAwaitable{ socket.Handle(), *engine }; result.IsError())
+				if (auto result = co_await ne::io::RecvAwaitable{ socket.Handle(), *engine }; result.IsError())
 					co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
 
 				const int bytes = ::recv(socket.Handle(), reinterpret_cast<char*>(span.data()), static_cast<int>(span.size()), 0);
@@ -517,7 +517,7 @@ BEGIN_NS(ne::network)
 					span = nativeMessageBuffer->GetBuffer();
 				}
 
-				if (auto result = co_await RecvAwaitable{ socket.Handle(), *engine }; result.IsError())
+				if (auto result = co_await ne::io::RecvAwaitable{ socket.Handle(), *engine }; result.IsError())
 					co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
 
 				const int bytes = ::recv(socket.Handle(), reinterpret_cast<char*>(span.data() + dataInBuffer), static_cast<int>(span.size() - dataInBuffer), 0);
@@ -606,7 +606,7 @@ BEGIN_NS(ne::network)
 
 
 
-	TlsStream::TlsStream(Socket&& _socket, IIoEngine& _engine, void* _ctx, void* _ssl, ne::memory::IAllocator* _allocator) noexcept
+	TlsStream::TlsStream(Socket&& _socket, ne::io::IIoEngine& _engine, void* _ctx, void* _ssl, ne::memory::IAllocator* _allocator) noexcept
 		: socket(std::move(_socket))
 		, engine(&_engine)
 		, allocator(_allocator)
@@ -663,7 +663,7 @@ BEGIN_NS(ne::network)
 
 
 
-	ne::Task<ne::Result<TlsStream, ne::OsError>> TlsStream::Connect(Socket&& _socket, IIoEngine& _engine, string_view_t _host, const TlsConfig& _config, ne::memory::IAllocator* _allocator)
+	ne::Task<ne::Result<TlsStream, ne::OsError>> TlsStream::Connect(Socket&& _socket, ne::io::IIoEngine& _engine, string_view_t _host, const TlsConfig& _config, ne::memory::IAllocator* _allocator)
 	{
 		SSL_CTX* sslCtx = SSL_CTX_new(TLS_client_method());
 		if (!sslCtx)
@@ -706,7 +706,7 @@ BEGIN_NS(ne::network)
 		co_return ne::Result<TlsStream, ne::OsError>::Ok(std::move(stream));
 	}
 
-	ne::Task<ne::Result<TlsStream, ne::OsError>> TlsStream::Accept(Socket&& _socket, IIoEngine& _engine, const TlsConfig& _config, ne::memory::IAllocator* _allocator)
+	ne::Task<ne::Result<TlsStream, ne::OsError>> TlsStream::Accept(Socket&& _socket, ne::io::IIoEngine& _engine, const TlsConfig& _config, ne::memory::IAllocator* _allocator)
 	{
 		SSL_CTX* sslCtx = SSL_CTX_new(TLS_server_method());
 		if (!sslCtx)
@@ -741,12 +741,12 @@ BEGIN_NS(ne::network)
 			const int sslError = SSL_get_error(tempSsl, sslResult);
 			if (sslError == SSL_ERROR_WANT_READ)
 			{
-				if (auto result = co_await RecvAwaitable{ stream.socket.Handle(), _engine }; result.IsError())
+				if (auto result = co_await ne::io::RecvAwaitable{ stream.socket.Handle(), _engine }; result.IsError())
 					co_return ne::Result<TlsStream, ne::OsError>::Error(std::move(result.Error()));
 			}
 			else if (sslError == SSL_ERROR_WANT_WRITE)
 			{
-				if (auto result = co_await SendAwaitable{ stream.socket.Handle(), _engine }; result.IsError())
+				if (auto result = co_await ne::io::SendAwaitable{ stream.socket.Handle(), _engine }; result.IsError())
 					co_return ne::Result<TlsStream, ne::OsError>::Error(std::move(result.Error()));
 			}
 			else
@@ -771,12 +771,12 @@ BEGIN_NS(ne::network)
 			const int sslError = SSL_get_error(nativeSsl, sslResult);
 			if (sslError == SSL_ERROR_WANT_READ)
 			{
-				if (auto result = co_await RecvAwaitable{ socket.Handle(), *engine }; result.IsError())
+				if (auto result = co_await ne::io::RecvAwaitable{ socket.Handle(), *engine }; result.IsError())
 					co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
 			}
 			else if (sslError == SSL_ERROR_WANT_WRITE)
 			{
-				if (auto result = co_await SendAwaitable{ socket.Handle(), *engine }; result.IsError())
+				if (auto result = co_await ne::io::SendAwaitable{ socket.Handle(), *engine }; result.IsError())
 					co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
 			}
 			else
@@ -808,12 +808,12 @@ BEGIN_NS(ne::network)
 			const int sslError = SSL_get_error(nativeSsl, bytes);
 			if (sslError == SSL_ERROR_WANT_WRITE)
 			{
-				if (auto result = co_await SendAwaitable{ socket.Handle(), *engine }; result.IsError())
+				if (auto result = co_await ne::io::SendAwaitable{ socket.Handle(), *engine }; result.IsError())
 					co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
 			}
 			else if (sslError == SSL_ERROR_WANT_READ)
 			{
-				if (auto result = co_await RecvAwaitable{ socket.Handle(), *engine }; result.IsError())
+				if (auto result = co_await ne::io::RecvAwaitable{ socket.Handle(), *engine }; result.IsError())
 					co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
 			}
 			else
@@ -854,12 +854,12 @@ BEGIN_NS(ne::network)
 			const int sslError = SSL_get_error(nativeSsl, bytes);
 			if (sslError == SSL_ERROR_WANT_READ)
 			{
-				if (auto result = co_await RecvAwaitable{ socket.Handle(), *engine }; result.IsError())
+				if (auto result = co_await ne::io::RecvAwaitable{ socket.Handle(), *engine }; result.IsError())
 					co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
 			}
 			else if (sslError == SSL_ERROR_WANT_WRITE)
 			{
-				if (auto result = co_await SendAwaitable{ socket.Handle(), *engine }; result.IsError())
+				if (auto result = co_await ne::io::SendAwaitable{ socket.Handle(), *engine }; result.IsError())
 					co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
 			}
 			else
@@ -903,19 +903,19 @@ BEGIN_NS(ne::network)
 
 
 
-	TlsStream::TlsStream(Socket&&, IIoEngine&, void*, void*, ne::memory::IAllocator*) noexcept {}
+	TlsStream::TlsStream(Socket&&, ne::io::IIoEngine&, void*, void*, ne::memory::IAllocator*) noexcept {}
 	TlsStream::TlsStream(TlsStream&&) noexcept = default;
 	TlsStream& TlsStream::operator=(TlsStream&&) noexcept = default;
 	TlsStream::~TlsStream() = default;
 
 
 
-	ne::Task<ne::Result<TlsStream, ne::OsError>> TlsStream::Connect(Socket&&, IIoEngine&, string_view_t, const TlsConfig&, ne::memory::IAllocator*)
+	ne::Task<ne::Result<TlsStream, ne::OsError>> TlsStream::Connect(Socket&&, ne::io::IIoEngine&, string_view_t, const TlsConfig&, ne::memory::IAllocator*)
 	{
 		co_return ne::Result<TlsStream, ne::OsError>::Error(NoTls("[TlsStream/Connect]"));
 	}
 
-	ne::Task<ne::Result<TlsStream, ne::OsError>> TlsStream::Accept(Socket&&, IIoEngine&, const TlsConfig&, ne::memory::IAllocator*)
+	ne::Task<ne::Result<TlsStream, ne::OsError>> TlsStream::Accept(Socket&&, ne::io::IIoEngine&, const TlsConfig&, ne::memory::IAllocator*)
 	{
 		co_return ne::Result<TlsStream, ne::OsError>::Error(NoTls("[TlsStream/Accept]"));
 	}

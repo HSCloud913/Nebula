@@ -6,7 +6,7 @@
 #include <cstddef>
 #include "Socket/Socket.h"
 #include "Stream/IStream.h"
-#include "IoEngine/IIoEngine.h"
+#include "Engine/IIoEngine.h"
 
 BEGIN_NS(ne::network)
 	struct SshConfig
@@ -23,7 +23,7 @@ BEGIN_NS(ne::network)
 	// Receive → channel stdout
 	class SshStream final :public IStream
 	{
-		explicit SshStream(Socket&& _socket, IIoEngine& _engine, void* _session, void* _channel, ne::memory::IAllocator* _allocator = nullptr) noexcept;
+		explicit SshStream(Socket&& _socket, ne::io::IIoEngine& _engine, void* _session, void* _channel, ne::memory::IAllocator* _allocator = nullptr) noexcept;
 
 	public:
 		SshStream(SshStream&& _other) noexcept;
@@ -33,14 +33,14 @@ BEGIN_NS(ne::network)
 
 	private:
 		Socket socket;
-		IIoEngine* engine;
+		ne::io::IIoEngine* engine;
 		SshConfig sshConfig;
 		ne::memory::IAllocator* allocator{};
 		void* session{};  // LIBSSH2_SESSION*
 		void* channel{};  // LIBSSH2_CHANNEL*
 
 	public:
-		[[nodiscard]] static ne::Task<ne::Result<SshStream, ne::OsError>> Connect(Socket&& _socket, IIoEngine& _engine, const SshConfig& _config, ne::memory::IAllocator* _allocator = nullptr);
+		[[nodiscard]] static ne::Task<ne::Result<SshStream, ne::OsError>> Connect(Socket&& _socket, ne::io::IIoEngine& _engine, const SshConfig& _config, ne::memory::IAllocator* _allocator = nullptr);
 
 	public:
 		virtual ne::Task<ne::Result<void, ne::OsError>> Handshake() override;

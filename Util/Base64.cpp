@@ -8,7 +8,7 @@ const ne::string_t Base64String = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrs
 
 
 
-BEGIN_NS(ne::cryptography)
+BEGIN_NS(ne)
 	void Base64::Encode(lpcstr_t _string, char_t* _buffer, size_t _bufferSize)
 	{
 		byte_t arrayInput[3], arrayOutput[4];
@@ -69,64 +69,6 @@ BEGIN_NS(ne::cryptography)
 			}
 		}
 	}
-
-	string_t Base64::Encode(string_t&& _string)
-	{
-		string_t encodeString;
-
-		byte_t arrayInput[3], arrayOutput[4];
-
-		int_t i = 0;
-		size_t pos = 0;
-
-		size_t len = _string.size();
-
-		while (len--)
-		{
-			arrayInput[i++] = static_cast<byte_t>(_string[pos++]);
-
-			if (i == 3)
-			{
-				arrayOutput[0] = (arrayInput[0] & 0xfc) >> 2;
-				arrayOutput[1] = ((arrayInput[0] & 0x03) << 4) + ((arrayInput[1] & 0xf0) >> 4);
-				arrayOutput[2] = ((arrayInput[1] & 0x0f) << 2) + ((arrayInput[2] & 0xc0) >> 6);
-				arrayOutput[3] = arrayInput[2] & 0x3f;
-
-				for (i = 0; (i < 4); i++)
-				{
-					encodeString += Base64String[arrayOutput[i]];
-				}
-
-				i = 0;
-			}
-		}
-
-		if (i)
-		{
-			for (int_t j = i; j < 3; j++)
-			{
-				arrayInput[j] = '\0';
-			}
-
-			arrayOutput[0] = (arrayInput[0] & 0xfc) >> 2;
-			arrayOutput[1] = ((arrayInput[0] & 0x03) << 4) + ((arrayInput[1] & 0xf0) >> 4);
-			arrayOutput[2] = ((arrayInput[1] & 0x0f) << 2) + ((arrayInput[2] & 0xc0) >> 6);
-			arrayOutput[3] = arrayInput[2] & 0x3f;
-
-			for (int_t j = 0; j < (i + 1); j++)
-			{
-				encodeString += Base64String[arrayOutput[j]];
-			}
-
-			while ((i++ < 3))
-			{
-				encodeString += '=';
-			}
-		}
-
-		return encodeString;
-	}
-
 
 	void Base64::Decode(lpcstr_t _string, char_t* _buffer, size_t _bufferSize)
 	{
@@ -190,6 +132,64 @@ BEGIN_NS(ne::cryptography)
 		}
 	}
 
+
+	string_t Base64::Encode(string_t&& _string)
+	{
+		string_t encodeString;
+
+		byte_t arrayInput[3], arrayOutput[4];
+
+		int_t i = 0;
+		size_t pos = 0;
+
+		size_t len = _string.size();
+
+		while (len--)
+		{
+			arrayInput[i++] = static_cast<byte_t>(_string[pos++]);
+
+			if (i == 3)
+			{
+				arrayOutput[0] = (arrayInput[0] & 0xfc) >> 2;
+				arrayOutput[1] = ((arrayInput[0] & 0x03) << 4) + ((arrayInput[1] & 0xf0) >> 4);
+				arrayOutput[2] = ((arrayInput[1] & 0x0f) << 2) + ((arrayInput[2] & 0xc0) >> 6);
+				arrayOutput[3] = arrayInput[2] & 0x3f;
+
+				for (i = 0; (i < 4); i++)
+				{
+					encodeString += Base64String[arrayOutput[i]];
+				}
+
+				i = 0;
+			}
+		}
+
+		if (i)
+		{
+			for (int_t j = i; j < 3; j++)
+			{
+				arrayInput[j] = '\0';
+			}
+
+			arrayOutput[0] = (arrayInput[0] & 0xfc) >> 2;
+			arrayOutput[1] = ((arrayInput[0] & 0x03) << 4) + ((arrayInput[1] & 0xf0) >> 4);
+			arrayOutput[2] = ((arrayInput[1] & 0x0f) << 2) + ((arrayInput[2] & 0xc0) >> 6);
+			arrayOutput[3] = arrayInput[2] & 0x3f;
+
+			for (int_t j = 0; j < (i + 1); j++)
+			{
+				encodeString += Base64String[arrayOutput[j]];
+			}
+
+			while ((i++ < 3))
+			{
+				encodeString += '=';
+			}
+		}
+
+		return encodeString;
+	}
+
 	string_t Base64::Decode(string_t&& _string)
 	{
 		string_t generalString;
@@ -249,6 +249,7 @@ BEGIN_NS(ne::cryptography)
 		return generalString;
 	}
 
+
 	string_t Base64::EncodeURL(string_t&& _string)
 	{
 		string_t result = Encode(std::move(_string));
@@ -260,8 +261,7 @@ BEGIN_NS(ne::cryptography)
 		}
 
 		const size_t padPos = result.find('=');
-		if (padPos != string_t::npos)
-			result.erase(padPos);
+		if (padPos != string_t::npos) result.erase(padPos);
 
 		return result;
 	}
@@ -277,10 +277,8 @@ BEGIN_NS(ne::cryptography)
 		}
 
 		const size_t remainder = padded.size() % 4;
-		if (remainder == 2)
-			padded += "==";
-		else if (remainder == 3)
-			padded += "=";
+		if (remainder == 2) padded += "==";
+		else if (remainder == 3) padded += "=";
 
 		return Decode(std::move(padded));
 	}

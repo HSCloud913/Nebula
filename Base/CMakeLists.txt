@@ -7,20 +7,10 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(HEADERS
-        Exception.h
-        Handle.h
+add_library(${PROJECT_NAME} INTERFACE)
+target_include_directories(${PROJECT_NAME} INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 
-        Interface/ICommand.h
-        Interface/IObserver.h
-        Interface/ISingleton.h
-)
 
-set(SOURCES
-        Error.cpp
-)
-
-add_library(${PROJECT_NAME} STATIC ${HEADERS} ${SOURCES})
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_SOURCE_DIR}/Base)
-
-add_subdirectory(Test)
+if(TARGET GTest::gtest_main AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Test)
+    add_subdirectory(Test)
+endif()

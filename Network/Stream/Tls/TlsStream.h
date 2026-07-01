@@ -6,7 +6,7 @@
 #include <cstddef>
 #include "Socket/Socket.h"
 #include "Stream/IStream.h"
-#include "IoEngine/IIoEngine.h"
+#include "Engine/IIoEngine.h"
 
 BEGIN_NS(ne::network)
 	struct TlsConfig
@@ -21,9 +21,9 @@ BEGIN_NS(ne::network)
 	class TlsStream final :public IStream
 	{
 #if defined(_WIN32)
-		explicit TlsStream(Socket&& _socket, IIoEngine& _engine, void* _credHandle, void* _ctxHandle, void* _messageBuffer, ne::memory::IAllocator* _allocator = nullptr) noexcept;
+		explicit TlsStream(Socket&& _socket, ne::io::IIoEngine& _engine, void* _credHandle, void* _ctxHandle, void* _messageBuffer, ne::memory::IAllocator* _allocator = nullptr) noexcept;
 #else
-		explicit TlsStream(Socket&& _socket, IIoEngine& _engine, void* _ctx, void* _ssl, ne::memory::IAllocator* _allocator = nullptr) noexcept;
+		explicit TlsStream(Socket&& _socket, ne::io::IIoEngine& _engine, void* _ctx, void* _ssl, ne::memory::IAllocator* _allocator = nullptr) noexcept;
 #endif
 
 	public:
@@ -34,7 +34,7 @@ BEGIN_NS(ne::network)
 
 	private:
 		Socket socket;
-		IIoEngine* engine{};
+		ne::io::IIoEngine* engine{};
 		string_t sniHost;
 		ne::memory::IAllocator* allocator{};
 
@@ -50,11 +50,11 @@ BEGIN_NS(ne::network)
 	public:
 		// 소켓은 이미 Connect() 되어 있어야 함 (TCP-level).
 		// _host : SNI hostname.
-		[[nodiscard]] static ne::Task<ne::Result<TlsStream, ne::OsError>> Connect(Socket&& _socket, IIoEngine& _engine, string_view_t _host, const TlsConfig& _config = {}, ne::memory::IAllocator* _allocator = nullptr);
+		[[nodiscard]] static ne::Task<ne::Result<TlsStream, ne::OsError>> Connect(Socket&& _socket, ne::io::IIoEngine& _engine, string_view_t _host, const TlsConfig& _config = {}, ne::memory::IAllocator* _allocator = nullptr);
 
 		// 소켓은 이미 Accept() 된 클라이언트 소켓이어야 함 (TCP-level).
 		// _config.certFile : PFX 경로 (SChannel) 또는 PEM cert 경로 (OpenSSL).
-		[[nodiscard]] static ne::Task<ne::Result<TlsStream, ne::OsError>> Accept(Socket&& _socket, IIoEngine& _engine, const TlsConfig& _config, ne::memory::IAllocator* _allocator = nullptr);
+		[[nodiscard]] static ne::Task<ne::Result<TlsStream, ne::OsError>> Accept(Socket&& _socket, ne::io::IIoEngine& _engine, const TlsConfig& _config, ne::memory::IAllocator* _allocator = nullptr);
 
 	public:
 		virtual ne::Task<ne::Result<void, ne::OsError>> Handshake() override;

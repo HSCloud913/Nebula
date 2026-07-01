@@ -8,7 +8,7 @@
 
 
 
-BEGIN_NS(ne::cryptography)
+BEGIN_NS(ne::crypto)
 	std::unique_ptr<HashWrapper> HashFactory::Create(const HashType _hashType)
 	{
 		using enum HashType;

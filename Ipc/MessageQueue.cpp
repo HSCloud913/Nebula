@@ -6,8 +6,8 @@
 
 #include "Exception.h"
 #include "StringFormat.h"
-#include "IoEngine/IIoEngine.h"
-
+#include "Engine/IIoEngine.h"
+#include "Engine/IoAwaitable.h"
 #include <coroutine>
 #include <thread>
 
@@ -22,6 +22,8 @@
 #	include <fcntl.h>
 #	include <cerrno>
 #endif
+
+
 
 BEGIN_NS(ne::ipc)
 
@@ -235,60 +237,18 @@ BEGIN_NS(ne::ipc)
 // ─── 비동기 awaitable ────────────────────────────────────────────────────────
 
 #if defined(IS_POSIX)
-// POSIX: mqd_t 는 Linux 에서 진짜 fd → epoll 감시 가능 (approach a)
-
-namespace
-{
-	// 단일 I/O 이벤트를 IIoEngine::Watch 로 감시하는 awaitable
-	struct MqWatchAwaitable
-	{
-		ne::network::IIoEngine& engine;
-		int fd; // mqd_t == int on Linux
-		uint32_t targetEvent;
-		uint32_t triggeredEvents{};
-		ne::OsError watchErr{ 0, "" };
-		bool hasError{ false };
-
-		[[nodiscard]] bool await_ready() const noexcept { return false; }
-
-		bool await_suspend(std::coroutine_handle<> _h) noexcept
-		{
-			auto r = engine.Watch(
-				static_cast<ne::network::socket_t>(fd),
-				targetEvent,
-				[this, _h](ne::network::socket_t, const uint32_t _events) mutable
-				{
-					(void)engine.Unwatch(static_cast<ne::network::socket_t>(fd));
-					triggeredEvents = _events;
-					_h.resume(); // await_resume() 실행 후 this 에 접근 불가
-				});
-
-			if (r.IsError())
-			{
-				hasError = true;
-				watchErr = std::move(r.Error());
-				return false;
-			}
-			return true;
-		}
-
-		[[nodiscard]] ne::Result<uint32_t, ne::OsError> await_resume() noexcept
-		{
-			if (hasError)
-				return ne::Result<uint32_t, ne::OsError>::Error(std::move(watchErr));
-			return ne::Result<uint32_t, ne::OsError>::Ok(triggeredEvents);
-		}
-	};
-} // anonymous namespace
+// POSIX: mqd_t 는 Linux 에서 진짜 fd → Watch 로 직접 감시
 
 	ne::Task<ne::Result<void, ne::OsError>>
-	MessageQueue::SendAsync(const std::span<const std::byte> _message, ne::network::IIoEngine& _engine)
+	MessageQueue::SendAsync(const std::span<const std::byte> _message, ne::io::IIoEngine& _engine)
 	{
-		auto watched = co_await MqWatchAwaitable{
-			_engine, static_cast<int>(impl->Handle()), ne::network::IoEvent::Write };
+		auto watched = co_await ne::io::WatchAwaitable{
+			_engine,
+			static_cast<ne::io::io_fd_t>(impl->Handle()),
+			ne::io::IoEvent::Write };
 		if (watched.IsError())
 			co_return ne::Result<void, ne::OsError>::Error(std::move(watched.Error()));
-		if (watched.Value() & (ne::network::IoEvent::Error | ne::network::IoEvent::HangUp))
+		if (watched.Value() & (ne::io::IoEvent::Error | ne::io::IoEvent::HangUp))
 			co_return ne::Result<void, ne::OsError>::Error(
 				ne::OsError{ 0, "[MessageQueue/SendAsync] mq error" });
 
@@ -302,17 +262,19 @@ namespace
 	}
 
 	ne::Task<ne::Result<std::vector<std::byte>, ne::OsError>>
-	MessageQueue::ReceiveAsync(ne::network::IIoEngine& _engine)
+	MessageQueue::ReceiveAsync(ne::io::IIoEngine& _engine)
 	{
-		auto watched = co_await MqWatchAwaitable{
-			_engine, static_cast<int>(impl->Handle()), ne::network::IoEvent::Read };
+		auto watched = co_await ne::io::WatchAwaitable{
+			_engine,
+			static_cast<ne::io::io_fd_t>(impl->Handle()),
+			ne::io::IoEvent::Read };
 		if (watched.IsError())
 			co_return ne::Result<std::vector<std::byte>, ne::OsError>::Error(std::move(watched.Error()));
-		if (watched.Value() & (ne::network::IoEvent::Error | ne::network::IoEvent::HangUp))
+		if (watched.Value() & (ne::io::IoEvent::Error | ne::io::IoEvent::HangUp))
 			co_return ne::Result<std::vector<std::byte>, ne::OsError>::Error(
 				ne::OsError{ 0, "[MessageQueue/ReceiveAsync] mq error" });
 
-		// epoll 이 EPOLLIN 을 확인했으므로 mq_receive 는 즉시 반환
+		// 감시 완료 후 mq_receive 는 즉시 반환
 		const auto msgSize = impl->MsgSize();
 		auto buffer = std::vector<std::byte>(static_cast<std::size_t>(msgSize));
 		const auto received = ::mq_receive(
@@ -414,7 +376,7 @@ namespace
 } // anonymous namespace
 
 	ne::Task<ne::Result<void, ne::OsError>>
-	MessageQueue::SendAsync(const std::span<const std::byte> _message, ne::network::IIoEngine& /*_engine*/)
+	MessageQueue::SendAsync(const std::span<const std::byte> _message, ne::io::IIoEngine& /*_engine*/)
 	{
 		co_return co_await MqSendBridgeAwaitable{
 			impl->Handle(),
@@ -424,21 +386,21 @@ namespace
 	}
 
 	ne::Task<ne::Result<std::vector<std::byte>, ne::OsError>>
-	MessageQueue::ReceiveAsync(ne::network::IIoEngine& /*_engine*/)
+	MessageQueue::ReceiveAsync(ne::io::IIoEngine& /*_engine*/)
 	{
 		co_return co_await MqReceiveBridgeAwaitable{ impl->Handle(), Impl::MaxMsg };
 	}
 
 #else
 	ne::Task<ne::Result<void, ne::OsError>>
-	MessageQueue::SendAsync(const std::span<const std::byte>, ne::network::IIoEngine&)
+	MessageQueue::SendAsync(const std::span<const std::byte>, ne::io::IIoEngine&)
 	{
 		co_return ne::Result<void, ne::OsError>::Error(
 			ne::OsError{ 0, "[MessageQueue/SendAsync] not supported on this platform" });
 	}
 
 	ne::Task<ne::Result<std::vector<std::byte>, ne::OsError>>
-	MessageQueue::ReceiveAsync(ne::network::IIoEngine&)
+	MessageQueue::ReceiveAsync(ne::io::IIoEngine&)
 	{
 		co_return ne::Result<std::vector<std::byte>, ne::OsError>::Error(
 			ne::OsError{ 0, "[MessageQueue/ReceiveAsync] not supported on this platform" });

@@ -6,11 +6,11 @@
 #include <cstddef>
 #include "IStream.h"
 #include "Socket/Socket.h"
-#include "IoEngine/IIoEngine.h"
+#include "Engine/IIoEngine.h"
 
 BEGIN_NS(ne::network)
 	// 암호화 없는 TCP 스트림.
-	// Socket + IIoEngine 을 받아 코루틴 기반 비동기 Send/Recv 제공.
+	// Socket + ne::io::IIoEngine 을 받아 코루틴 기반 비동기 Send/Recv 제공.
 	class PlainStream final :public IStream
 	{
 	public:
@@ -20,14 +20,14 @@ BEGIN_NS(ne::network)
 		NEBULA_NON_COPYABLE(PlainStream)
 
 	private:
-		explicit PlainStream(Socket&& _socket, IIoEngine& _engine, ne::memory::IAllocator* _allocator) noexcept;
+		explicit PlainStream(Socket&& _socket, ne::io::IIoEngine& _engine, ne::memory::IAllocator* _allocator) noexcept;
 
 	public:
-		[[nodiscard]] static ne::Result<PlainStream, ne::OsError> Create(Socket&& _socket, IIoEngine& _engine, ne::memory::IAllocator* _allocator = nullptr) noexcept;
+		[[nodiscard]] static ne::Result<PlainStream, ne::OsError> Create(Socket&& _socket, ne::io::IIoEngine& _engine, ne::memory::IAllocator* _allocator = nullptr) noexcept;
 
 	private:
 		Socket socket;
-		IIoEngine* engine;
+		ne::io::IIoEngine* engine;
 		ne::memory::IAllocator* allocator{ nullptr };
 
 	public:

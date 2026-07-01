@@ -1,7 +1,7 @@
 #include "AES.h"
 
 #include <array>
-#include <stdexcept>
+#include <utility>
 
 
 
@@ -47,6 +47,12 @@ static constexpr ne::byte_t Rcon[11] = {
 	0x00, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36
 };
 
+struct AESContext
+{
+	ne::byte_t roundKey[240];
+	int round;
+};
+
 using Block = std::array<ne::byte_t, 16>;
 
 
@@ -67,12 +73,6 @@ static ne::byte_t gmul(ne::byte_t _a, ne::byte_t _b)
 	}
 	return p;
 }
-
-struct AESContext
-{
-	ne::byte_t roundKey[240]; // max for AES-256: 4*4*15 = 240
-	int round; // number of rounds
-};
 
 static void KeyExpansion(AESContext& _ctx, const ne::byte_t* _key, const int _keyWordLength)
 {
@@ -97,7 +97,6 @@ static void KeyExpansion(AESContext& _ctx, const ne::byte_t* _key, const int _ke
 
 		if (i % _keyWordLength == 0)
 		{
-			// RotWord + SubWord + Rcon
 			ne::byte_t t = temp[0];
 			temp[0] = Sbox[temp[1]] ^ Rcon[i / _keyWordLength];
 			temp[1] = Sbox[temp[2]];
@@ -106,7 +105,6 @@ static void KeyExpansion(AESContext& _ctx, const ne::byte_t* _key, const int _ke
 		}
 		else if (_keyWordLength > 6 && i % _keyWordLength == 4)
 		{
-			// SubWord only (AES-256)
 			temp[0] = Sbox[temp[0]];
 			temp[1] = Sbox[temp[1]];
 			temp[2] = Sbox[temp[2]];
@@ -120,16 +118,10 @@ static void KeyExpansion(AESContext& _ctx, const ne::byte_t* _key, const int _ke
 	}
 }
 
-// State layout: state[r + 4*c] = row r, column c (FIPS 197 column-major)
 static void AddRoundKey(Block& _state, const ne::byte_t* _roundKey, int _round)
 {
 	for (int c = 0; c < 4; ++c)
-	{
-		for (int r = 0; r < 4; ++r)
-		{
-			_state[r + 4 * c] ^= _roundKey[(_round * 4 + c) * 4 + r];
-		}
-	}
+		for (int r = 0; r < 4; ++r) _state[r + 4 * c] ^= _roundKey[(_round * 4 + c) * 4 + r];
 }
 
 static void SubBytes(Block& _state)
@@ -144,18 +136,13 @@ static void InvSubBytes(Block& _state)
 
 static void ShiftRows(Block& _state)
 {
-	// Row 1: left rotate by 1 → indices 1, 5, 9, 13
 	ne::byte_t t = _state[1];
 	_state[1] = _state[5];
 	_state[5] = _state[9];
 	_state[9] = _state[13];
 	_state[13] = t;
-
-	// Row 2: left rotate by 2 → indices 2, 6, 10, 14
 	std::swap(_state[2], _state[10]);
 	std::swap(_state[6], _state[14]);
-
-	// Row 3: left rotate by 3 (= right rotate by 1) → indices 3, 7, 11, 15
 	t = _state[15];
 	_state[15] = _state[11];
 	_state[11] = _state[7];
@@ -165,18 +152,13 @@ static void ShiftRows(Block& _state)
 
 static void InvShiftRows(Block& _state)
 {
-	// Row 1: right rotate by 1
 	ne::byte_t t = _state[13];
 	_state[13] = _state[9];
 	_state[9] = _state[5];
 	_state[5] = _state[1];
 	_state[1] = t;
-
-	// Row 2: right rotate by 2
 	std::swap(_state[2], _state[10]);
 	std::swap(_state[6], _state[14]);
-
-	// Row 3: right rotate by 3 (= left rotate by 1)
 	t = _state[3];
 	_state[3] = _state[7];
 	_state[7] = _state[11];
@@ -188,10 +170,9 @@ static void MixColumns(Block& _state)
 {
 	for (int c = 0; c < 4; ++c)
 	{
-		ne::byte_t s0 = _state[4 * c + 0];
-		ne::byte_t s1 = _state[4 * c + 1];
-		ne::byte_t s2 = _state[4 * c + 2];
-		ne::byte_t s3 = _state[4 * c + 3];
+		ne::byte_t s0 = _state[4 * c + 0], s1 = _state[4 * c + 1];
+		ne::byte_t s2 = _state[4 * c + 2], s3 = _state[4 * c + 3];
+
 		_state[4 * c + 0] = gmul(0x02, s0) ^ gmul(0x03, s1) ^ s2 ^ s3;
 		_state[4 * c + 1] = s0 ^ gmul(0x02, s1) ^ gmul(0x03, s2) ^ s3;
 		_state[4 * c + 2] = s0 ^ s1 ^ gmul(0x02, s2) ^ gmul(0x03, s3);
@@ -203,10 +184,9 @@ static void InvMixColumns(Block& _state)
 {
 	for (int c = 0; c < 4; ++c)
 	{
-		ne::byte_t s0 = _state[4 * c + 0];
-		ne::byte_t s1 = _state[4 * c + 1];
-		ne::byte_t s2 = _state[4 * c + 2];
-		ne::byte_t s3 = _state[4 * c + 3];
+		ne::byte_t s0 = _state[4 * c + 0], s1 = _state[4 * c + 1];
+		ne::byte_t s2 = _state[4 * c + 2], s3 = _state[4 * c + 3];
+
 		_state[4 * c + 0] = gmul(0x0e, s0) ^ gmul(0x0b, s1) ^ gmul(0x0d, s2) ^ gmul(0x09, s3);
 		_state[4 * c + 1] = gmul(0x09, s0) ^ gmul(0x0e, s1) ^ gmul(0x0b, s2) ^ gmul(0x0d, s3);
 		_state[4 * c + 2] = gmul(0x0d, s0) ^ gmul(0x09, s1) ^ gmul(0x0e, s2) ^ gmul(0x0b, s3);
@@ -236,7 +216,6 @@ static Block EncryptBlock(const AESContext& _ctx, Block _state)
 static Block DecryptBlock(const AESContext& _ctx, Block _state)
 {
 	AddRoundKey(_state, _ctx.roundKey, _ctx.round);
-
 	for (int round = _ctx.round - 1; round >= 1; --round)
 	{
 		InvShiftRows(_state);
@@ -244,31 +223,35 @@ static Block DecryptBlock(const AESContext& _ctx, Block _state)
 		AddRoundKey(_state, _ctx.roundKey, round);
 		InvMixColumns(_state);
 	}
-
 	InvShiftRows(_state);
 	InvSubBytes(_state);
 	AddRoundKey(_state, _ctx.roundKey, 0);
-
 	return _state;
 }
 
-static AESContext MakeContext(const ne::cryptography::AES::KeyType _keyType, const ne::string_t& _key)
+static AESContext MakeContext(const ne::crypto::AES::Type _keyType, const ne::string_t& _key)
 {
 	AESContext ctx{};
 	int keyWordLength;
+
 	switch (_keyType)
 	{
-	case ne::cryptography::AES::KeyType::AES128: keyWordLength = 4;
+	case ne::crypto::AES::Type::AES_128:
+		keyWordLength = 4;
 		ctx.round = 10;
 		break;
-	case ne::cryptography::AES::KeyType::AES192: keyWordLength = 6;
+	case ne::crypto::AES::Type::AES_192:
+		keyWordLength = 6;
 		ctx.round = 12;
 		break;
-	default: keyWordLength = 8;
+	default:
+		keyWordLength = 8;
 		ctx.round = 14;
 		break;
 	}
+
 	KeyExpansion(ctx, reinterpret_cast<const ne::byte_t*>(_key.data()), keyWordLength);
+
 	return ctx;
 }
 
@@ -288,24 +271,26 @@ static void ApplyPKCS7(ne::string_t& _data)
 static ne::string_t RemovePKCS7(ne::string_t _data)
 {
 	if (_data.empty() || _data.size() % 16 != 0) return _data;
-
 	const auto pad = static_cast<ne::byte_t>(_data.back());
 	if (pad == 0 || pad > 16) return _data;
-
 	for (size_t i = _data.size() - pad; i < _data.size(); ++i) if (static_cast<ne::byte_t>(_data[i]) != pad) return _data;
-
 	_data.resize(_data.size() - pad);
-
 	return _data;
 }
 
 
 
-BEGIN_NS(ne::cryptography)
-	string_t AES::EncryptCBC(const KeyType _keyType, string_t&& _key, string_t&& _iv, string_t&& _plaintext)
+BEGIN_NS(ne::crypto)
+	AES::AES(const Type _type, string_t _key) noexcept
+		: type(_type)
+		, key(std::move(_key)) {}
+
+
+
+	string_t AES::EncryptCBC(string_t&& _iv, string_t&& _plaintext) const
 	{
 		ApplyPKCS7(_plaintext);
-		const AESContext ctx = MakeContext(_keyType, _key);
+		const AESContext ctx = MakeContext(type, key);
 
 		string_t result;
 		result.reserve(_plaintext.size());
@@ -314,24 +299,16 @@ BEGIN_NS(ne::cryptography)
 		for (size_t i = 0; i < _plaintext.size(); i += 16)
 		{
 			Block block = ToBlock(_plaintext, i);
-			for (int_t j = 0; j < 16; ++j)
-			{
-				block[j] ^= prev[j];
-			}
-
+			for (int_t j = 0; j < 16; ++j) block[j] ^= prev[j];
 			prev = EncryptBlock(ctx, block);
-			for (const auto data : prev)
-			{
-				result += static_cast<char_t>(data);
-			}
+			for (const auto data : prev) result += static_cast<char_t>(data);
 		}
-
 		return result;
 	}
 
-	string_t AES::DecryptCBC(const KeyType _keyType, string_t&& _key, string_t&& _iv, string_t&& _ciphertext)
+	string_t AES::DecryptCBC(string_t&& _iv, string_t&& _ciphertext) const
 	{
-		const AESContext ctx = MakeContext(_keyType, _key);
+		const AESContext ctx = MakeContext(type, key);
 
 		string_t result;
 		result.reserve(_ciphertext.size());
@@ -340,57 +317,36 @@ BEGIN_NS(ne::cryptography)
 		for (size_t i = 0; i < _ciphertext.size(); i += 16)
 		{
 			const Block cipher = ToBlock(_ciphertext, i);
-
 			Block plain = DecryptBlock(ctx, cipher);
-			for (int_t j = 0; j < 16; ++j)
-			{
-				plain[j] ^= prev[j];
-			}
-
+			for (int_t j = 0; j < 16; ++j) plain[j] ^= prev[j];
 			prev = cipher;
-			for (const auto data : plain)
-			{
-				result += static_cast<char_t>(data);
-			}
+			for (const auto data : plain) result += static_cast<char_t>(data);
 		}
-
 		return RemovePKCS7(std::move(result));
 	}
 
-	string_t AES::EncryptECB(const KeyType _keyType, string_t&& _key, string_t&& _plaintext)
+	string_t AES::EncryptECB(string_t&& _plaintext) const
 	{
 		ApplyPKCS7(_plaintext);
-		const AESContext ctx = MakeContext(_keyType, _key);
+		const AESContext ctx = MakeContext(type, key);
 
 		string_t result;
 		result.reserve(_plaintext.size());
 
 		for (size_t i = 0; i < _plaintext.size(); i += 16)
-		{
-			for (const auto data : EncryptBlock(ctx, ToBlock(_plaintext, i)))
-			{
-				result += static_cast<char_t>(data);
-			}
-		}
-
+			for (const auto data : EncryptBlock(ctx, ToBlock(_plaintext, i))) result += static_cast<char_t>(data);
 		return result;
 	}
 
-	string_t AES::DecryptECB(const KeyType _keyType, string_t&& _key, string_t&& _ciphertext)
+	string_t AES::DecryptECB(string_t&& _ciphertext) const
 	{
-		const AESContext ctx = MakeContext(_keyType, _key);
+		const AESContext ctx = MakeContext(type, key);
 
 		string_t result;
 		result.reserve(_ciphertext.size());
 
 		for (size_t i = 0; i < _ciphertext.size(); i += 16)
-		{
-			for (const auto data : DecryptBlock(ctx, ToBlock(_ciphertext, i)))
-			{
-				result += static_cast<char_t>(data);
-			}
-		}
-
+			for (const auto data : DecryptBlock(ctx, ToBlock(_ciphertext, i))) result += static_cast<char_t>(data);
 		return RemovePKCS7(std::move(result));
 	}
 

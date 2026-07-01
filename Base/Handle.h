@@ -2,9 +2,7 @@
 // Created by nebula on 24. 5. 20.
 //
 
-#ifndef NEBULA_HANDLE_H
-#define NEBULA_HANDLE_H
-
+#pragma once
 #include <type_traits>
 #include <memory>
 #include "Type.h"
@@ -16,23 +14,16 @@ BEGIN_NS(ne)
 	template <IsTrivial T, std::invocable<T&> Deleter, T InvalidHandle = T{}>
 	class Handle final
 	{
-		NEBULA_NON_COPYABLE(Handle)
-
 	public:
 		constexpr Handle() = default;
-		constexpr ~Handle() noexcept
-		{
-			Close();
-		}
+		constexpr ~Handle() noexcept { Close(); }
+
 		constexpr explicit Handle(const T _handle) noexcept
-			: handle(_handle)
-		{
-		}
+			: handle(_handle) {}
+
 		constexpr Handle(Handle&& _nebulaHandle) noexcept
-			: handle(_nebulaHandle.handle)
-		{
-			_nebulaHandle.handle = InvalidHandle;
-		}
+			: handle(_nebulaHandle.handle) { _nebulaHandle.handle = InvalidHandle; }
+
 		constexpr Handle& operator=(const T _handle)
 		{
 			if (handle != _handle)
@@ -55,46 +46,21 @@ BEGIN_NS(ne)
 			return *this;
 		}
 
+		NEBULA_NON_COPYABLE(Handle)
+
 	private:
 		T handle = InvalidHandle;
 
 	public:
-		[[nodiscard]] constexpr explicit operator T() const noexcept
-		{
-			return handle;
-		}
-		[[nodiscard]] constexpr T Get() const noexcept
-		{
-			return handle;
-		}
-		[[nodiscard]] constexpr T& Get() noexcept
-		{
-			return handle;
-		}
-		[[nodiscard]] constexpr const T* operator->() const noexcept
-		{
-			return &handle;
-		}
-		[[nodiscard]] constexpr T* operator->() noexcept
-		{
-			return &handle;
-		}
-		[[nodiscard]] constexpr const T* operator&() const noexcept
-		{
-			return &handle;
-		}
-		[[nodiscard]] constexpr T* operator&() noexcept
-		{
-			return &handle;
-		}
-		[[nodiscard]] constexpr explicit operator ne::bool_t() const noexcept
-		{
-			return handle != InvalidHandle;
-		}
-		[[nodiscard]] constexpr ne::bool_t operator!() const noexcept
-		{
-			return handle == InvalidHandle;
-		}
+		[[nodiscard]] constexpr explicit operator T() const noexcept { return handle; }
+		[[nodiscard]] constexpr T Get() const noexcept { return handle; }
+		[[nodiscard]] constexpr T& Get() noexcept { return handle; }
+		[[nodiscard]] constexpr const T* operator->() const noexcept { return &handle; }
+		[[nodiscard]] constexpr T* operator->() noexcept { return &handle; }
+		[[nodiscard]] constexpr const T* operator&() const noexcept { return &handle; }
+		[[nodiscard]] constexpr T* operator&() noexcept { return &handle; }
+		[[nodiscard]] constexpr explicit operator ne::bool_t() const noexcept { return handle != InvalidHandle; }
+		[[nodiscard]] constexpr ne::bool_t operator!() const noexcept { return handle == InvalidHandle; }
 		[[nodiscard]] constexpr ne::bool_t operator==(const Handle&) const noexcept requires std::equality_comparable<T> = default;
 
 	private:
@@ -107,6 +73,5 @@ BEGIN_NS(ne)
 			}
 		}
 	};
-END_NS
 
-#endif //NEBULA_HANDLE_H
+END_NS

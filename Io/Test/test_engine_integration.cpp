@@ -1,0 +1,388 @@
+//
+// Created by hscloud on 26. 7. 1.
+//
+// 검증 시나리오:
+//   1. 엔진이 소켓 이벤트와 파일 I/O 를 동시에 처리한다.
+//   2. 모든 handle.resume() 이 RunOnce() 호출 스레드에서만 발생한다
+//      (thread_id 비교로 검증).
+//   3. 소켓 이벤트 + 파일 I/O 가 같은 엔진에서 경쟁 없이 동작한다.
+
+#include <gtest/gtest.h>
+#include <atomic>
+#include <chrono>
+#include <filesystem>
+#include <thread>
+#include "Engine/IIoEngine.h"
+#include "Engine/Awaitable.h"
+#include "File/AsyncFile.h"
+#include "Coroutine/Task.h"
+
+using namespace ne::io;
+namespace fs = std::filesystem;
+
+// ── 헬퍼: RunOnce() 구동 대기 ────────────────────────────────────────────────
+static void DriveEngine(IIoEngine& _engine, const std::atomic<bool>& _done,
+                        std::chrono::milliseconds _timeout = std::chrono::seconds(5))
+{
+    const auto deadline = std::chrono::steady_clock::now() + _timeout;
+    while (!_done.load(std::memory_order_acquire) &&
+           std::chrono::steady_clock::now() < deadline)
+        _engine.RunOnce(10);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+#if defined(IS_POSIX)
+
+#include <sys/socket.h>
+#include <unistd.h>
+#include "Engine/Epoll/EpollEngine.h"
+#include "Engine/IoUring/IoUringEngine.h"
+
+// ── EpollEngine: 소켓 이벤트 콜백 디스패치 ───────────────────────────────────
+TEST(IoEngineIntegration, EpollSocketDispatch)
+{
+    EpollEngine engine;
+    ASSERT_TRUE(engine.IsValid());
+
+    int fds[2];
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+
+    std::atomic<bool> fired{ false };
+    auto r = engine.Watch(
+        static_cast<socket_t>(fds[0]),
+        IoEvent::Read | IoEvent::HangUp,
+        [&](socket_t, uint32_t) { fired.store(true, std::memory_order_release); });
+    ASSERT_TRUE(r.IsOk());
+
+    const char msg = 'x';
+    ASSERT_EQ(::write(fds[1], &msg, 1), 1);
+
+    DriveEngine(engine, fired, std::chrono::milliseconds(500));
+    EXPECT_TRUE(fired.load()) << "Watch callback must fire after write";
+
+    ::close(fds[0]);
+    ::close(fds[1]);
+}
+
+// ── IoUringEngine: handle.resume() 이 RunOnce 스레드에서만 발생 ──────────────
+TEST(IoEngineIntegration, IoUringResumeInRunOnceThread)
+{
+    IoUringEngine engine;
+    ASSERT_TRUE(engine.IsValid());
+
+    const ne::string_t path = "test_integration_resume_thread.bin";
+
+    // 테스트 파일 준비
+    {
+        auto cr = AsyncFile::Create(path, engine);
+        ASSERT_TRUE(cr.IsOk());
+        AsyncFile fw = std::move(cr.Value());
+
+        const ne::byte_t data[] = { 0xCA, 0xFE, 0xBA, 0xBE };
+        std::atomic<bool> wdone{ false };
+        auto wt = [&]() -> ne::Task<void>
+        {
+            (void)co_await fw.Write(std::span<const ne::byte_t>(data, sizeof(data)), 0);
+            wdone.store(true, std::memory_order_release);
+        }();
+        wt.Resume();
+        DriveEngine(engine, wdone);
+        ASSERT_TRUE(wdone.load()) << "Write must complete";
+    }
+
+    auto fr = AsyncFile::Open(path, engine, true);
+    ASSERT_TRUE(fr.IsOk());
+    AsyncFile file = std::move(fr.Value());
+
+    std::atomic<bool> readDone{ false };
+    std::thread::id resumeThreadId;
+    ne::byte_t rbuf[4]{};
+
+    auto task = [&]() -> ne::Task<void>
+    {
+        (void)co_await file.Read(std::span<ne::byte_t>(rbuf, sizeof(rbuf)), 0);
+        resumeThreadId = std::this_thread::get_id();
+        readDone.store(true, std::memory_order_release);
+    }();
+    task.Resume(); // I/O 제출 후 suspend
+
+    // RunOnce 를 전용 스레드에서 구동 — resume 이 이 스레드에서 발생해야 함
+    std::thread::id engineThreadId;
+    std::atomic<bool> engineReady{ false };
+    std::thread engineThread([&]
+    {
+        engineThreadId = std::this_thread::get_id();
+        engineReady.store(true, std::memory_order_release);
+        DriveEngine(engine, readDone);
+    });
+
+    while (!engineReady.load(std::memory_order_acquire))
+        std::this_thread::yield();
+
+    engineThread.join();
+
+    ASSERT_TRUE(readDone.load()) << "File read must complete";
+    EXPECT_EQ(resumeThreadId, engineThreadId)
+        << "handle.resume() must be called from the RunOnce() thread";
+    EXPECT_EQ(rbuf[0], static_cast<ne::byte_t>(0xCA));
+
+    fs::remove(path);
+}
+
+// ── IoUringEngine: 소켓 이벤트 + 파일 I/O 동시 처리 ─────────────────────────
+TEST(IoEngineIntegration, IoUringSocketAndFileConcurrent)
+{
+    IoUringEngine engine;
+    ASSERT_TRUE(engine.IsValid());
+
+    // 소켓 페어 등록
+    int fds[2];
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+
+    std::atomic<int> socketFired{ 0 };
+    auto wr = engine.Watch(
+        static_cast<socket_t>(fds[0]),
+        IoEvent::Read | IoEvent::HangUp,
+        [&](socket_t, uint32_t) { socketFired.fetch_add(1, std::memory_order_release); });
+    ASSERT_TRUE(wr.IsOk());
+
+    // 소켓에 데이터 전송 (Watch 콜백 유발)
+    const char ping = 'p';
+    ASSERT_EQ(::write(fds[1], &ping, 1), 1);
+
+    // 파일 Read 코루틴 준비
+    const ne::string_t path = "test_integration_concurrent.bin";
+    {
+        auto cr = AsyncFile::Create(path, engine);
+        ASSERT_TRUE(cr.IsOk());
+        AsyncFile fw = std::move(cr.Value());
+        const ne::byte_t wdata[] = { 1, 2, 3, 4 };
+        std::atomic<bool> wdone{ false };
+        auto wt = [&]() -> ne::Task<void>
+        {
+            (void)co_await fw.Write(std::span<const ne::byte_t>(wdata, sizeof(wdata)), 0);
+            wdone.store(true, std::memory_order_release);
+        }();
+        wt.Resume();
+        DriveEngine(engine, wdone);
+        ASSERT_TRUE(wdone.load());
+    }
+
+    auto fr = AsyncFile::Open(path, engine, true);
+    ASSERT_TRUE(fr.IsOk());
+    AsyncFile file = std::move(fr.Value());
+    std::atomic<bool> fileDone{ false };
+    ne::byte_t rbuf[4]{};
+
+    auto fileTask = [&]() -> ne::Task<void>
+    {
+        (void)co_await file.Read(std::span<ne::byte_t>(rbuf, sizeof(rbuf)), 0);
+        fileDone.store(true, std::memory_order_release);
+    }();
+    fileTask.Resume();
+
+    // 소켓 + 파일 양쪽 모두 같은 RunOnce 루프에서 처리됨
+    DriveEngine(engine, fileDone, std::chrono::milliseconds(500));
+
+    EXPECT_TRUE(fileDone.load()) << "File read must complete";
+    EXPECT_GT(socketFired.load(), 0) << "Socket event must have fired";
+
+    ::close(fds[0]);
+    ::close(fds[1]);
+    fs::remove(path);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+#elif defined(_WIN32)
+
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include "Engine/Iocp/IocpEngine.h"
+
+// 로컬루프백 TCP 소켓 페어 생성 헬퍼
+static bool MakeSocketPair(SOCKET& _s1, SOCKET& _s2)
+{
+    WSADATA wsa{};
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return false;
+
+    SOCKET listener = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (listener == INVALID_SOCKET) return false;
+
+    sockaddr_in addr{};
+    addr.sin_family      = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port        = 0;
+
+    if (::bind(listener, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)) != 0 ||
+        ::listen(listener, 1) != 0)
+    {
+        ::closesocket(listener);
+        return false;
+    }
+
+    int addrLen = sizeof(addr);
+    ::getsockname(listener, reinterpret_cast<sockaddr*>(&addr), &addrLen);
+
+    _s1 = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (_s1 == INVALID_SOCKET || ::connect(_s1, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)) != 0)
+    {
+        ::closesocket(listener);
+        return false;
+    }
+
+    _s2 = ::accept(listener, nullptr, nullptr);
+    ::closesocket(listener);
+    return _s2 != INVALID_SOCKET;
+}
+
+// ── IocpEngine: 소켓 이벤트 콜백 디스패치 ─────────────────────────────────────
+TEST(IoEngineIntegration, IocpSocketDispatch)
+{
+    IocpEngine engine;
+    ASSERT_TRUE(engine.IsValid());
+
+    SOCKET s1 = INVALID_SOCKET;
+    SOCKET s2 = INVALID_SOCKET;
+    ASSERT_TRUE(MakeSocketPair(s1, s2));
+
+    std::atomic<bool> fired{ false };
+    auto r = engine.Watch(
+        static_cast<socket_t>(s1),
+        IoEvent::Read | IoEvent::HangUp,
+        [&](socket_t, uint32_t) { fired.store(true, std::memory_order_release); });
+    ASSERT_TRUE(r.IsOk());
+
+    const char msg = 'x';
+    ASSERT_NE(::send(s2, &msg, 1, 0), SOCKET_ERROR);
+
+    DriveEngine(engine, fired, std::chrono::milliseconds(1000));
+    EXPECT_TRUE(fired.load()) << "Watch callback must fire after send";
+
+    ::closesocket(s1);
+    ::closesocket(s2);
+}
+
+// ── IocpEngine: handle.resume() 이 RunOnce 스레드에서만 발생 ─────────────────
+TEST(IoEngineIntegration, IocpResumeInRunOnceThread)
+{
+    IocpEngine engine;
+    ASSERT_TRUE(engine.IsValid());
+
+    const ne::string_t path = "test_integration_resume_thread.bin";
+
+    {
+        auto cr = AsyncFile::Create(path, engine);
+        ASSERT_TRUE(cr.IsOk());
+        AsyncFile fw = std::move(cr.Value());
+
+        const ne::byte_t data[] = { 0xCA, 0xFE, 0xBA, 0xBE };
+        std::atomic<bool> wdone{ false };
+        auto wt = [&]() -> ne::Task<void>
+        {
+            (void)co_await fw.Write(std::span<const ne::byte_t>(data, sizeof(data)), 0);
+            wdone.store(true, std::memory_order_release);
+        }();
+        wt.Resume();
+        DriveEngine(engine, wdone);
+        ASSERT_TRUE(wdone.load()) << "Write must complete";
+    }
+
+    auto fr = AsyncFile::Open(path, engine, true);
+    ASSERT_TRUE(fr.IsOk());
+    AsyncFile file = std::move(fr.Value());
+
+    std::atomic<bool> readDone{ false };
+    std::thread::id resumeThreadId;
+    ne::byte_t rbuf[4]{};
+
+    auto task = [&]() -> ne::Task<void>
+    {
+        (void)co_await file.Read(std::span<ne::byte_t>(rbuf, sizeof(rbuf)), 0);
+        resumeThreadId = std::this_thread::get_id();
+        readDone.store(true, std::memory_order_release);
+    }();
+    task.Resume();
+
+    std::thread::id engineThreadId;
+    std::atomic<bool> engineReady{ false };
+    std::thread engineThread([&]
+    {
+        engineThreadId = std::this_thread::get_id();
+        engineReady.store(true, std::memory_order_release);
+        DriveEngine(engine, readDone);
+    });
+
+    while (!engineReady.load(std::memory_order_acquire))
+        std::this_thread::yield();
+
+    engineThread.join();
+
+    ASSERT_TRUE(readDone.load()) << "File read must complete";
+    EXPECT_EQ(resumeThreadId, engineThreadId)
+        << "handle.resume() must be called from the RunOnce() thread";
+    EXPECT_EQ(rbuf[0], static_cast<ne::byte_t>(0xCA));
+
+    fs::remove(path);
+}
+
+// ── IocpEngine: 소켓 이벤트 + 파일 I/O 동시 처리 ────────────────────────────
+TEST(IoEngineIntegration, IocpSocketAndFileConcurrent)
+{
+    IocpEngine engine;
+    ASSERT_TRUE(engine.IsValid());
+
+    SOCKET s1 = INVALID_SOCKET;
+    SOCKET s2 = INVALID_SOCKET;
+    ASSERT_TRUE(MakeSocketPair(s1, s2));
+
+    std::atomic<int> socketFired{ 0 };
+    auto wr = engine.Watch(
+        static_cast<socket_t>(s1),
+        IoEvent::Read | IoEvent::HangUp,
+        [&](socket_t, uint32_t) { socketFired.fetch_add(1, std::memory_order_release); });
+    ASSERT_TRUE(wr.IsOk());
+
+    const char msg = 'z';
+    ASSERT_NE(::send(s2, &msg, 1, 0), SOCKET_ERROR);
+
+    const ne::string_t path = "test_integration_concurrent.bin";
+    {
+        auto cr = AsyncFile::Create(path, engine);
+        ASSERT_TRUE(cr.IsOk());
+        AsyncFile fw = std::move(cr.Value());
+        const ne::byte_t wdata[] = { 1, 2, 3, 4 };
+        std::atomic<bool> wdone{ false };
+        auto wt = [&]() -> ne::Task<void>
+        {
+            (void)co_await fw.Write(std::span<const ne::byte_t>(wdata, sizeof(wdata)), 0);
+            wdone.store(true, std::memory_order_release);
+        }();
+        wt.Resume();
+        DriveEngine(engine, wdone);
+        ASSERT_TRUE(wdone.load());
+    }
+
+    auto fr = AsyncFile::Open(path, engine, true);
+    ASSERT_TRUE(fr.IsOk());
+    AsyncFile file = std::move(fr.Value());
+    std::atomic<bool> fileDone{ false };
+    ne::byte_t rbuf[4]{};
+
+    auto fileTask = [&]() -> ne::Task<void>
+    {
+        (void)co_await file.Read(std::span<ne::byte_t>(rbuf, sizeof(rbuf)), 0);
+        fileDone.store(true, std::memory_order_release);
+    }();
+    fileTask.Resume();
+
+    DriveEngine(engine, fileDone, std::chrono::milliseconds(1000));
+
+    EXPECT_TRUE(fileDone.load()) << "File read must complete";
+    EXPECT_GT(socketFired.load(), 0) << "Socket event must have fired";
+
+    ::closesocket(s1);
+    ::closesocket(s2);
+    fs::remove(path);
+}
+
+#endif // platform

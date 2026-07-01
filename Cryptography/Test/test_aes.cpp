@@ -4,13 +4,11 @@
 
 #include <gtest/gtest.h>
 #include "AES/AES.h"
-#include "Base64/Base64.h"
 
 
 
-namespace crypto = ne::cryptography;
+namespace crypto = ne::crypto;
 
-// Helper: hex string → binary string
 static ne::string_t fromHex(const ne::string_t& hex)
 {
 	ne::string_t bytes;
@@ -26,7 +24,6 @@ static ne::string_t fromHex(const ne::string_t& hex)
 	return bytes;
 }
 
-// Helper: binary string → lowercase hex string
 static ne::string_t toHex(const ne::string_t& bytes)
 {
 	static constexpr ne::char_t hex[] = "0123456789abcdef";
@@ -45,11 +42,8 @@ TEST(AESTest, EncryptECB_AES128_NIST)
 	const ne::string_t key       = fromHex("2b7e151628aed2a6abf7158809cf4f3c");
 	const ne::string_t plaintext = fromHex("3243f6a8885a308d313198a2e0370734");
 
-	// Single 16-byte block: no PKCS#7 extra block, just one padded block output
-	// After PKCS#7: plaintext (16 bytes) + 16 bytes of 0x10 = 32 bytes ciphertext
-	// First block must equal the NIST expected ciphertext
-	ne::string_t ct = crypto::AES::EncryptECB(crypto::AES::KeyType::AES128,
-		ne::string_t(key), ne::string_t(plaintext));
+	ne::string_t ct = crypto::AES::Create(crypto::AES::Type::AES_128, key)
+		.EncryptECB(ne::string_t(plaintext));
 
 	EXPECT_EQ(toHex(ct).substr(0, 32), "3925841d02dc09fbdc118597196a0b32");
 }
@@ -60,10 +54,9 @@ TEST(AESTest, RoundTrip_ECB_AES128)
 	const ne::string_t key = fromHex("2b7e151628aed2a6abf7158809cf4f3c");
 	const ne::string_t msg = "Hello, AES-128!";
 
-	ne::string_t ct = crypto::AES::EncryptECB(crypto::AES::KeyType::AES128,
-		ne::string_t(key), ne::string_t(msg));
-	ne::string_t pt = crypto::AES::DecryptECB(crypto::AES::KeyType::AES128,
-		ne::string_t(key), ne::string_t(ct));
+	const auto aes = crypto::AES::Create(crypto::AES::Type::AES_128, key);
+	ne::string_t ct = aes.EncryptECB(ne::string_t(msg));
+	ne::string_t pt = aes.DecryptECB(ne::string_t(ct));
 
 	EXPECT_EQ(pt, msg);
 }
@@ -73,10 +66,9 @@ TEST(AESTest, RoundTrip_ECB_AES256)
 	const ne::string_t key = fromHex("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
 	const ne::string_t msg = "AES-256 ECB test message!";
 
-	ne::string_t ct = crypto::AES::EncryptECB(crypto::AES::KeyType::AES256,
-		ne::string_t(key), ne::string_t(msg));
-	ne::string_t pt = crypto::AES::DecryptECB(crypto::AES::KeyType::AES256,
-		ne::string_t(key), ne::string_t(ct));
+	const auto aes = crypto::AES::Create(crypto::AES::Type::AES_256, key);
+	ne::string_t ct = aes.EncryptECB(ne::string_t(msg));
+	ne::string_t pt = aes.DecryptECB(ne::string_t(ct));
 
 	EXPECT_EQ(pt, msg);
 }
@@ -87,10 +79,9 @@ TEST(AESTest, RoundTrip_CBC_AES128)
 	const ne::string_t iv  = fromHex("000102030405060708090a0b0c0d0e0f");
 	const ne::string_t msg = "CBC mode with PKCS7 padding test.";
 
-	ne::string_t ct = crypto::AES::EncryptCBC(crypto::AES::KeyType::AES128,
-		ne::string_t(key), ne::string_t(iv), ne::string_t(msg));
-	ne::string_t pt = crypto::AES::DecryptCBC(crypto::AES::KeyType::AES128,
-		ne::string_t(key), ne::string_t(iv), ne::string_t(ct));
+	const auto aes = crypto::AES::Create(crypto::AES::Type::AES_128, key);
+	ne::string_t ct = aes.EncryptCBC(ne::string_t(iv), ne::string_t(msg));
+	ne::string_t pt = aes.DecryptCBC(ne::string_t(iv), ne::string_t(ct));
 
 	EXPECT_EQ(pt, msg);
 }
@@ -102,10 +93,9 @@ TEST(AESTest, EncryptCBC_AES128_NIST_FirstBlock)
 	const ne::string_t iv  = fromHex("000102030405060708090a0b0c0d0e0f");
 	const ne::string_t pt  = fromHex("6bc1bee22e409f96e93d7e117393172a");
 
-	ne::string_t ct = crypto::AES::EncryptCBC(crypto::AES::KeyType::AES128,
-		ne::string_t(key), ne::string_t(iv), ne::string_t(pt));
+	ne::string_t ct = crypto::AES::Create(crypto::AES::Type::AES_128, key)
+		.EncryptCBC(ne::string_t(iv), ne::string_t(pt));
 
-	// First 16 bytes must match NIST expected
 	EXPECT_EQ(toHex(ct).substr(0, 32), "7649abac8119b246cee98e9b12e9197d");
 }
 
@@ -115,10 +105,9 @@ TEST(AESTest, RoundTrip_CBC_AES256_LongMessage)
 	const ne::string_t iv  = fromHex("000102030405060708090a0b0c0d0e0f");
 	const ne::string_t msg = "This is a longer message that spans multiple AES blocks for testing purposes.";
 
-	ne::string_t ct = crypto::AES::EncryptCBC(crypto::AES::KeyType::AES256,
-		ne::string_t(key), ne::string_t(iv), ne::string_t(msg));
-	ne::string_t pt = crypto::AES::DecryptCBC(crypto::AES::KeyType::AES256,
-		ne::string_t(key), ne::string_t(iv), ne::string_t(ct));
+	const auto aes = crypto::AES::Create(crypto::AES::Type::AES_256, key);
+	ne::string_t ct = aes.EncryptCBC(ne::string_t(iv), ne::string_t(msg));
+	ne::string_t pt = aes.DecryptCBC(ne::string_t(iv), ne::string_t(ct));
 
 	EXPECT_EQ(pt, msg);
 }

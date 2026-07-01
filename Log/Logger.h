@@ -13,65 +13,66 @@
 #include "Queue/MpscQueue.h"
 
 BEGIN_NS(ne)
-    enum class LogLevel
-    {
-        TRACE,
-        DBG,
-        INFO,
-        WARN,
-        ERR,
-        FATAL
-    };
+	enum class LogLevel
+	{
+		NE_TRACE,
+		NE_DEBUG,
+		NE_INFO,
+		NE_WARNING,
+		NE_ERROR,
+		NE_FATAL
+	};
 
-    struct LogRecord
-    {
-        LogLevel level{ LogLevel::TRACE };
-        string_t message;
-        std::chrono::system_clock::time_point timestamp;
-    };
+	struct LogRecord
+	{
+		LogLevel level{ LogLevel::NE_TRACE };
+		string_t message;
+		std::chrono::system_clock::time_point timestamp;
+	};
 
-    class Logger final
-    {
-    public:
-        explicit Logger(const string_t& _fileName);
-        explicit Logger(const string_t& _filePath, const string_t& _fileName);
-        ~Logger();
+	class Logger final
+	{
+	public:
+		explicit Logger(const string_t& _fileName);
+		explicit Logger(const string_t& _filePath, const string_t& _fileName);
+		~Logger();
 
-    private:
-        std::mutex mutex;
-        std::ofstream os;
-        std::atomic<LogLevel> logLevel;
+	private:
+		std::mutex mutex;
+		std::ofstream os;
+		std::atomic<LogLevel> logLevel;
 
-        ne::concurrency::MpscQueue<LogRecord> queue;
-        std::thread backendThread;
-        std::atomic<bool_t> running{ true };
+		ne::concurrency::MpscQueue<LogRecord> queue;
+		std::thread backendThread;
+		std::atomic<bool_t> running{ true };
 
-    public:
-        LogLevel GetLogLevel() const;
-        void_t SetLogLevel(const LogLevel& _logLevel);
+	public:
+		LogLevel GetLogLevel() const { return logLevel.load(std::memory_order_relaxed); }
+		void_t SetLogLevel(const LogLevel& _logLevel) { logLevel.store(_logLevel, std::memory_order_relaxed); }
 
-    public:
-        [[nodiscard]] bool_t Open(const string_t& _fileName);
-        [[nodiscard]] bool_t Open(const string_t& _filePath, const string_t& _fileName);
-        [[nodiscard]] bool_t Close();
-        [[nodiscard]] bool_t IsOpen() const;
+	public:
+		[[nodiscard]] bool_t Open(const string_t& _fileName);
+		[[nodiscard]] bool_t Open(const string_t& _filePath, const string_t& _fileName);
+		[[nodiscard]] bool_t Close();
+		[[nodiscard]] bool_t IsOpen() const { return os.is_open(); }
 
-    public:
-        void_t Trace(const string_t& _message);
-        void_t Debug(const string_t& _message);
-        void_t Info(const string_t& _message);
-        void_t Warning(const string_t& _message);
-        void_t Error(const string_t& _message);
-        void_t Fatal(const string_t& _message);
+	public:
+		void_t Trace(const string_t& _message) { Write(LogLevel::NE_TRACE, _message); }
+		void_t Debug(const string_t& _message) { Write(LogLevel::NE_DEBUG, _message); }
+		void_t Info(const string_t& _message) { Write(LogLevel::NE_INFO, _message); }
+		void_t Warning(const string_t& _message) { Write(LogLevel::NE_WARNING, _message); }
+		void_t Error(const string_t& _message) { Write(LogLevel::NE_ERROR, _message); }
+		void_t Fatal(const string_t& _message) { Write(LogLevel::NE_FATAL, _message); }
 
-    private:
-        void_t Write(LogLevel _logLevel, const string_t& _message);
-        void_t WriteToFile(const LogRecord& _record);
-        void_t BackendLoop();
-        void_t FlushPending();
+	private:
+		void_t Write(LogLevel _logLevel, const string_t& _message);
+		void_t WriteToFile(const LogRecord& _record);
+		void_t BackendLoop();
+		void_t FlushPending();
 
-    private:
-        static string_t LogLevelToString(LogLevel _logLevel);
-        static string_t GetDateTime(std::chrono::time_point<std::chrono::system_clock> _timePoint);
-    };
+	private:
+		static string_t LogLevelToString(LogLevel _logLevel);
+		static string_t GetDateTime(std::chrono::time_point<std::chrono::system_clock> _timePoint);
+	};
+
 END_NS

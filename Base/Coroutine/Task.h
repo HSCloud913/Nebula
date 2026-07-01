@@ -13,7 +13,6 @@ BEGIN_NS(ne)
 	class Task
 	{
 	public:
-		NEBULA_NON_COPYABLE(Task)
 		struct promise_type; // ctor 시그니처 사용을 위한 전방 선언
 
 	public:
@@ -35,6 +34,8 @@ BEGIN_NS(ne)
 
 		~Task() noexcept { if (handle) handle.destroy(); }
 
+		NEBULA_NON_COPYABLE(Task)
+
 	public:
 		struct promise_type
 		{
@@ -48,10 +49,10 @@ BEGIN_NS(ne)
 			{
 				bool_t await_ready() const noexcept { return false; }
 
-				std::coroutine_handle<> await_suspend(std::coroutine_handle<promise_type> _h) noexcept
+				std::coroutine_handle<> await_suspend(std::coroutine_handle<promise_type> _handle) noexcept
 				{
-					auto& p = _h.promise();
-					return p.continuation ? p.continuation : std::noop_coroutine();
+					auto& promise = _handle.promise();
+					return promise.continuation ? promise.continuation : std::noop_coroutine();
 				}
 
 				void await_resume() const noexcept {}
@@ -73,7 +74,7 @@ BEGIN_NS(ne)
 			void unhandled_exception() noexcept { std::terminate(); }
 
 			T TakeResult() noexcept { return std::move(*result); }
-			void SetContinuation(std::coroutine_handle<> _h) noexcept { continuation = _h; }
+			void SetContinuation(std::coroutine_handle<> _continuation) noexcept { continuation = _continuation; }
 		};
 
 	private:
@@ -106,7 +107,6 @@ BEGIN_NS(ne)
 	{
 	public:
 		struct promise_type;
-		NEBULA_NON_COPYABLE(Task)
 
 	public:
 		explicit Task(const std::coroutine_handle<promise_type> _handle) noexcept
@@ -127,6 +127,8 @@ BEGIN_NS(ne)
 
 		~Task() noexcept { if (handle) handle.destroy(); }
 
+		NEBULA_NON_COPYABLE(Task)
+
 	public:
 		struct promise_type
 		{
@@ -141,8 +143,8 @@ BEGIN_NS(ne)
 
 				std::coroutine_handle<> await_suspend(const std::coroutine_handle<promise_type> _handle) noexcept
 				{
-					const auto& p = _handle.promise();
-					return p.continuation ? p.continuation : std::noop_coroutine();
+					const auto& promise = _handle.promise();
+					return promise.continuation ? promise.continuation : std::noop_coroutine();
 				}
 
 				void await_resume() const noexcept {}
@@ -162,7 +164,7 @@ BEGIN_NS(ne)
 			void return_void() noexcept {}
 			void unhandled_exception() noexcept { std::terminate(); }
 
-			void SetContinuation(const std::coroutine_handle<> _handle) noexcept { continuation = _handle; }
+			void SetContinuation(const std::coroutine_handle<> _continuation) noexcept { continuation = _continuation; }
 		};
 
 	private:

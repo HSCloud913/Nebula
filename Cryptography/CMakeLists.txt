@@ -7,37 +7,58 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Header only 항목만 추가
 set(HEADERS
+        Hash/Hash.h
+        Hash/Algorithm/CRC32.h
+        Hash/Algorithm/MD5.h
+        Hash/Algorithm/SHA1.h
+        Hash/Algorithm/SHA2.h
+        Hash/Algorithm/SHA3.h
+        Hash/Algorithm/Wrapper/CRC32Wrapper.h
+        Hash/Algorithm/Wrapper/HashWrapper.h
+        Hash/Algorithm/Wrapper/MD5Wrapper.h
+        Hash/Algorithm/Wrapper/SHA1Wrapper.h
+        Hash/Algorithm/Wrapper/SHA2Wrapper.h
+        Hash/Algorithm/Wrapper/SHA3Wrapper.h
+        Hash/Factory/HashFactory.h
 
+        Math/BigInt.h
+
+        HMAC/HMAC.h
+        AES/AES.h
+        RSA/RSA.h
 )
 
 set(SOURCES
-        Hash/CRC32.cpp
-        Hash/MD5.cpp
-        Hash/SHA1.cpp
-        Hash/SHA2.cpp
-        Hash/SHA3.cpp
-        Hash/Wrapper/CRC32Wrapper.cpp
-        Hash/Wrapper/HashWrapper.cpp
-        Hash/Wrapper/MD5Wrapper.cpp
-        Hash/Wrapper/SHA1Wrapper.cpp
-        Hash/Wrapper/SHA2Wrapper.cpp
-        Hash/Wrapper/SHA3Wrapper.cpp
+        Hash/Hash.cpp
+        Hash/Algorithm/CRC32.cpp
+        Hash/Algorithm/MD5.cpp
+        Hash/Algorithm/SHA1.cpp
+        Hash/Algorithm/SHA2.cpp
+        Hash/Algorithm/SHA3.cpp
+        Hash/Algorithm/Wrapper/CRC32Wrapper.cpp
+        Hash/Algorithm/Wrapper/HashWrapper.cpp
+        Hash/Algorithm/Wrapper/MD5Wrapper.cpp
+        Hash/Algorithm/Wrapper/SHA1Wrapper.cpp
+        Hash/Algorithm/Wrapper/SHA2Wrapper.cpp
+        Hash/Algorithm/Wrapper/SHA3Wrapper.cpp
         Hash/Factory/HashFactory.cpp
 
+        Math/BigInt.cpp
+
         HMAC/HMAC.cpp
-
         AES/AES.cpp
-
-        RSA/BigInt.cpp
         RSA/RSA.cpp
 )
 
 add_library(${PROJECT_NAME} STATIC ${HEADERS} ${SOURCES})
+target_include_directories(${PROJECT_NAME} PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/Base
+        ${CMAKE_SOURCE_DIR}/Util)
+target_link_libraries(${PROJECT_NAME} PUBLIC NebulaBase NebulaUtil)
 
-target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/Base)
-target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/Cryptography)
-target_link_libraries(${PROJECT_NAME} PRIVATE NebulaBase)
 
-add_subdirectory(Test)
+if (TARGET GTest::gtest_main AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Test)
+    add_subdirectory(Test)
+endif ()

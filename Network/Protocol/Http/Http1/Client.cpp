@@ -9,7 +9,7 @@
 #include <string>
 
 BEGIN_NS(ne::network::http_1)
-	Client::Client(IIoEngine& _engine) noexcept
+	Client::Client(ne::io::IIoEngine& _engine) noexcept
 		: engine(_engine) {}
 
 

@@ -1,21 +1,19 @@
 #include "RSA.h"
-#include "BigInt.h"
 
 #include <random>
 #include <stdexcept>
 #include <chrono>
+#include "../Math/BigInt.h"
 
 
 
-BEGIN_NS(ne::cryptography)
-	RSAKeyPair RSA::GenerateKeyPair(KeySize _keySize)
+BEGIN_NS(ne::crypto)
+	RSAKeyPair RSAKeyPair::Generate(const KeySize _keySize)
 	{
 		const size_t halfBits = static_cast<size_t>(_keySize) / 2;
 
-		// Seed with time + hardware randomness
 		std::random_device rd;
-		const ulonglong_t seed = rd()
-								^ static_cast<ulonglong_t>(std::chrono::steady_clock::now().time_since_epoch().count());
+		const ulonglong_t seed = rd() ^ static_cast<ulonglong_t>(std::chrono::steady_clock::now().time_since_epoch().count());
 		std::mt19937_64 rng(seed);
 
 		BigInt n, d;
@@ -30,7 +28,7 @@ BEGIN_NS(ne::cryptography)
 			n = p * q;
 			if (n.BitLength() != static_cast<size_t>(_keySize)) continue;
 
-			BigInt phi = (p - BigInt(1u)) * (q - BigInt(1u));
+			const BigInt phi = (p - BigInt(1u)) * (q - BigInt(1u));
 			if (BigInt::Gcd(e, phi) != BigInt(1u)) continue;
 
 			d = BigInt::ModInverse(e, phi);
@@ -46,18 +44,17 @@ BEGIN_NS(ne::cryptography)
 		return kp;
 	}
 
-	string_t RSA::Encrypt(const RSAPublicKey& _key, string_t&& _plaintext)
+	string_t RSAPublicKey::Encrypt(string_t&& _plaintext) const
 	{
-		const BigInt n = BigInt::FromHex(_key.n);
-		const BigInt e = BigInt::FromHex(_key.e);
+		const BigInt bn = BigInt::FromHex(n);
+		const BigInt be = BigInt::FromHex(e);
 
-		const size_t keyLength = (n.BitLength() + 7) / 8;
+		const size_t keyLength = (bn.BitLength() + 7) / 8;
 		if (_plaintext.size() > keyLength - 11)
 		{
 			throw std::invalid_argument("RSA::Encrypt: plaintext too large for key size");
 		}
 
-		// PKCS#1 v1.5 type 2 encryption padding
 		std::random_device rd;
 		std::mt19937_64 rng(rd());
 		std::uniform_int_distribution<uint_t> dist(1, 255);
@@ -68,30 +65,26 @@ BEGIN_NS(ne::cryptography)
 		em.reserve(keyLength);
 		em += '\x00';
 		em += '\x02';
-		for (size_t i = 0; i < psLen; ++i)
-		{
-			em += static_cast<char_t>(dist(rng));
-		}
+		for (size_t i = 0; i < psLen; ++i) em += static_cast<char_t>(dist(rng));
 		em += '\x00';
 		em += _plaintext;
 
 		const BigInt m = BigInt::FromBytes(em);
-		const BigInt c = BigInt::ModPow(m, e, n);
+		const BigInt c = BigInt::ModPow(m, be, bn);
 
 		return c.ToBytes(keyLength);
 	}
 
-	string_t RSA::Decrypt(const RSAPrivateKey& _key, string_t&& _ciphertext)
+	string_t RSAPrivateKey::Decrypt(string_t&& _ciphertext) const
 	{
-		const BigInt n = BigInt::FromHex(_key.n);
-		const BigInt d = BigInt::FromHex(_key.d);
-		const size_t keyLen = (n.BitLength() + 7) / 8;
+		const BigInt bn = BigInt::FromHex(n);
+		const BigInt bd = BigInt::FromHex(d);
+		const size_t keyLen = (bn.BitLength() + 7) / 8;
 
 		const BigInt c = BigInt::FromBytes(_ciphertext);
-		const BigInt m = BigInt::ModPow(c, d, n);
+		const BigInt m = BigInt::ModPow(c, bd, bn);
 		const string_t em = m.ToBytes(keyLen);
 
-		// PKCS#1 v1.5 unpadding: 0x00 0x02 PS 0x00 M
 		if (em.size() < 11 || static_cast<byte_t>(em[0]) != 0x00 || static_cast<byte_t>(em[1]) != 0x02)
 		{
 			throw std::runtime_error("RSA::Decrypt: invalid padding");
@@ -100,7 +93,10 @@ BEGIN_NS(ne::cryptography)
 		size_t sep = 2;
 		while (sep < em.size() && em[sep] != '\x00') ++sep;
 
-		if (sep == em.size()) throw std::runtime_error("RSA::Decrypt: padding separator not found");
+		if (sep == em.size())
+		{
+			throw std::runtime_error("RSA::Decrypt: padding separator not found");
+		}
 
 		return em.substr(sep + 1);
 	}

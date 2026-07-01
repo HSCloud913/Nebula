@@ -5,7 +5,7 @@
 #pragma once
 #include "../HttpCommon.h"
 #include "Coroutine/Task.h"
-#include "IoEngine/IIoEngine.h"
+#include "Engine/IIoEngine.h"
 #include "Result.h"
 #include "Error.h"
 #include <functional>
@@ -26,11 +26,11 @@ BEGIN_NS(ne::network::http_1)
 		using RequestHandler = std::function<ne::Task<HttpResponse>(const HttpRequest&)>;
 
 	public:
-		Server(IIoEngine& _engine, RequestHandler _handler) noexcept;
+		Server(ne::io::IIoEngine& _engine, RequestHandler _handler) noexcept;
 		~Server() = default;
 
 	private:
-		IIoEngine* engine;
+		ne::io::IIoEngine* engine;
 		RequestHandler handler;
 		bool_t running{ false };
 

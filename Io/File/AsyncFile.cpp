@@ -21,7 +21,7 @@ BEGIN_NS(ne::io)
 	AsyncFile::AsyncFile(const file_t _fd, IoUringEngine& _engine) noexcept
 		: fd(_fd), engine(&_engine) {}
 #elif defined(_WIN32)
-	AsyncFile::AsyncFile(const file_t _fd, FileIocpEngine& _engine) noexcept
+	AsyncFile::AsyncFile(const file_t _fd, IocpEngine& _engine) noexcept
 		: fd(_fd), engine(&_engine) {}
 #else
 	AsyncFile::AsyncFile(const file_t _fd) noexcept
@@ -59,7 +59,7 @@ BEGIN_NS(ne::io)
 
 #if defined(_WIN32)
 	ne::Result<AsyncFile, ne::OsError> AsyncFile::Create(
-		const ne::string_t& _path, FileIocpEngine& _engine) noexcept
+		const ne::string_t& _path, IocpEngine& _engine) noexcept
 	{
 		const HANDLE handle = ::CreateFileA(
 			_path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
@@ -80,7 +80,7 @@ BEGIN_NS(ne::io)
 	}
 
 	ne::Result<AsyncFile, ne::OsError> AsyncFile::Open(
-		const ne::string_t& _path, FileIocpEngine& _engine, const bool_t _readOnly) noexcept
+		const ne::string_t& _path, IocpEngine& _engine, const bool_t _readOnly) noexcept
 	{
 		const DWORD access = _readOnly ? GENERIC_READ : (GENERIC_READ | GENERIC_WRITE);
 		const HANDLE handle = ::CreateFileA(

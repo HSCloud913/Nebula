@@ -2,8 +2,7 @@
 // Created by nebula on 24. 5. 29.
 //
 
-#ifndef MESSAGEQUEUE_H
-#define MESSAGEQUEUE_H
+#pragma once
 
 #include <memory>
 #include <span>
@@ -14,8 +13,8 @@
 #include "Error.h"
 #include "Type.h"
 
-// IIoEngine 전방 선언 — 헤더 체인을 최소화하기 위해 IoEngine/IIoEngine.h 는 .cpp 에서만 include
-namespace ne::network { class IIoEngine; }
+// IIoEngine 전방 선언 — 헤더 체인을 최소화하기 위해 Engine/IIoEngine.h 는 .cpp 에서만 include
+namespace ne::io { class IIoEngine; }
 
 BEGIN_NS(ne::ipc)
 	class MessageQueue final
@@ -42,15 +41,11 @@ BEGIN_NS(ne::ipc)
 		// POSIX: mqd_t 를 IIoEngine::Watch 로 직접 감시 (approach a)
 		// Windows: bridge 스레드가 blocking ReadFile/WriteFile 수행 후 resume (approach b, engine 미사용)
 		[[nodiscard]] ne::Task<ne::Result<void, ne::OsError>>
-			SendAsync(std::span<const std::byte> _message, ne::network::IIoEngine& _engine);
+			SendAsync(std::span<const std::byte> _message, ne::io::IIoEngine& _engine);
 		[[nodiscard]] ne::Task<ne::Result<std::vector<std::byte>, ne::OsError>>
-			ReceiveAsync(ne::network::IIoEngine& _engine);
+			ReceiveAsync(ne::io::IIoEngine& _engine);
 
 	private:
 		class Impl;
 		std::unique_ptr<Impl> impl;
 	};
-
-END_NS
-
-#endif //MESSAGEQUEUE_H

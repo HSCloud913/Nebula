@@ -24,13 +24,8 @@ set(SOURCES
     Protocol/Sftp/Client.cpp
 )
 
-if(UNIX)
-    list(APPEND SOURCES IoEngine/Epoll/EpollEngine.cpp)
-endif()
-
 if(WIN32)
     list(APPEND SOURCES
-        IoEngine/Iocp/IocpEngine.cpp
         Stream/Tls/Schannel/TlsMessageBuffer.cpp
     )
 endif()

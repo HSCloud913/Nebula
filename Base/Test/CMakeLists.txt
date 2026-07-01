@@ -1,7 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(NebulaBaseTest
-        VERSION 1.0.0.0
-        LANGUAGES CXX)
+project(NebulaBaseTest LANGUAGES CXX)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_CXX_STANDARD 23)
@@ -9,22 +7,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(${PROJECT_NAME}
         test.cpp
-        test_ascii.cpp
+        test_command.cpp
         test_exception.cpp
         test_handle.cpp
-        test_stringformat.cpp
-        test_json.cpp
-
-        Interface/test_command.cpp
-        Interface/test_observer.cpp
-        Interface/test_singleton.cpp
+        test_observer.cpp
+        test_singleton.cpp
 )
+target_link_libraries(${PROJECT_NAME} PRIVATE NebulaBase GTest::gtest_main)
 
-target_include_directories(${PROJECT_NAME} PRIVATE
-        ${CMAKE_SOURCE_DIR}/Base
-        ${CMAKE_SOURCE_DIR}/Util
-        ${CMAKE_SOURCE_DIR}/Json
-)
-target_link_libraries(${PROJECT_NAME} gtest gtest_main NebulaBase NebulaUtil NebulaJson)
 
-add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
+include(GoogleTest)
+gtest_discover_tests(${PROJECT_NAME})
