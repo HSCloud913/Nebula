@@ -14,10 +14,10 @@ BEGIN_NS(ne::memory)
 	class PoolAllocator final :public IAllocator
 	{
 	public:
-		NEBULA_NON_COPYABLE_MOVABLE(PoolAllocator)
-
 		PoolAllocator(std::size_t _blockSize, std::size_t _blockCount);
-		~PoolAllocator() override;
+		virtual ~PoolAllocator() override;
+
+		NEBULA_NON_COPYABLE_MOVABLE(PoolAllocator)
 
 	private:
 		struct FreeNode

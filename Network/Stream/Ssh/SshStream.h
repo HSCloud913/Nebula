@@ -28,7 +28,8 @@ BEGIN_NS(ne::network)
 	public:
 		SshStream(SshStream&& _other) noexcept;
 		SshStream& operator=(SshStream&& _other) noexcept;
-		~SshStream() override;
+		virtual ~SshStream() override;
+
 		NEBULA_NON_COPYABLE(SshStream)
 
 	private:

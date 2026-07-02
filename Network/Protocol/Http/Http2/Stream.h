@@ -28,12 +28,12 @@ BEGIN_NS(ne::network::http_2)
 	class Http2Stream
 	{
 	public:
-		NEBULA_NON_COPYABLE(Http2Stream)
-
 		explicit Http2Stream(uint32_t _id, ne::network::IStream& _transport) noexcept;
 		Http2Stream(Http2Stream&&) noexcept = default;
 		Http2Stream& operator=(Http2Stream&&) noexcept = default;
 		~Http2Stream() = default;
+
+		NEBULA_NON_COPYABLE(Http2Stream)
 
 	private:
 		uint32_t              streamId;

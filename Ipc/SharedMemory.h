@@ -13,14 +13,14 @@
 BEGIN_NS(ne::ipc)
 	class SharedMemory final
 	{
-		NEBULA_NON_COPYABLE(SharedMemory)
-
 	public:
 		SharedMemory(string_view_t _name, std::size_t _size);
 		~SharedMemory();
 
 		SharedMemory(SharedMemory&&) noexcept;
 		SharedMemory& operator=(SharedMemory&&) noexcept;
+
+		NEBULA_NON_COPYABLE(SharedMemory)
 
 	public:
 		[[nodiscard]] std::span<std::byte> GetView() const noexcept;

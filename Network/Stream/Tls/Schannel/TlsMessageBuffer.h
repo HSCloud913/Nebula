@@ -16,6 +16,7 @@ BEGIN_NS(ne::network)
 	public:
 		TlsMessageBuffer() = default;
 		~TlsMessageBuffer() = default;
+
 		NEBULA_DEFAULT_MOVE(TlsMessageBuffer)
 		NEBULA_NON_COPYABLE(TlsMessageBuffer)
 

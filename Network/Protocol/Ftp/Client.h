@@ -18,6 +18,7 @@ BEGIN_NS(ne::network::ftp)
 	public:
 		explicit Client(std::unique_ptr<ne::network::IStream> _control, DataStreamFactory_t _dataFactory) noexcept;
 		~Client();
+
 		NEBULA_NON_COPYABLE(Client)
 		NEBULA_DEFAULT_MOVE(Client)
 

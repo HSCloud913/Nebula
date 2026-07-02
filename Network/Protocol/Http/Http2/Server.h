@@ -24,13 +24,12 @@ BEGIN_NS(ne::network::http_2)
 	class Http2Server
 	{
 	public:
-		NEBULA_NON_COPYABLE(Http2Server)
-
-		explicit Http2Server(std::unique_ptr<ne::network::IStream> _stream,
-		                     Http2Handler _handler) noexcept;
+		explicit Http2Server(std::unique_ptr<ne::network::IStream> _stream, Http2Handler _handler) noexcept;
 		Http2Server(Http2Server&&) noexcept = default;
 		Http2Server& operator=(Http2Server&&) noexcept = default;
 		~Http2Server();
+
+		NEBULA_NON_COPYABLE(Http2Server)
 
 	private:
 		std::unique_ptr<ne::network::IStream> stream;

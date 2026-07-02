@@ -18,6 +18,7 @@ BEGIN_NS(ne::network::http_1)
 	public:
 		explicit Client(ne::io::IIoEngine& _engine) noexcept;
 		~Client() = default;
+
 		NEBULA_NON_COPYABLE(Client)
 		NEBULA_DEFAULT_MOVE(Client)
 

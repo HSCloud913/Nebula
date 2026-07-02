@@ -14,9 +14,10 @@ BEGIN_NS(ne::network::http_2)
 	class FlowController
 	{
 	public:
-		NEBULA_NON_COPYABLE_MOVABLE(FlowController)
 		FlowController() noexcept = default;
 		~FlowController() = default;
+
+		NEBULA_NON_COPYABLE_MOVABLE(FlowController)
 
 	private:
 		int32_t connectionWindow{ static_cast<int32_t>(kDefaultWindowSize) };

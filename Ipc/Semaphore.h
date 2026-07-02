@@ -12,14 +12,14 @@
 BEGIN_NS(ne::ipc)
 	class Semaphore final
 	{
-		NEBULA_NON_COPYABLE(Semaphore)
-
 	public:
 		Semaphore(string_view_t _name, int_t _initialCount);
 		~Semaphore();
 
 		Semaphore(Semaphore&&) noexcept;
 		Semaphore& operator=(Semaphore&&) noexcept;
+
+		NEBULA_NON_COPYABLE(Semaphore)
 
 	public:
 		void_t Acquire() const;

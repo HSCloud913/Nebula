@@ -37,7 +37,7 @@ BEGIN_NS(ne::io)
 				IoEvent::Read | IoEvent::HangUp | IoEvent::Error,
 				[this, _handle](socket_t _f, uint32_t _events) mutable
 				{
-					(void)engine.Unwatch(_f);
+					(void)engine.Unwatch(_f, IoEvent::Read); // Write 방향(동시 SendAwaitable)에는 영향 없음
 					triggeredEvents = _events;
 					_handle.resume();
 				});
@@ -83,7 +83,7 @@ BEGIN_NS(ne::io)
 				IoEvent::Write | IoEvent::Error,
 				[this, _handle](socket_t _f, uint32_t _events) mutable
 				{
-					(void)engine.Unwatch(_f);
+					(void)engine.Unwatch(_f, IoEvent::Write); // Read 방향(동시 RecvAwaitable)에는 영향 없음
 					triggeredEvents = _events;
 					_handle.resume();
 				});
@@ -112,26 +112,26 @@ BEGIN_NS(ne::io)
 	class SocketRecvAwaitable
 	{
 	public:
-		SocketRecvAwaitable(IIoEngine& _engine, socket_t _fd, void* _buf, std::size_t _len) noexcept
-			: engine(_engine), fd(_fd), buf(_buf), len(_len) {}
+		SocketRecvAwaitable(IIoEngine& _engine, socket_t _fd, void* _buffer, std::size_t _length) noexcept
+			: engine(_engine), fd(_fd), buffer(_buffer), length(_length) {}
 
 	private:
 		IIoEngine&  engine;
 		socket_t    fd;
-		void*       buf;
-		std::size_t len;
-		IoContext       ctx{};
+		void*       buffer;
+		std::size_t length;
+		IoContext   context{};
 
 	public:
 		[[nodiscard]] bool_t await_ready() const noexcept { return false; }
 
 		bool_t await_suspend(std::coroutine_handle<> _handle) noexcept
 		{
-			ctx.handle = _handle;
-			auto r = engine.SubmitReceive(fd, buf, len, &ctx);
+			context.handle = _handle;
+			auto r = engine.SubmitReceive(fd, buffer, length, &context);
 			if (r.IsError())
 			{
-				ctx.result = ne::Result<std::size_t, ne::OsError>::Error(std::move(r.Error()));
+				context.result = ne::Result<std::size_t, ne::OsError>::Error(std::move(r.Error()));
 				return false;
 			}
 			return true;
@@ -139,7 +139,7 @@ BEGIN_NS(ne::io)
 
 		[[nodiscard]] ne::Result<std::size_t, ne::OsError> await_resume() noexcept
 		{
-			return std::move(ctx.result);
+			return std::move(context.result);
 		}
 	};
 
@@ -148,26 +148,26 @@ BEGIN_NS(ne::io)
 	class SocketSendAwaitable
 	{
 	public:
-		SocketSendAwaitable(IIoEngine& _engine, socket_t _fd, const void* _buf, std::size_t _len) noexcept
-			: engine(_engine), fd(_fd), buf(_buf), len(_len) {}
+		SocketSendAwaitable(IIoEngine& _engine, socket_t _fd, const void* _buffer, std::size_t _length) noexcept
+			: engine(_engine), fd(_fd), buffer(_buffer), length(_length) {}
 
 	private:
 		IIoEngine&  engine;
 		socket_t    fd;
-		const void* buf;
-		std::size_t len;
-		IoContext       ctx{};
+		const void* buffer;
+		std::size_t length;
+		IoContext   context{};
 
 	public:
 		[[nodiscard]] bool_t await_ready() const noexcept { return false; }
 
 		bool_t await_suspend(std::coroutine_handle<> _handle) noexcept
 		{
-			ctx.handle = _handle;
-			auto r = engine.SubmitSend(fd, buf, len, &ctx);
+			context.handle = _handle;
+			auto r = engine.SubmitSend(fd, buffer, length, &context);
 			if (r.IsError())
 			{
-				ctx.result = ne::Result<std::size_t, ne::OsError>::Error(std::move(r.Error()));
+				context.result = ne::Result<std::size_t, ne::OsError>::Error(std::move(r.Error()));
 				return false;
 			}
 			return true;
@@ -175,7 +175,7 @@ BEGIN_NS(ne::io)
 
 		[[nodiscard]] ne::Result<std::size_t, ne::OsError> await_resume() noexcept
 		{
-			return std::move(ctx.result);
+			return std::move(context.result);
 		}
 	};
 

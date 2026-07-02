@@ -39,11 +39,6 @@ BEGIN_NS(ne::io)
 		return *this;
 	}
 
-	MemoryMapFile::~MemoryMapFile()
-	{
-		Close();
-	}
-
 
 
 	ne::Result<MemoryMapFile, ne::OsError> MemoryMapFile::Open(const ne::string_t& _path) noexcept
@@ -56,7 +51,7 @@ BEGIN_NS(ne::io)
 
 		LARGE_INTEGER size{};
 		::GetFileSizeEx(handle, &size);
-		const std::size_t fileSize = static_cast<std::size_t>(size.QuadPart);
+		const auto fileSize = static_cast<std::size_t>(size.QuadPart);
 
 		const HANDLE memoryHandle = ::CreateFileMappingA(handle, nullptr, PAGE_READONLY, 0, 0, nullptr);
 		if (!memoryHandle)
@@ -82,6 +77,7 @@ BEGIN_NS(ne::io)
 		memoryMapFile.size       = fileSize;
 		memoryMapFile.fileHandle = handle;
 		memoryMapFile.mapHandle  = memoryHandle;
+
 		return ne::Result<MemoryMapFile, ne::OsError>::Ok(std::move(memoryMapFile));
 
 #elif defined(IS_POSIX)
@@ -92,7 +88,7 @@ BEGIN_NS(ne::io)
 
 		struct stat st{};
 		::fstat(fd, &st);
-		const std::size_t fileSize = static_cast<std::size_t>(st.st_size);
+		const auto fileSize = static_cast<std::size_t>(st.st_size);
 
 		void* ptr = ::mmap(nullptr, fileSize, PROT_READ, MAP_PRIVATE, fd, 0);
 		::close(fd);

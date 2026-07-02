@@ -30,6 +30,7 @@ BEGIN_NS(ne::network)
 		TlsStream(TlsStream&& _other) noexcept;
 		TlsStream& operator=(TlsStream&& _other) noexcept;
 		virtual ~TlsStream() override;
+
 		NEBULA_NON_COPYABLE(TlsStream)
 
 	private:

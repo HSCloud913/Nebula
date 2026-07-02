@@ -29,6 +29,7 @@ BEGIN_NS(ne::network::sftp)
 		Client(Client&&) noexcept;
 		Client& operator=(Client&&) noexcept;
 		~Client();
+
 		NEBULA_NON_COPYABLE(Client)
 
 	public:

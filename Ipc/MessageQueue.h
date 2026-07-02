@@ -19,14 +19,14 @@ namespace ne::io { class IIoEngine; }
 BEGIN_NS(ne::ipc)
 	class MessageQueue final
 	{
-		NEBULA_NON_COPYABLE(MessageQueue)
-
 	public:
 		explicit MessageQueue(string_view_t _name);
 		~MessageQueue();
 
 		MessageQueue(MessageQueue&&) noexcept;
 		MessageQueue& operator=(MessageQueue&&) noexcept;
+
+		NEBULA_NON_COPYABLE(MessageQueue)
 
 	public:
 		void_t Listen();

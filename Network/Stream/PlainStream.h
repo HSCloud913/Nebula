@@ -22,6 +22,7 @@ BEGIN_NS(ne::network)
 		PlainStream(PlainStream&& _other) noexcept;
 		PlainStream& operator=(PlainStream&& _other) noexcept;
 		virtual ~PlainStream() override = default;
+
 		NEBULA_NON_COPYABLE(PlainStream)
 
 	private:

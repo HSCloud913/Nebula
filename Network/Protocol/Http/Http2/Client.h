@@ -21,9 +21,6 @@ BEGIN_NS(ne::network::http_2)
 	// IStream (TlsStream + ALPN "h2") 위에서 동작.
 	class Http2Client
 	{
-	public:
-		NEBULA_NON_COPYABLE(Http2Client)
-
 	private:
 		explicit Http2Client(std::unique_ptr<ne::network::IStream> _stream) noexcept;
 
@@ -31,6 +28,8 @@ BEGIN_NS(ne::network::http_2)
 		Http2Client(Http2Client&&) noexcept = default;
 		Http2Client& operator=(Http2Client&&) noexcept = default;
 		~Http2Client();
+
+		NEBULA_NON_COPYABLE(Http2Client)
 
 	private:
 		std::unique_ptr<ne::network::IStream> stream;

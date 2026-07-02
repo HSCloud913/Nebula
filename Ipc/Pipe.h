@@ -13,14 +13,14 @@
 BEGIN_NS(ne::ipc)
 	class Pipe final
 	{
-		NEBULA_NON_COPYABLE(Pipe)
-
 	public:
 		explicit Pipe(string_view_t _name);
 		~Pipe();
 
 		Pipe(Pipe&&) noexcept;
 		Pipe& operator=(Pipe&&) noexcept;
+
+		NEBULA_NON_COPYABLE(Pipe)
 
 	public:
 		void_t Listen();

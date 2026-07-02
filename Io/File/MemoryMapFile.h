@@ -19,22 +19,23 @@ BEGIN_NS(ne::io)
 	public:
 		MemoryMapFile(MemoryMapFile&& _other) noexcept;
 		MemoryMapFile& operator=(MemoryMapFile&& _other) noexcept;
-		~MemoryMapFile();
+		~MemoryMapFile() { Close(); }
 
 		NEBULA_NON_COPYABLE(MemoryMapFile)
 
 	private:
 		std::size_t size{};
-		void* mapping{ static_cast<void*>(nullptr) };
+		void* mapping{ nullptr };
 #if defined(_WIN32)
-		void* fileHandle{ static_cast<void*>(nullptr) };
-		void* mapHandle{ static_cast<void*>(nullptr) };
+		void* fileHandle{ nullptr };
+		void* mapHandle{ nullptr };
 #endif
 
 	public:
 		[[nodiscard]] static ne::Result<MemoryMapFile, ne::OsError> Open(const ne::string_t& _path) noexcept;
 		void Close() noexcept;
 
+	public:
 		[[nodiscard]] std::span<const ne::byte_t> Data() const noexcept { return { static_cast<const ne::byte_t*>(mapping), size }; }
 		[[nodiscard]] std::size_t Size() const noexcept { return size; }
 		[[nodiscard]] bool_t IsOpen() const noexcept { return mapping != nullptr; }

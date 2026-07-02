@@ -20,6 +20,7 @@ BEGIN_NS(ne::network)
 	public:
 		IStream() = default;
 		virtual ~IStream() = default;
+
 		NEBULA_NON_COPYABLE_MOVABLE(IStream)
 
 	public:

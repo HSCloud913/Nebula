@@ -31,10 +31,12 @@ BEGIN_NS(ne::io)
 		bool_t await_suspend(std::coroutine_handle<> _handle) noexcept
 		{
 			auto r = engine.Watch(fd, targetEvents,
-				[this, _handle](const io_fd_t _f, const uint32_t _evts) mutable
+				[this, _handle](const io_fd_t _f, const uint32_t _events) mutable
 				{
-					(void)engine.Unwatch(_f);
-					triggeredEvents = _evts;
+					// targetEvents 로 요청한 방향만 해제 — 같은 fd 에 대한 반대 방향의
+					// 독립된 Watch(예: 다른 코루틴의 대기)에는 영향을 주지 않는다.
+					(void)engine.Unwatch(_f, targetEvents);
+					triggeredEvents = _events;
 					_handle.resume();
 				});
 

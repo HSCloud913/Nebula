@@ -63,6 +63,47 @@ TEST(IoEngineIntegration, EpollSocketDispatch)
     ::close(fds[1]);
 }
 
+// ── EpollEngine: 같은 fd 에 Read/Write 를 동시에 Watch — 서로 독립적으로 동작해야 함 ──
+TEST(IoEngineIntegration, EpollConcurrentReadWriteWatch)
+{
+    EpollEngine engine;
+    ASSERT_TRUE(engine.IsValid());
+
+    int fds[2];
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+
+    std::atomic<bool> readFired{ false };
+    std::atomic<bool> writeFired{ false };
+
+    auto readRes = engine.Watch(
+        static_cast<socket_t>(fds[0]),
+        IoEvent::Read | IoEvent::HangUp,
+        [&](socket_t, uint32_t) { readFired.store(true, std::memory_order_release); });
+    ASSERT_TRUE(readRes.IsOk());
+
+    // Read 가 이미 활성화된 fd 에 Write 를 추가로 Watch — 반대 방향 슬롯을 덮어쓰지 않아야 함.
+    auto writeRes = engine.Watch(
+        static_cast<socket_t>(fds[0]),
+        IoEvent::Write | IoEvent::Error,
+        [&](socket_t, uint32_t) { writeFired.store(true, std::memory_order_release); });
+    ASSERT_TRUE(writeRes.IsOk()) << "Write watch must succeed even though Read is already active on the same fd";
+
+    // 소켓은 연결 직후 곧바로 쓰기 가능하므로 write 콜백이 먼저 온다 — 그 사이 read 슬롯이
+    // 살아있는지(덮어써지지 않았는지) 확인한다.
+    DriveEngine(engine, writeFired, std::chrono::milliseconds(500));
+    EXPECT_TRUE(writeFired.load()) << "Write watch must fire independently of the read watch";
+    EXPECT_FALSE(readFired.load()) << "Read watch must not fire before data arrives";
+
+    const char msg = 'x';
+    ASSERT_EQ(::write(fds[1], &msg, 1), 1);
+
+    DriveEngine(engine, readFired, std::chrono::milliseconds(500));
+    EXPECT_TRUE(readFired.load()) << "Read watch must still fire after the write watch fired independently";
+
+    ::close(fds[0]);
+    ::close(fds[1]);
+}
+
 // ── IoUringEngine: handle.resume() 이 RunOnce 스레드에서만 발생 ──────────────
 TEST(IoEngineIntegration, IoUringResumeInRunOnceThread)
 {
@@ -256,6 +297,50 @@ TEST(IoEngineIntegration, IocpSocketDispatch)
 
     DriveEngine(engine, fired, std::chrono::milliseconds(1000));
     EXPECT_TRUE(fired.load()) << "Watch callback must fire after send";
+
+    ::closesocket(s1);
+    ::closesocket(s2);
+}
+
+// ── IocpEngine: 같은 fd 에 Read/Write 를 동시에 Watch — 서로 독립적으로 동작해야 함 ──
+TEST(IoEngineIntegration, IocpConcurrentReadWriteWatch)
+{
+    IocpEngine engine;
+    ASSERT_TRUE(engine.IsValid());
+
+    SOCKET s1 = INVALID_SOCKET;
+    SOCKET s2 = INVALID_SOCKET;
+    ASSERT_TRUE(MakeSocketPair(s1, s2));
+
+    std::atomic<bool> readFired{ false };
+    std::atomic<bool> writeFired{ false };
+
+    auto readRes = engine.Watch(
+        static_cast<socket_t>(s1),
+        IoEvent::Read | IoEvent::HangUp,
+        [&](socket_t, uint32_t) { readFired.store(true, std::memory_order_release); });
+    ASSERT_TRUE(readRes.IsOk());
+
+    // Read 가 이미 활성화된 fd(s1)에 Write 를 추가로 Watch — WatchSlots 분리 이전에는 나중에
+    // 등록한 방향의 슬롯에 fd 가 채워지지 않아 WSASend 가 소켓 0번을 대상으로 호출되며
+    // 즉시 실패하는 버그가 있었다.
+    auto writeRes = engine.Watch(
+        static_cast<socket_t>(s1),
+        IoEvent::Write | IoEvent::Error,
+        [&](socket_t, uint32_t) { writeFired.store(true, std::memory_order_release); });
+    ASSERT_TRUE(writeRes.IsOk()) << "Write watch must succeed even though Read is already active on the same fd";
+
+    // 소켓은 연결 직후 곧바로 쓰기 가능하므로 write 콜백이 먼저 온다 — 그 사이 read 슬롯이
+    // 살아있는지(덮어써지지 않았는지) 확인한다.
+    DriveEngine(engine, writeFired, std::chrono::milliseconds(1000));
+    EXPECT_TRUE(writeFired.load()) << "Write watch must fire independently of the read watch";
+    EXPECT_FALSE(readFired.load()) << "Read watch must not fire before data arrives";
+
+    const char msg = 'y';
+    ASSERT_NE(::send(s2, &msg, 1, 0), SOCKET_ERROR);
+
+    DriveEngine(engine, readFired, std::chrono::milliseconds(1000));
+    EXPECT_TRUE(readFired.load()) << "Read watch must still fire after the write watch fired independently";
 
     ::closesocket(s1);
     ::closesocket(s2);

@@ -19,124 +19,47 @@
 #endif
 
 BEGIN_NS(ne::io)
-
 	// ── 파일 I/O Awaitable ────────────────────────────────────────────────────
 	// SubmitRead/SubmitWrite 는 IIoEngine 외부 메서드이므로 구체 엔진 타입을 참조.
-	// ctx 타입은 IoContext 로 통일 (Windows: OVERLAPPED 포함, Linux: 미포함).
+	// context 타입은 IoContext 로 통일 (Windows: OVERLAPPED 포함, Linux: 미포함).
 
-#if defined(IS_POSIX)
-
-	// 파일 읽기 비동기 대기 (io_uring).
-	// co_await → Result<size_t, OsError>
-	class FileReadAwaitable
-	{
-	public:
-		FileReadAwaitable(IoUringEngine& _engine, file_t _fd,
-		                  std::span<ne::byte_t> _buf, std::size_t _offset) noexcept
-			: engine(_engine), fd(_fd), buf(_buf), offset(_offset) {}
-
-	private:
-		IoUringEngine&        engine;
-		file_t                fd;
-		std::span<ne::byte_t> buf;
-		std::size_t           offset;
-		IoContext             ctx{};
-
-	public:
-		[[nodiscard]] bool_t await_ready() const noexcept { return false; }
-
-		bool_t await_suspend(std::coroutine_handle<> _handle) noexcept
-		{
-			ctx.handle = _handle;
-			auto r = engine.SubmitRead(fd, buf.data(), buf.size(), offset, &ctx);
-			if (r.IsError())
-			{
-				ctx.result = ne::Result<std::size_t, ne::OsError>::Error(std::move(r.Error()));
-				return false;
-			}
-			return true;
-		}
-
-		[[nodiscard]] ne::Result<std::size_t, ne::OsError> await_resume() noexcept
-		{
-			return std::move(ctx.result);
-		}
-	};
-
-	// 파일 쓰기 비동기 대기 (io_uring).
-	// co_await → Result<size_t, OsError>
-	class FileWriteAwaitable
-	{
-	public:
-		FileWriteAwaitable(IoUringEngine& _engine, file_t _fd,
-		                   std::span<const ne::byte_t> _buf, std::size_t _offset) noexcept
-			: engine(_engine), fd(_fd), buf(_buf), offset(_offset) {}
-
-	private:
-		IoUringEngine&              engine;
-		file_t                      fd;
-		std::span<const ne::byte_t> buf;
-		std::size_t                 offset;
-		IoContext                   ctx{};
-
-	public:
-		[[nodiscard]] bool_t await_ready() const noexcept { return false; }
-
-		bool_t await_suspend(std::coroutine_handle<> _handle) noexcept
-		{
-			ctx.handle = _handle;
-			auto r = engine.SubmitWrite(fd, buf.data(), buf.size(), offset, &ctx);
-			if (r.IsError())
-			{
-				ctx.result = ne::Result<std::size_t, ne::OsError>::Error(std::move(r.Error()));
-				return false;
-			}
-			return true;
-		}
-
-		[[nodiscard]] ne::Result<std::size_t, ne::OsError> await_resume() noexcept
-		{
-			return std::move(ctx.result);
-		}
-	};
-
-#elif defined(_WIN32)
-
+#if defined(_WIN32)
 	// 파일 읽기 비동기 대기 (IOCP).
 	// co_await → Result<size_t, OsError>
 	class FileReadAwaitable
 	{
 	public:
-		FileReadAwaitable(IocpEngine& _engine, file_t _fd,
-		                  std::span<ne::byte_t> _buf, std::size_t _offset) noexcept
-			: engine(_engine), fd(_fd), buf(_buf), offset(_offset) {}
+		FileReadAwaitable(IocpEngine& _engine, const file_t _fd, const std::span<ne::byte_t> _buffer, const std::size_t _offset) noexcept
+			: engine(_engine)
+			, fd(_fd)
+			, buffer(_buffer)
+			, offset(_offset) {}
 
 	private:
-		IocpEngine&           engine;
-		file_t                fd;
-		std::span<ne::byte_t> buf;
-		std::size_t           offset;
-		IoContext             ctx{};
+		IocpEngine& engine;
+		file_t fd;
+		std::span<ne::byte_t> buffer;
+		std::size_t offset;
+		IoContext context{};
 
 	public:
 		[[nodiscard]] bool_t await_ready() const noexcept { return false; }
 
 		bool_t await_suspend(std::coroutine_handle<> _handle) noexcept
 		{
-			ctx.handle = _handle;
-			auto r = engine.SubmitRead(fd, buf.data(), buf.size(), offset, &ctx);
-			if (r.IsError())
+			context.handle = _handle;
+
+			auto result = engine.SubmitRead(fd, buffer.data(), buffer.size(), offset, &context);
+			if (result.IsError())
 			{
-				ctx.result = ne::Result<std::size_t, ne::OsError>::Error(std::move(r.Error()));
+				context.result = ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
 				return false;
 			}
+
 			return true;
 		}
 
-		[[nodiscard]] ne::Result<std::size_t, ne::OsError> await_resume() noexcept
-		{
-			return std::move(ctx.result);
-		}
+		[[nodiscard]] ne::Result<std::size_t, ne::OsError> await_resume() noexcept { return std::move(context.result); }
 	};
 
 	// 파일 쓰기 비동기 대기 (IOCP).
@@ -144,37 +67,114 @@ BEGIN_NS(ne::io)
 	class FileWriteAwaitable
 	{
 	public:
-		FileWriteAwaitable(IocpEngine& _engine, file_t _fd,
-		                   std::span<const ne::byte_t> _buf, std::size_t _offset) noexcept
-			: engine(_engine), fd(_fd), buf(_buf), offset(_offset) {}
+		FileWriteAwaitable(IocpEngine& _engine, const file_t _fd, const std::span<const ne::byte_t> _buffer, const std::size_t _offset) noexcept
+			: engine(_engine)
+			, fd(_fd)
+			, buffer(_buffer)
+			, offset(_offset) {}
 
 	private:
-		IocpEngine&                 engine;
-		file_t                      fd;
-		std::span<const ne::byte_t> buf;
-		std::size_t                 offset;
-		IoContext                   ctx{};
+		IocpEngine& engine;
+		file_t fd;
+		std::span<const ne::byte_t> buffer;
+		std::size_t offset;
+		IoContext context{};
 
 	public:
 		[[nodiscard]] bool_t await_ready() const noexcept { return false; }
 
 		bool_t await_suspend(std::coroutine_handle<> _handle) noexcept
 		{
-			ctx.handle = _handle;
-			auto r = engine.SubmitWrite(fd, buf.data(), buf.size(), offset, &ctx);
-			if (r.IsError())
+			context.handle = _handle;
+
+			if (auto result = engine.SubmitWrite(fd, buffer.data(), buffer.size(), offset, &context); result.IsError())
 			{
-				ctx.result = ne::Result<std::size_t, ne::OsError>::Error(std::move(r.Error()));
+				context.result = ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
 				return false;
 			}
+
 			return true;
 		}
 
-		[[nodiscard]] ne::Result<std::size_t, ne::OsError> await_resume() noexcept
-		{
-			return std::move(ctx.result);
-		}
+		[[nodiscard]] ne::Result<std::size_t, ne::OsError> await_resume() noexcept { return std::move(context.result); }
 	};
+#elif defined(IS_POSIX)
+
+	// 파일 읽기 비동기 대기 (io_uring).
+	// co_await → Result<size_t, OsError>
+	class FileReadAwaitable
+	{
+	public:
+		FileReadAwaitable(IoUringEngine& _engine, const file_t _fd, const std::span<ne::byte_t> _buffer, const std::size_t _offset) noexcept
+			: engine(_engine)
+			, fd(_fd)
+			, buffer(_buffer)
+			, offset(_offset) {}
+
+	private:
+		IoUringEngine& engine;
+		file_t fd;
+		std::span<ne::byte_t> buffer;
+		std::size_t offset;
+		IoContext context{};
+
+	public:
+		[[nodiscard]] bool_t await_ready() const noexcept { return false; }
+
+		bool_t await_suspend(std::coroutine_handle<> _handle) noexcept
+		{
+			context.handle = _handle;
+
+			if (auto result = engine.SubmitRead(fd, buffer.data(), buffer.size(), offset, &context); result.IsError())
+			{
+				context.result = ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
+				return false;
+			}
+
+			return true;
+		}
+
+		[[nodiscard]] ne::Result<std::size_t, ne::OsError> await_resume() noexcept { return std::move(context.result); }
+	};
+
+	// 파일 쓰기 비동기 대기 (io_uring).
+	// co_await → Result<size_t, OsError>
+	class FileWriteAwaitable
+	{
+	public:
+		FileWriteAwaitable(IoUringEngine& _engine, const file_t _fd, const std::span<const ne::byte_t> _buffer, const std::size_t _offset) noexcept
+			: engine(_engine)
+			, fd(_fd)
+			, buffer(_buffer)
+			, offset(_offset) {}
+
+	private:
+		IoUringEngine& engine;
+		file_t fd;
+		std::span<const ne::byte_t> buffer;
+		std::size_t offset;
+		IoContext context{};
+
+	public:
+		[[nodiscard]] bool_t await_ready() const noexcept { return false; }
+
+		bool_t await_suspend(std::coroutine_handle<> _handle) noexcept
+		{
+			context.handle = _handle;
+
+			if (auto result = engine.SubmitWrite(fd, buffer.data(), buffer.size(), offset, &context); result.IsError())
+			{
+				context.result = ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
+				return false;
+			}
+
+			return true;
+		}
+
+		[[nodiscard]] ne::Result<std::size_t, ne::OsError> await_resume() noexcept { return std::move(context.result); }
+	};
+
+
 
 #endif // platform
 

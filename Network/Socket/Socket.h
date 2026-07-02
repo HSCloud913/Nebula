@@ -17,15 +17,14 @@ BEGIN_NS(ne::network)
 // 송수신 없음 — 송수신은 상위 Stream 레이어 책임.
 class Socket
 {
-public:
-    NEBULA_NON_COPYABLE(Socket)
-    NEBULA_DEFAULT_MOVE(Socket)
-
 private:
     explicit Socket(socket_t _fd);
 
 public:
     ~Socket() = default;
+
+    NEBULA_NON_COPYABLE(Socket)
+    NEBULA_DEFAULT_MOVE(Socket)
 
 private:
 #if defined(_WIN32)

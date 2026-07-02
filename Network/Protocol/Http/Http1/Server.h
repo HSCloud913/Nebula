@@ -19,15 +19,14 @@ BEGIN_NS(ne::network::http_1)
 	class Server
 	{
 	public:
-		NEBULA_NON_COPYABLE(Server)
-		NEBULA_DEFAULT_MOVE(Server)
-
-	public:
 		using RequestHandler = std::function<ne::Task<HttpResponse>(const HttpRequest&)>;
 
 	public:
 		Server(ne::io::IIoEngine& _engine, RequestHandler _handler) noexcept;
 		~Server() = default;
+
+		NEBULA_NON_COPYABLE(Server)
+		NEBULA_DEFAULT_MOVE(Server)
 
 	private:
 		ne::io::IIoEngine* engine;

@@ -19,7 +19,7 @@
 BEGIN_NS(ne::io)
 	// io_uring(Linux) / IOCP(Windows) 기반 진짜 비동기 파일 I/O.
 	// Read / Write 는 co_await 에서 진짜로 suspend 되며, 완료 시 엔진 스레드가 재개한다.
-	class AsyncFile final : public IIoFile
+	class AsyncFile final :public IIoFile
 	{
 	private:
 #if defined(IS_POSIX)
@@ -33,9 +33,9 @@ BEGIN_NS(ne::io)
 	public:
 		AsyncFile(AsyncFile&& _other) noexcept;
 		AsyncFile& operator=(AsyncFile&& _other) noexcept;
-		~AsyncFile() override;
+		virtual ~AsyncFile() override { (void)Close(); }
 
-    	NEBULA_NON_COPYABLE(AsyncFile)
+		NEBULA_NON_COPYABLE(AsyncFile)
 
 	private:
 		file_t fd;
@@ -48,32 +48,23 @@ BEGIN_NS(ne::io)
 
 	public:
 #if defined(IS_POSIX)
-		[[nodiscard]] static ne::Result<AsyncFile, ne::OsError>
-			Create(const ne::string_t& _path, IoUringEngine& _engine) noexcept;
-		[[nodiscard]] static ne::Result<AsyncFile, ne::OsError>
-			Open(const ne::string_t& _path, IoUringEngine& _engine, bool_t _readOnly = true) noexcept;
+		[[nodiscard]] static ne::Result<AsyncFile, ne::OsError> Create(const ne::string_t& _path, IoUringEngine& _engine) noexcept;
+		[[nodiscard]] static ne::Result<AsyncFile, ne::OsError> Open(const ne::string_t& _path, IoUringEngine& _engine, bool_t _readOnly = true) noexcept;
 #elif defined(_WIN32)
-		[[nodiscard]] static ne::Result<AsyncFile, ne::OsError>
-			Create(const ne::string_t& _path, IocpEngine& _engine) noexcept;
-		[[nodiscard]] static ne::Result<AsyncFile, ne::OsError>
-			Open(const ne::string_t& _path, IocpEngine& _engine, bool_t _readOnly = true) noexcept;
+		[[nodiscard]] static ne::Result<AsyncFile, ne::OsError> Create(const ne::string_t& _path, IocpEngine& _engine) noexcept;
+		[[nodiscard]] static ne::Result<AsyncFile, ne::OsError> Open(const ne::string_t& _path, IocpEngine& _engine, bool_t _readOnly = true) noexcept;
 #else
-		[[nodiscard]] static ne::Result<AsyncFile, ne::OsError>
-			Create(const ne::string_t& _path) noexcept;
-		[[nodiscard]] static ne::Result<AsyncFile, ne::OsError>
-			Open(const ne::string_t& _path, bool_t _readOnly = true) noexcept;
+		[[nodiscard]] static ne::Result<AsyncFile, ne::OsError> Create(const ne::string_t& _path) noexcept;
+		[[nodiscard]] static ne::Result<AsyncFile, ne::OsError> Open(const ne::string_t& _path, bool_t _readOnly = true) noexcept;
 #endif
-
-	public:
-		[[nodiscard]] virtual ne::Task<ne::Result<std::size_t, ne::OsError>>
-			Read(std::span<ne::byte_t> _buf, std::size_t _offset) override;
-
-		[[nodiscard]] virtual ne::Task<ne::Result<std::size_t, ne::OsError>>
-			Write(std::span<const ne::byte_t> _data, std::size_t _offset) override;
-
 		virtual ne::Result<void, ne::OsError> Close() override;
 
-    public:
+	public:
+		[[nodiscard]] virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Read(std::span<ne::byte_t> _buffer, std::size_t _offset) override;
+		[[nodiscard]] virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Write(std::span<const ne::byte_t> _data, std::size_t _offset) override;
+
+	public:
 		[[nodiscard]] virtual bool_t IsOpen() const noexcept override { return fd != InvalidFile; }
 	};
+
 END_NS

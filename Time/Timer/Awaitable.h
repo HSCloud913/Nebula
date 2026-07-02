@@ -17,6 +17,7 @@ BEGIN_NS(ne::time)
 		Awaitable(TimerWheel& _wheel, const std::chrono::milliseconds _duration) noexcept
 			: wheel(_wheel)
 			, duration(_duration) {}
+
 		NEBULA_NON_COPYABLE_MOVABLE(Awaitable)
 
 	private:
