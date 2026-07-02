@@ -25,20 +25,20 @@ BEGIN_NS(ne::network)
 		NEBULA_NON_COPYABLE(PlainStream)
 
 	private:
-		explicit PlainStream(Socket&& _socket, ne::io::Engine& _engine,
+		explicit PlainStream(Socket&& _socket, ne::io::IIoEngine& _engine,
 		                     ne::memory::IAllocator* _allocator, IoMode _mode) noexcept;
 
 	public:
 		// _mode = Reactor (기본): 기존 poll+recv/send 2단계 경로 (하위 호환)
 		// _mode = Proactor      : SubmitRecv/SubmitSend 단일 경로 (IOCP·io_uring 최적)
 		[[nodiscard]] static ne::Result<PlainStream, ne::OsError> Create(
-			Socket&& _socket, ne::io::Engine& _engine,
+			Socket&& _socket, ne::io::IIoEngine& _engine,
 			ne::memory::IAllocator* _allocator = nullptr,
 			IoMode _mode = IoMode::Reactor) noexcept;
 
 	private:
 		Socket socket;
-		ne::io::Engine* engine;
+		ne::io::IIoEngine* engine;
 		ne::memory::IAllocator* allocator{ nullptr };
 		IoMode ioMode{ IoMode::Reactor };
 

@@ -3,7 +3,7 @@
 //
 
 #include "PlainStream.h"
-#include "Engine/Awaitable.h"
+#include "Stream/Awaitable.h"
 
 #if defined(_WIN32)
 #   include <winsock2.h>
@@ -33,7 +33,7 @@ BEGIN_NS(ne::network)
 		return *this;
 	}
 
-	PlainStream::PlainStream(Socket&& _socket, ne::io::Engine& _engine,
+	PlainStream::PlainStream(Socket&& _socket, ne::io::IIoEngine& _engine,
 	                         ne::memory::IAllocator* _allocator, const IoMode _mode) noexcept
 		: socket(std::move(_socket))
 		, engine(&_engine)
@@ -43,7 +43,7 @@ BEGIN_NS(ne::network)
 
 
 	ne::Result<PlainStream, ne::OsError> PlainStream::Create(
-		Socket&& _socket, ne::io::Engine& _engine,
+		Socket&& _socket, ne::io::IIoEngine& _engine,
 		ne::memory::IAllocator* _allocator, const IoMode _mode) noexcept
 	{
 		if (!_socket.IsValid())

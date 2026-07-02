@@ -3,7 +3,7 @@
 //
 
 #include "AsyncFile.h"
-#include "Engine/Awaitable.h"
+#include "Awaitable.h"
 #include <utility>
 
 #if defined(_WIN32)
@@ -70,7 +70,7 @@ BEGIN_NS(ne::io)
 
 		// RegisterFile 이 실패하면 handle 을 직접 닫고 에러 반환.
 		// AsyncFile 생성은 IOCP 등록 성공 후에만 수행 (이중 CloseHandle 방지).
-		if (auto r = _engine.RegisterFile(handle); r.IsError())
+		if (auto r = _engine.RegisterFileHandle(handle); r.IsError())
 		{
 			::CloseHandle(handle);
 			return ne::Result<AsyncFile, ne::OsError>::Error(std::move(r.Error()));
@@ -90,7 +90,7 @@ BEGIN_NS(ne::io)
 			return ne::Result<AsyncFile, ne::OsError>::Error(
 				ne::OsError{ ne::LastOsError() }.Context("[AsyncFile/Open]"));
 
-		if (auto r = _engine.RegisterFile(handle); r.IsError())
+		if (auto r = _engine.RegisterFileHandle(handle); r.IsError())
 		{
 			::CloseHandle(handle);
 			return ne::Result<AsyncFile, ne::OsError>::Error(std::move(r.Error()));

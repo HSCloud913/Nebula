@@ -35,7 +35,7 @@ BEGIN_NS(ne::io)
 	// ── Proactor: 파일 I/O (IIoEngine 외부 — AsyncFile 전용) ─────────────────
 
 	ne::Result<void, ne::OsError> IoUringEngine::SubmitRead(
-		const int _fd, void* _buf, const std::size_t _len, const std::size_t _offset, IoCtx* _ctx) noexcept
+		const int _fd, void* _buf, const std::size_t _len, const std::size_t _offset, IoContext* _ctx) noexcept
 	{
 		io_uring_sqe* sqe = ::io_uring_get_sqe(&ring);
 		if (!sqe)
@@ -51,7 +51,7 @@ BEGIN_NS(ne::io)
 	}
 
 	ne::Result<void, ne::OsError> IoUringEngine::SubmitWrite(
-		const int _fd, const void* _buf, const std::size_t _len, const std::size_t _offset, IoCtx* _ctx) noexcept
+		const int _fd, const void* _buf, const std::size_t _len, const std::size_t _offset, IoContext* _ctx) noexcept
 	{
 		io_uring_sqe* sqe = ::io_uring_get_sqe(&ring);
 		if (!sqe)
@@ -68,28 +68,28 @@ BEGIN_NS(ne::io)
 
 
 
-	// ── IIoEngine<>: Proactor (소켓 RECV/SEND) ───────────────────────────────
+	// ── IIoEngine: Proactor (소켓 RECV/SEND) ───────────────────────────────────
 
-	ne::Result<void, ne::OsError> IoUringEngine::SubmitRecv(
-		const socket_t _fd, void* _buf, const std::size_t _len, IoCtx* _ctx) noexcept
+	ne::Result<void, ne::OsError> IoUringEngine::SubmitReceive(
+		const socket_t _fd, void* _buf, const std::size_t _len, IoContext* _ctx) noexcept
 	{
 		io_uring_sqe* sqe = ::io_uring_get_sqe(&ring);
 		if (!sqe)
 			return ne::Result<void, ne::OsError>::Error(
-				ne::OsError{ EBUSY }.Context("[IoUringEngine/SubmitRecv] SQ ring full"));
+				ne::OsError{ EBUSY }.Context("[IoUringEngine/SubmitReceive] SQ ring full"));
 
 		::io_uring_prep_recv(sqe, static_cast<int>(_fd), _buf, _len, 0);
 		::io_uring_sqe_set_data64(sqe, reinterpret_cast<uint64_t>(_ctx));
 
 		if (::io_uring_submit(&ring) < 0)
 			return ne::Result<void, ne::OsError>::Error(
-				ne::OsError{ errno }.Context("[IoUringEngine/SubmitRecv]"));
+				ne::OsError{ errno }.Context("[IoUringEngine/SubmitReceive]"));
 
 		return ne::Result<void, ne::OsError>::Ok();
 	}
 
 	ne::Result<void, ne::OsError> IoUringEngine::SubmitSend(
-		const socket_t _fd, const void* _buf, const std::size_t _len, IoCtx* _ctx) noexcept
+		const socket_t _fd, const void* _buf, const std::size_t _len, IoContext* _ctx) noexcept
 	{
 		io_uring_sqe* sqe = ::io_uring_get_sqe(&ring);
 		if (!sqe)
@@ -108,7 +108,7 @@ BEGIN_NS(ne::io)
 
 
 
-	// ── IIoEngine<>: Reactor (POLL_ADD) ──────────────────────────────────────
+	// ── IIoEngine: Reactor (POLL_ADD) ────────────────────────────────────────
 
 	ne::Result<void, ne::OsError> IoUringEngine::Watch(const socket_t _fd, const uint32_t _events, IoCallback _cb)
 	{
@@ -231,8 +231,8 @@ BEGIN_NS(ne::io)
 		}
 		else
 		{
-			// IoCtx* — 소켓 proactor (RECV/SEND) 또는 파일 proactor (READ/WRITE)
-			auto* ctx = reinterpret_cast<IoCtx*>(userData);
+			// IoContext* — 소켓 proactor (RECV/SEND) 또는 파일 proactor (READ/WRITE)
+			auto* ctx = reinterpret_cast<IoContext*>(userData);
 			if (res < 0)
 				ctx->result = ne::Result<std::size_t, ne::OsError>::Error(
 					ne::OsError{ static_cast<ne::ulong_t>(-res) });

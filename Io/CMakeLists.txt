@@ -11,9 +11,9 @@ set(HEADERS
         IoType.h
 
         File/IIoFile.h
+        File/Awaitable.h
 
         Engine/IIoEngine.h
-        Engine/Awaitable.h
         Engine/IoUring/IoUringEngine.h
         Engine/Epoll/EpollEngine.h
         Engine/Iocp/IocpEngine.h

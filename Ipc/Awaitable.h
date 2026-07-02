@@ -5,12 +5,11 @@
 #pragma once
 #include <coroutine>
 #include <optional>
-#include "IIoEngine.h"
+#include "Engine/IIoEngine.h"
 
 BEGIN_NS(ne::io)
 	// 단일 fd 이벤트를 co_await 로 대기하는 범용 awaitable.
 	// await_suspend 에서 Watch 를 등록하고, 콜백에서 Unwatch 후 코루틴을 재개한다.
-	// Network 와 Ipc 양쪽에서 공용으로 사용.
 	class WatchAwaitable
 	{
 	public:

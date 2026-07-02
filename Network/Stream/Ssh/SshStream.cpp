@@ -3,7 +3,7 @@
 //
 
 #include "SshStream.h"
-#include "Engine/Awaitable.h"
+#include "Stream/Awaitable.h"
 #include <utility>
 
 #ifdef NEBULA_WITH_LIBSSH2

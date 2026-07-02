@@ -10,7 +10,7 @@
 #include "Handle.h"
 
 BEGIN_NS(ne::io)
-	class EpollEngine final : public IIoEngine<>
+	class EpollEngine final : public IIoEngine
 	{
 		NEBULA_NON_COPYABLE_MOVABLE(EpollEngine)
 
@@ -19,12 +19,6 @@ BEGIN_NS(ne::io)
 		~EpollEngine() override = default;
 
 	private:
-		struct WatchEntry
-		{
-			uint32_t   events{};
-			IoCallback callback;
-		};
-
 		using EpollFdHandle = ne::Handle<
 			int_t,
 			decltype([](const int_t _fd) { ::close(_fd); }),
@@ -38,9 +32,9 @@ BEGIN_NS(ne::io)
 	public:
 		[[nodiscard]] ne::Result<void, ne::OsError> Watch(socket_t _fd, uint32_t _events, IoCallback _cb) override;
 		[[nodiscard]] ne::Result<void, ne::OsError> Unwatch(socket_t _fd) override;
-		// Proactor 인터페이스: 내부적으로 epoll watch + recv/send 로 에뮬레이션.
-		[[nodiscard]] ne::Result<void, ne::OsError> SubmitRecv(socket_t _fd, void* _buf, std::size_t _len, IoCtx* _ctx) noexcept override;
-		[[nodiscard]] ne::Result<void, ne::OsError> SubmitSend(socket_t _fd, const void* _buf, std::size_t _len, IoCtx* _ctx) noexcept override;
+		// 소켓 Proactor: 내부적으로 epoll watch + recv/send 로 에뮬레이션.
+		[[nodiscard]] ne::Result<void, ne::OsError> SubmitReceive(socket_t _fd, void* _buf, std::size_t _len, IoContext* _ctx) noexcept override;
+		[[nodiscard]] ne::Result<void, ne::OsError> SubmitSend(socket_t _fd, const void* _buf, std::size_t _len, IoContext* _ctx) noexcept override;
 		[[nodiscard]] ne::Result<void, ne::OsError> RunOnce(ne::int_t _timeoutMs = -1) override;
 		void SetTimerWheel(ne::time::TimerWheel* _wheel) noexcept override { timerWheel = _wheel; }
 		[[nodiscard]] bool_t IsValid() const noexcept { return static_cast<bool_t>(epollFd); }

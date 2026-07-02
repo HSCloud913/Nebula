@@ -34,7 +34,7 @@ BEGIN_NS(ne::io)
 		if (::epoll_ctl(epollFd.Get(), op, static_cast<int>(_fd), &ev) == -1)
 			return ne::Result<void, ne::OsError>::Error(ne::OsError{ errno }.Context("[EpollEngine/Watch]"));
 
-		watches[_fd] = { _events, std::move(_cb) };
+		watches[_fd] = { .events = _events, .callback = std::move(_cb) };
 		return ne::Result<void, ne::OsError>::Ok();
 	}
 
@@ -89,11 +89,11 @@ BEGIN_NS(ne::io)
 
 
 
-	// Proactor 에뮬레이션: epoll Read/Write 이벤트 대기 후 recv/send 를 내부에서 처리.
+	// 소켓 Proactor 에뮬레이션: epoll Read/Write 이벤트 대기 후 recv/send 를 내부에서 처리.
 	// 호출자(PlainStream)는 Proactor 인터페이스만 사용 — 2단계 syscall 은 이 함수 내부에 감춰진다.
 
-	ne::Result<void, ne::OsError> EpollEngine::SubmitRecv(
-		const socket_t _fd, void* _buf, const std::size_t _len, IoCtx* _ctx) noexcept
+	ne::Result<void, ne::OsError> EpollEngine::SubmitReceive(
+		const socket_t _fd, void* _buf, const std::size_t _len, IoContext* _ctx) noexcept
 	{
 		return Watch(_fd, IoEvent::Read | IoEvent::HangUp,
 			[this, _fd, _buf, _len, _ctx](socket_t _f, const uint32_t _events)
@@ -103,14 +103,14 @@ BEGIN_NS(ne::io)
 				if (_events & IoEvent::Error)
 				{
 					_ctx->result = ne::Result<std::size_t, ne::OsError>::Error(
-						ne::OsError{ static_cast<ne::ulong_t>(errno) }.Context("[EpollEngine/SubmitRecv]"));
+						ne::OsError{ static_cast<ne::ulong_t>(errno) }.Context("[EpollEngine/SubmitReceive]"));
 				}
 				else
 				{
 					const ssize_t n = ::recv(_fd, _buf, _len, 0);
 					if (n < 0)
 						_ctx->result = ne::Result<std::size_t, ne::OsError>::Error(
-							ne::OsError{ static_cast<ne::ulong_t>(errno) }.Context("[EpollEngine/SubmitRecv]"));
+							ne::OsError{ static_cast<ne::ulong_t>(errno) }.Context("[EpollEngine/SubmitReceive]"));
 					else
 						_ctx->result = ne::Result<std::size_t, ne::OsError>::Ok(static_cast<std::size_t>(n));
 				}
@@ -120,7 +120,7 @@ BEGIN_NS(ne::io)
 	}
 
 	ne::Result<void, ne::OsError> EpollEngine::SubmitSend(
-		const socket_t _fd, const void* _buf, const std::size_t _len, IoCtx* _ctx) noexcept
+		const socket_t _fd, const void* _buf, const std::size_t _len, IoContext* _ctx) noexcept
 	{
 		return Watch(_fd, IoEvent::Write | IoEvent::Error,
 			[this, _fd, _buf, _len, _ctx](socket_t _f, const uint32_t _events)
