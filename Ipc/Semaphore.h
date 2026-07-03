@@ -2,11 +2,8 @@
 // Created by nebula on 24. 5. 29.
 //
 
-#ifndef SEMAPHORE_H
-#define SEMAPHORE_H
-
+#pragma once
 #include <memory>
-
 #include "Type.h"
 
 BEGIN_NS(ne::ipc)
@@ -21,16 +18,14 @@ BEGIN_NS(ne::ipc)
 
 		NEBULA_NON_COPYABLE(Semaphore)
 
+	private:
+		class Impl;
+		std::unique_ptr<Impl> impl;
+
 	public:
 		void_t Acquire() const;
 		[[nodiscard]] bool_t TryAcquire() const;
 		void_t Release(int_t _count = 1) const;
-
-	private:
-		class Impl;
-		std::unique_ptr<Impl> impl;
 	};
 
 END_NS
-
-#endif //SEMAPHORE_H

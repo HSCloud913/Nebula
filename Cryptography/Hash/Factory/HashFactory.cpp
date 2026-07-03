@@ -1,10 +1,10 @@
 #include "HashFactory.h"
 
-#include "Hash/Wrapper/CRC32Wrapper.h"
-#include "Hash/Wrapper/MD5Wrapper.h"
-#include "Hash/Wrapper/SHA1Wrapper.h"
-#include "Hash/Wrapper/SHA2Wrapper.h"
-#include "Hash/Wrapper/SHA3Wrapper.h"
+#include "Hash/Algorithm/Wrapper/CRC32Wrapper.h"
+#include "Hash/Algorithm/Wrapper/MD5Wrapper.h"
+#include "Hash/Algorithm/Wrapper/SHA1Wrapper.h"
+#include "Hash/Algorithm/Wrapper/SHA2Wrapper.h"
+#include "Hash/Algorithm/Wrapper/SHA3Wrapper.h"
 
 
 

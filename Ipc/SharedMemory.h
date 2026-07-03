@@ -22,12 +22,12 @@ BEGIN_NS(ne::ipc)
 
 		NEBULA_NON_COPYABLE(SharedMemory)
 
-	public:
-		[[nodiscard]] std::span<std::byte> GetView() const noexcept;
-
 	private:
 		class Impl;
 		std::unique_ptr<Impl> impl;
+
+	public:
+		[[nodiscard]] std::span<std::byte> GetView() const noexcept;
 	};
 
 END_NS

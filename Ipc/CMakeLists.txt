@@ -8,10 +8,6 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 
-set(HEADERS
-        Awaitable.h
-)
-
 set(SOURCES
         Pipe.cpp
         SharedMemory.cpp
@@ -19,7 +15,7 @@ set(SOURCES
         Semaphore.cpp
 )
 
-add_library(${PROJECT_NAME} STATIC ${HEADERS} ${SOURCES})
+add_library(${PROJECT_NAME} STATIC ${SOURCES})
 target_include_directories(${PROJECT_NAME} PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/Base
@@ -31,7 +27,6 @@ if (WIN32)
     target_link_libraries(${PROJECT_NAME} PRIVATE Ws2_32 crypt32 bcrypt)
 else ()
     find_package(OpenSSL REQUIRED)
-
     target_link_libraries(${PROJECT_NAME} PRIVATE pthread rt)
 endif ()
 

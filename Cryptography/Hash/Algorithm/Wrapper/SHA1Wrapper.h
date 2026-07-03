@@ -2,7 +2,7 @@
 #include <memory>
 #include "Type.h"
 #include "HashWrapper.h"
-#include "../Algorithm/SHA1.h"
+#include "Hash/Algorithm/SHA1.h"
 
 BEGIN_NS(ne::crypto)
 	class SHA1Wrapper :public HashWrapper

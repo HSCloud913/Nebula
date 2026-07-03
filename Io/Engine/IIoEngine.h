@@ -60,7 +60,7 @@ BEGIN_NS(ne::io)
 	// 예: 한 코루틴이 recv 를 기다리는 동안 다른 코루틴이 같은 fd 로 send 를 기다릴 수 있는데,
 	// 두 감시가 하나의 엔트리를 공유하면 나중 Watch 호출이 먼저 것의 콜백/제출 상태를 덮어써
 	// 버린다. Slot() 은 이벤트 마스크의 Write 비트로 방향을 정한다(Read/Write 를 한 Watch 호출에
-	// 같이 요청하는 caller 는 없음 — RecvAwaitable/SendAwaitable 등은 항상 한쪽만 요청한다).
+	// 같이 요청하는 caller 는 없음 — ReceiveAwaitable/SendAwaitable 등은 항상 한쪽만 요청한다).
 	struct WatchSlots
 	{
 		WatchEntry read;

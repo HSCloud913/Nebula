@@ -3,7 +3,7 @@
 //
 
 #include "SshStream.h"
-#include "Stream/Awaitable.h"
+#include "Coroutine/Awaitable.h"
 #include <utility>
 
 #ifdef NEBULA_WITH_LIBSSH2
@@ -35,7 +35,7 @@ BEGIN_NS(ne::network)
 		const int dir = libssh2_session_block_directions(_session);
 		if (dir & LIBSSH2_SESSION_BLOCK_INBOUND)
 		{
-			if (auto result = co_await ne::io::RecvAwaitable{ _fd, _engine }; result.IsError()) co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
+			if (auto result = co_await ne::io::ReceiveAwaitable{ _fd, _engine }; result.IsError()) co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
 		}
 		if (dir & LIBSSH2_SESSION_BLOCK_OUTBOUND)
 		{

@@ -47,7 +47,7 @@ BEGIN_NS(ne::io)
 	// IocpEngine 에서 동시에 RunOnce() 를 호출하는 것을 전제한다 — mutex 로 watches/iocpSockets
 	// 접근을 보호한다. GetQueuedCompletionStatus 의 블로킹 대기 자체와 콜백/handle.resume() 호출은
 	// 반드시 락 밖에서 수행한다 — 콜백이 동기적으로 Watch()/Unwatch() 를 재호출하는 경우가 실제로
-	// 있어(RecvAwaitable 등) 락을 쥔 채 호출하면 재진입 데드락이 된다.
+	// 있어(ReceiveAwaitable 등) 락을 쥔 채 호출하면 재진입 데드락이 된다.
 	class IocpEngine final :public IIoEngine
 	{
 	public:

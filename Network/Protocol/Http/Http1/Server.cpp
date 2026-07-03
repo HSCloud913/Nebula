@@ -5,7 +5,7 @@
 #include "Server.h"
 #include "Socket/Socket.h"
 #include "Stream/PlainStream.h"
-#include "Stream/Awaitable.h"
+#include "Coroutine/Awaitable.h"
 #include <array>
 #include <string>
 
@@ -65,7 +65,7 @@ BEGIN_NS(ne::network::http_1)
 		while (running)
 		{
 			// 새 연결 대기 — 리스너 소켓이 readable 이 되면 Accept 가능
-			auto eventRes = co_await ne::io::RecvAwaitable{ listener.Handle(), *engine };
+			auto eventRes = co_await ne::io::ReceiveAwaitable{ listener.Handle(), *engine };
 			if (eventRes.IsError()) break;
 
 			auto sockRes = listener.Accept();

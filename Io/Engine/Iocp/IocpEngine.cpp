@@ -223,18 +223,20 @@ BEGIN_NS(ne::io)
 		if (key == ReactorKey)
 		{
 			// Reactor 경로: zero-byte WSARecv/WSASend 완료 → 콜백 디스패치.
-			// 주의: zero-byte 수신은 0바이트 전송으로 완료되므로 bytes==0 으로는
-			// "데이터 도착"과 "상대가 정상 종료"를 구분할 수 없다 — 진짜 HangUp 감지가
-			// 필요하면 호출자가 콜백 안에서 실제 recv 를 수행해 0 반환 여부로 판별해야 한다.
+			// 주의: zero-byte 수신은 0바이트 전송으로 완료되므로 bytes==0 으로는 "데이터
+			// 도착"과 "상대가 정상 종료(FIN)"를 구분할 수 없다 — Read 방향 성공 완료는 락
+			// 밖에서 MSG_PEEK 으로 실제 확인한다(아래 needsPeekCheck 참고).
 			auto* watchEntry = reinterpret_cast<WatchEntry*>(overlapped);
 
-			// watches/iocpSockets 를 만지는 부분만 락으로 보호하고, 실제 콜백 호출은 반드시
-			// 락 밖에서 한다 — 콜백이 동기적으로 Watch()/Unwatch() 를 재호출하는 경우가 실제로
-			// 있어(RecvAwaitable 등), 락을 쥔 채 부르면 같은 스레드가 mutex 를 재진입해 데드락난다.
+			// watches/iocpSockets 를 만지는 부분만 락으로 보호하고, 실제 콜백 호출(과 그 전의
+			// MSG_PEEK 조회)은 반드시 락 밖에서 한다 — 콜백이 동기적으로 Watch()/Unwatch() 를
+			// 재호출하는 경우가 실제로 있어(ReceiveAwaitable 등), 락을 쥔 채 부르면 같은
+			// 스레드가 mutex 를 재진입해 데드락난다.
 			IoCallback callback;
 			uint32_t events = 0;
 			socket_t fd = 0;
 			bool_t invokeCallback = false;
+			bool_t needsPeekCheck = false;
 
 			{
 				std::lock_guard lock(mutex);
@@ -272,13 +274,34 @@ BEGIN_NS(ne::io)
 				else
 				{
 					fd = watchEntry->fd;
-					events = (watchEntry->events & IoEvent::Write) ? IoEvent::Write : IoEvent::Read;
 					callback = watchEntry->callback; // 슬롯은 그대로 유지 — 호출자가 콜백 안에서 Unwatch 한다
 					invokeCallback = true;
+
+					if (watchEntry->events & IoEvent::Write)
+						events = IoEvent::Write;
+					else
+						needsPeekCheck = true; // Read 방향 — 락 밖에서 MSG_PEEK 으로 판별
 				}
 			}
 
-			if (invokeCallback) callback(fd, events);
+			if (invokeCallback)
+			{
+				if (needsPeekCheck)
+				{
+					// 데이터를 소비하지 않고 조회만 한다. 이 zero-byte 완료 자체가 "recv 가 즉시
+					// 반환될 상태"라는 뜻이므로 MSG_PEEK 호출은 블로킹되지 않는다.
+					char peekByte;
+					const int peeked = ::recv(fd, &peekByte, 1, MSG_PEEK);
+					if (peeked == 0)
+						events = IoEvent::HangUp; // 상대가 정상 종료(FIN) — 더 읽을 데이터 없음
+					else if (peeked == SOCKET_ERROR)
+						events = IoEvent::Error | IoEvent::HangUp;
+					else
+						events = IoEvent::Read; // 진짜 데이터 도착
+				}
+
+				callback(fd, events);
+			}
 		}
 		else // ProactorKey — 소켓 proactor 또는 파일 proactor. IoContext 는 코루틴이 소유하므로 watches/iocpSockets 를 만지지 않는다 — 락 불필요.
 		{

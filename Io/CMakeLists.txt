@@ -11,7 +11,8 @@ set(HEADERS
         IoType.h
 
         File/IIoFile.h
-        File/Awaitable.h
+
+        Coroutine/Awaitable.h
 
         Engine/IIoEngine.h
         Engine/IoUring/IoUringEngine.h
@@ -45,9 +46,8 @@ if (UNIX AND NOT APPLE)
     pkg_check_modules(LIBURING REQUIRED liburing)
     target_link_libraries(${PROJECT_NAME} PUBLIC ${LIBURING_LIBRARIES})
     target_include_directories(${PROJECT_NAME} PUBLIC ${LIBURING_INCLUDE_DIRS})
+    target_link_libraries(${PROJECT_NAME} PRIVATE pthread)
 endif ()
-
-target_link_libraries(${PROJECT_NAME} PRIVATE pthread)
 
 
 if (TARGET GTest::gtest_main AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Test)

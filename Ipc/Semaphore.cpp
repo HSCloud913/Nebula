@@ -15,6 +15,8 @@
 #	include <cerrno>
 #endif
 
+
+
 BEGIN_NS(ne::ipc)
 #if defined(_WIN32)
 	class Semaphore::Impl final
@@ -30,14 +32,12 @@ BEGIN_NS(ne::ipc)
 				throw ne::Exception("[Semaphore/Impl]", std::format("Failed to CreateSemaphoreW function (error: {})", ::GetLastError()));
 			}
 		}
-		~Impl()
-		{
-			if (handle) ::CloseHandle(handle);
-		}
+		~Impl() { if (handle) ::CloseHandle(handle); }
 
 	private:
 		static constexpr long_t MaxCount = 1'000'000'000;
 
+	private:
 		HANDLE handle = nullptr;
 
 	public:
@@ -59,10 +59,8 @@ BEGIN_NS(ne::ipc)
 			{
 				return false;
 			}
-			else
-			{
-				throw ne::Exception("[Semaphore/TryAcquire]", std::format("Failed to WaitForSingleObject function (error: {})", ::GetLastError()));
-			}
+
+			throw ne::Exception("[Semaphore/TryAcquire]", std::format("Failed to WaitForSingleObject function (error: {})", ::GetLastError()));
 		}
 
 		void_t Release(const int_t _count) const
@@ -73,6 +71,7 @@ BEGIN_NS(ne::ipc)
 			}
 		}
 	};
+
 #elif defined(IS_POSIX)
 	class Semaphore::Impl final
 	{
@@ -110,8 +109,14 @@ BEGIN_NS(ne::ipc)
 
 		[[nodiscard]] bool_t TryAcquire() const
 		{
-			if (::sem_trywait(handle) == 0) return true;
-			if (errno == EAGAIN) return false;
+			if (::sem_trywait(handle) == 0)
+			{
+				return true;
+			}
+			else if (errno == EAGAIN)
+			{
+				return false;
+			}
 
 			throw ne::Exception("[Semaphore/TryAcquire]", std::format("Failed to sem_trywait function (error: {})", errno));
 		}
@@ -127,6 +132,7 @@ BEGIN_NS(ne::ipc)
 			}
 		}
 	};
+
 #endif
 
 

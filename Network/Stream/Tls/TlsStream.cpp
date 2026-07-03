@@ -3,7 +3,7 @@
 //
 
 #include "TlsStream.h"
-#include "Stream/Awaitable.h"
+#include "Coroutine/Awaitable.h"
 #include <utility>
 #include <cstring>
 #include <vector>
@@ -189,7 +189,7 @@ BEGIN_NS(ne::network)
 				span = nativeMessageBuffer->GetBuffer();
 			}
 
-			if (auto result = co_await ne::io::RecvAwaitable{ stream.socket.Handle(), _engine }; result.IsError())
+			if (auto result = co_await ne::io::ReceiveAwaitable{ stream.socket.Handle(), _engine }; result.IsError())
 				co_return ne::Result<TlsStream, ne::OsError>::Error(std::move(result.Error()));
 
 			const int received = ::recv(stream.socket.Handle(), reinterpret_cast<char*>(span.data() + dataInBuffer), static_cast<int>(span.size() - dataInBuffer), 0);
@@ -353,7 +353,7 @@ BEGIN_NS(ne::network)
 					span = rawBuffer->GetBuffer();
 				}
 
-				if (auto result = co_await ne::io::RecvAwaitable{ socket.Handle(), *engine }; result.IsError()) co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
+				if (auto result = co_await ne::io::ReceiveAwaitable{ socket.Handle(), *engine }; result.IsError()) co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
 
 				const int bytes = ::recv(socket.Handle(), reinterpret_cast<char*>(span.data() + dataInBuffer), static_cast<int>(span.size() - dataInBuffer), 0);
 				if (bytes <= 0)
@@ -462,7 +462,7 @@ BEGIN_NS(ne::network)
 		{
 			if (dataInBuffer == 0)
 			{
-				if (auto result = co_await ne::io::RecvAwaitable{ socket.Handle(), *engine }; result.IsError())
+				if (auto result = co_await ne::io::ReceiveAwaitable{ socket.Handle(), *engine }; result.IsError())
 					co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
 
 				const int bytes = ::recv(socket.Handle(), reinterpret_cast<char*>(span.data()), static_cast<int>(span.size()), 0);
@@ -517,7 +517,7 @@ BEGIN_NS(ne::network)
 					span = nativeMessageBuffer->GetBuffer();
 				}
 
-				if (auto result = co_await ne::io::RecvAwaitable{ socket.Handle(), *engine }; result.IsError())
+				if (auto result = co_await ne::io::ReceiveAwaitable{ socket.Handle(), *engine }; result.IsError())
 					co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
 
 				const int bytes = ::recv(socket.Handle(), reinterpret_cast<char*>(span.data() + dataInBuffer), static_cast<int>(span.size() - dataInBuffer), 0);
@@ -741,7 +741,7 @@ BEGIN_NS(ne::network)
 			const int sslError = SSL_get_error(tempSsl, sslResult);
 			if (sslError == SSL_ERROR_WANT_READ)
 			{
-				if (auto result = co_await ne::io::RecvAwaitable{ stream.socket.Handle(), _engine }; result.IsError())
+				if (auto result = co_await ne::io::ReceiveAwaitable{ stream.socket.Handle(), _engine }; result.IsError())
 					co_return ne::Result<TlsStream, ne::OsError>::Error(std::move(result.Error()));
 			}
 			else if (sslError == SSL_ERROR_WANT_WRITE)
@@ -771,7 +771,7 @@ BEGIN_NS(ne::network)
 			const int sslError = SSL_get_error(nativeSsl, sslResult);
 			if (sslError == SSL_ERROR_WANT_READ)
 			{
-				if (auto result = co_await ne::io::RecvAwaitable{ socket.Handle(), *engine }; result.IsError())
+				if (auto result = co_await ne::io::ReceiveAwaitable{ socket.Handle(), *engine }; result.IsError())
 					co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
 			}
 			else if (sslError == SSL_ERROR_WANT_WRITE)
@@ -813,7 +813,7 @@ BEGIN_NS(ne::network)
 			}
 			else if (sslError == SSL_ERROR_WANT_READ)
 			{
-				if (auto result = co_await ne::io::RecvAwaitable{ socket.Handle(), *engine }; result.IsError())
+				if (auto result = co_await ne::io::ReceiveAwaitable{ socket.Handle(), *engine }; result.IsError())
 					co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
 			}
 			else
@@ -854,7 +854,7 @@ BEGIN_NS(ne::network)
 			const int sslError = SSL_get_error(nativeSsl, bytes);
 			if (sslError == SSL_ERROR_WANT_READ)
 			{
-				if (auto result = co_await ne::io::RecvAwaitable{ socket.Handle(), *engine }; result.IsError())
+				if (auto result = co_await ne::io::ReceiveAwaitable{ socket.Handle(), *engine }; result.IsError())
 					co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
 			}
 			else if (sslError == SSL_ERROR_WANT_WRITE)

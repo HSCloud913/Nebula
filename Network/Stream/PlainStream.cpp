@@ -3,7 +3,7 @@
 //
 
 #include "PlainStream.h"
-#include "Stream/Awaitable.h"
+#include "Coroutine/Awaitable.h"
 
 #if defined(_WIN32)
 #   include <winsock2.h>
@@ -66,9 +66,7 @@ BEGIN_NS(ne::network)
 
 		if (ioMode == IoMode::Proactor)
 		{
-			co_return co_await ne::io::SocketSendAwaitable{
-				*engine, socket.Handle(),
-				_data.Span().data(), _data.Span().size() };
+			co_return co_await ne::io::SendSubmitAwaitable{*engine, socket.Handle(), _data.Span().data(), _data.Span().size() };
 		}
 
 		// Reactor 경로: poll + send
@@ -124,12 +122,11 @@ BEGIN_NS(ne::network)
 
 		if (ioMode == IoMode::Proactor)
 		{
-			co_return co_await ne::io::SocketRecvAwaitable{
-				*engine, socket.Handle(), _data.ptr, _data.length };
+			co_return co_await ne::io::ReceiveSubmitAwaitable{*engine, socket.Handle(), _data.ptr, _data.length };
 		}
 
 		// Reactor 경로: poll + recv
-		if (auto ready = co_await ne::io::RecvAwaitable{ socket.Handle(), *engine }; ready.IsError())
+		if (auto ready = co_await ne::io::ReceiveAwaitable{ socket.Handle(), *engine }; ready.IsError())
 			co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(ready.Error()));
 
 		const int bytes = ::recv(socket.Handle(), reinterpret_cast<char*>(_data.ptr), static_cast<int>(_data.length), 0);

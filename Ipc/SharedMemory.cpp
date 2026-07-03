@@ -28,14 +28,7 @@ BEGIN_NS(ne::ipc)
 		{
 			const auto wideName = StringFormat::UTF8toWCS(string_t(_name).c_str());
 
-			mappingHandle = ::CreateFileMappingW(
-				INVALID_HANDLE_VALUE,
-				nullptr,
-				PAGE_READWRITE,
-				static_cast<DWORD>(static_cast<unsigned long long>(_size) >> 32),
-				static_cast<DWORD>(static_cast<unsigned long long>(_size) & 0xFFFFFFFFu),
-				wideName.c_str()
-			);
+			mappingHandle = ::CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, static_cast<ulonglong_t>(_size) >> 32, static_cast<ulonglong_t>(_size) & 0xFFFFFFFFu, wideName.c_str());
 			if (!mappingHandle)
 			{
 				throw ne::Exception("[SharedMemory/Impl]", std::format("Failed to CreateFileMappingW function (error: {})", ::GetLastError()));
@@ -46,6 +39,7 @@ BEGIN_NS(ne::ipc)
 			{
 				const auto error = ::GetLastError();
 				::CloseHandle(mappingHandle);
+
 				throw ne::Exception("[SharedMemory/Impl]", std::format("Failed to MapViewOfFile function (error: {})", error));
 			}
 		}
@@ -61,11 +55,9 @@ BEGIN_NS(ne::ipc)
 		void_t* view = nullptr;
 
 	public:
-		[[nodiscard]] std::span<std::byte> GetView() const noexcept
-		{
-			return std::span(static_cast<std::byte*>(view), size);
-		}
+		[[nodiscard]] std::span<std::byte> GetView() const noexcept { return std::span(static_cast<std::byte*>(view), size); }
 	};
+
 #elif defined(IS_POSIX)
 	class SharedMemory::Impl final
 	{
@@ -109,10 +101,7 @@ BEGIN_NS(ne::ipc)
 		void_t* view = MAP_FAILED;
 
 	public:
-		[[nodiscard]] std::span<std::byte> GetView() const noexcept
-		{
-			return std::span(static_cast<std::byte*>(view), size);
-		}
+		[[nodiscard]] std::span<std::byte> GetView() const noexcept { return std::span(static_cast<std::byte*>(view), size); }
 	};
 #endif
 

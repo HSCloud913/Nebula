@@ -2,7 +2,7 @@
 #include <memory>
 #include "Type.h"
 #include "HashWrapper.h"
-#include "../Algorithm/MD5.h"
+#include "Hash/Algorithm/MD5.h"
 
 BEGIN_NS(ne::crypto)
 	class MD5Wrapper :public HashWrapper

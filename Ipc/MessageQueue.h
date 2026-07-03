@@ -3,18 +3,22 @@
 //
 
 #pragma once
-
 #include <memory>
 #include <span>
 #include <vector>
-
 #include "Coroutine/Task.h"
 #include "Result.h"
 #include "Error.h"
 #include "Type.h"
 
 // IIoEngine 전방 선언 — 헤더 체인을 최소화하기 위해 Engine/IIoEngine.h 는 .cpp 에서만 include
-namespace ne::io { class IIoEngine; }
+namespace ne::io
+{
+	class IIoEngine;
+#if defined(_WIN32)
+	class IocpEngine;
+#endif
+}
 
 BEGIN_NS(ne::ipc)
 	class MessageQueue final
@@ -28,24 +32,36 @@ BEGIN_NS(ne::ipc)
 
 		NEBULA_NON_COPYABLE(MessageQueue)
 
-	public:
-		void_t Listen();
-		void_t Connect();
-
-	public:
-		// 기존 동기 API — 호환성 유지
-		void_t Send(std::span<const std::byte> _message) const;
-		[[nodiscard]] std::vector<std::byte> Receive() const;
-
-		// 비동기 API — IIoEngine 기반
-		// POSIX: mqd_t 를 IIoEngine::Watch 로 직접 감시 (approach a)
-		// Windows: bridge 스레드가 blocking ReadFile/WriteFile 수행 후 resume (approach b, engine 미사용)
-		[[nodiscard]] ne::Task<ne::Result<void, ne::OsError>>
-			SendAsync(std::span<const std::byte> _message, ne::io::IIoEngine& _engine);
-		[[nodiscard]] ne::Task<ne::Result<std::vector<std::byte>, ne::OsError>>
-			ReceiveAsync(ne::io::IIoEngine& _engine);
-
 	private:
 		class Impl;
 		std::unique_ptr<Impl> impl;
+
+	public:
+		void_t Connect();
+		void_t Listen();
+
+	public:
+		// 기존 동기 API — 호환성 유지.
+		// 주의(Windows): SendAsync/ReceiveAsync 를 한 번이라도 호출해 핸들이 IocpEngine 에 등록된
+		// 뒤에는 Send/Receive 를 더 이상 호출할 수 없다 — 같은 핸들의 모든 완료가 그 IOCP 큐로
+		// 몰리므로, 동기 호출의 GetOverlappedResult 대기가 RunOnce() 의 GetQueuedCompletionStatus 와
+		// 완료를 두고 경합해 잘못된 타입으로 reinterpret_cast 될 위험이 있다(호출 시 예외로 거부됨).
+		void_t Send(std::span<const std::byte> _message) const;
+		[[nodiscard]] std::vector<std::byte> Receive() const;
+
+	public:
+		// 비동기 API — 둘 다 진짜 Proactor 제출(준비완료 대기 후 별도 syscall 이 아니라
+		// I/O 자체를 커널에 제출하고 완료를 기다림).
+		// POSIX: AF_UNIX SOCK_SEQPACKET → IIoEngine::SubmitSend/SubmitReceive
+		// Windows: 명명 파이프를 FILE_FLAG_OVERLAPPED 로 열고 IocpEngine 에 등록해
+		//          SubmitRead/SubmitWrite 로 완료 기반 비동기 I/O 수행
+#if defined(_WIN32)
+		[[nodiscard]] ne::Task<ne::Result<void, ne::OsError>> SendAsync(std::span<const std::byte> _message, ne::io::IocpEngine& _engine);
+		[[nodiscard]] ne::Task<ne::Result<std::vector<std::byte>, ne::OsError>> ReceiveAsync(ne::io::IocpEngine& _engine);
+#else
+		[[nodiscard]] ne::Task<ne::Result<void, ne::OsError>> SendAsync(std::span<const std::byte> _message, ne::io::IIoEngine& _engine);
+		[[nodiscard]] ne::Task<ne::Result<std::vector<std::byte>, ne::OsError>> ReceiveAsync(ne::io::IIoEngine& _engine);
+#endif
 	};
+
+END_NS
