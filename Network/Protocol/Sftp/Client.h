@@ -8,7 +8,7 @@
 #include <span>
 #include <vector>
 #include "SftpBase.h"
-#include "Stream/SshStream.h"  // for ne::network::SshConfig
+#include "Stream/SSH/SshStream.h"  // for ne::network::SshConfig
 #include "Socket/Socket.h"
 #include "Coroutine/Task.h"
 #include "Result.h"

@@ -4,7 +4,7 @@
 
 #pragma once
 #include <cstddef>
-#include "Socket/Socket.h"
+#include "Stream/Plain/PlainStream.h"
 #include "Stream/IStream.h"
 #include "Engine/IIoEngine.h"
 
@@ -21,9 +21,9 @@ BEGIN_NS(ne::network)
 	class TlsStream final :public IStream
 	{
 #if defined(_WIN32)
-		explicit TlsStream(Socket&& _socket, ne::io::IIoEngine& _engine, void* _credHandle, void* _ctxHandle, void* _messageBuffer, ne::memory::IAllocator* _allocator = nullptr) noexcept;
+		explicit TlsStream(PlainStream&& _transport, void* _credHandle, void* _ctxHandle, void* _messageBuffer) noexcept;
 #else
-		explicit TlsStream(Socket&& _socket, ne::io::IIoEngine& _engine, void* _ctx, void* _ssl, ne::memory::IAllocator* _allocator = nullptr) noexcept;
+		explicit TlsStream(PlainStream&& _transport, void* _ctx, void* _ssl) noexcept;
 #endif
 
 	public:
@@ -34,10 +34,8 @@ BEGIN_NS(ne::network)
 		NEBULA_NON_COPYABLE(TlsStream)
 
 	private:
-		Socket socket;
-		ne::io::IIoEngine* engine{};
+		PlainStream transport; // wire transport (소켓 소유 + fd/수명/engine/allocator 관리)
 		string_t sniHost;
-		ne::memory::IAllocator* allocator{};
 
 #if defined(_WIN32)
 		void* credHandle{};    // CredHandle*       (SChannel)
@@ -67,9 +65,9 @@ BEGIN_NS(ne::network)
 
 	public:
 #if defined(_WIN32)
-		[[nodiscard]] virtual bool_t IsOpen() const noexcept override { return socket.IsValid() && ctxHandle != nullptr; }
+		[[nodiscard]] virtual bool_t IsOpen() const noexcept override { return transport.IsOpen() && ctxHandle != nullptr; }
 #else
-		[[nodiscard]] virtual bool_t IsOpen() const noexcept override { return socket.IsValid() && ssl != nullptr; }
+		[[nodiscard]] virtual bool_t IsOpen() const noexcept override { return transport.IsOpen() && ssl != nullptr; }
 #endif
 	};
 

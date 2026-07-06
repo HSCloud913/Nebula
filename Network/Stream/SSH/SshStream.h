@@ -4,7 +4,7 @@
 
 #pragma once
 #include <cstddef>
-#include "Socket/Socket.h"
+#include "Stream/Plain/PlainStream.h"
 #include "Stream/IStream.h"
 #include "Engine/IIoEngine.h"
 
@@ -23,7 +23,7 @@ BEGIN_NS(ne::network)
 	// Receive → channel stdout
 	class SshStream final :public IStream
 	{
-		explicit SshStream(Socket&& _socket, ne::io::IIoEngine& _engine, void* _session, void* _channel, ne::memory::IAllocator* _allocator = nullptr) noexcept;
+		explicit SshStream(PlainStream&& _transport, void* _session, void* _channel) noexcept;
 
 	public:
 		SshStream(SshStream&& _other) noexcept;
@@ -33,10 +33,8 @@ BEGIN_NS(ne::network)
 		NEBULA_NON_COPYABLE(SshStream)
 
 	private:
-		Socket socket;
-		ne::io::IIoEngine* engine;
+		PlainStream transport; // wire transport (소켓 소유 + fd/수명/engine/allocator 관리)
 		SshConfig sshConfig;
-		ne::memory::IAllocator* allocator{};
 		void* session{};  // LIBSSH2_SESSION*
 		void* channel{};  // LIBSSH2_CHANNEL*
 
@@ -52,7 +50,7 @@ BEGIN_NS(ne::network)
 		virtual ne::Result<void, ne::OsError> Close() override;
 
 	public:
-		[[nodiscard]] virtual bool_t IsOpen() const noexcept override { return socket.IsValid() && channel != nullptr; }
+		[[nodiscard]] virtual bool_t IsOpen() const noexcept override { return transport.IsOpen() && channel != nullptr; }
 	};
 
 END_NS

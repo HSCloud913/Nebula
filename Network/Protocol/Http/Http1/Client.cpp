@@ -3,7 +3,7 @@
 //
 
 #include "Client.h"
-#include "Stream/PlainStream.h"
+#include "../../../Stream/Plain/PlainStream.h"
 #include "Socket/Socket.h"
 #include <array>
 #include <string>
@@ -39,8 +39,16 @@ BEGIN_NS(ne::network::http_1)
 
 	ne::Task<ne::Result<HttpResponse, ne::OsError>> Client::Execute(string_view_t _host, uint16_t _port, HttpRequest _request) const
 	{
-		// Create + connect socket (synchronous connect, async send/recv)
-		auto sockRes = Socket::CreateTcp();
+		// Create + connect socket (async DNS resolution, sync connect, async send/recv)
+		auto familyRes = co_await Socket::ResolveFamily(_host);
+		if (familyRes.IsError())
+		{
+			auto err = std::move(familyRes.Error());
+			err.Context("[Http1Client/Execute]");
+			co_return ne::Result<HttpResponse, ne::OsError>::Error(std::move(err));
+		}
+
+		auto sockRes = Socket::Create(familyRes.Value(), SOCK_STREAM, IPPROTO_TCP);
 		if (sockRes.IsError())
 		{
 			auto err = std::move(sockRes.Error());
@@ -50,7 +58,7 @@ BEGIN_NS(ne::network::http_1)
 
 		Socket sock = std::move(sockRes.Value());
 
-		if (auto r = sock.Connect(_host, _port); r.IsError())
+		if (auto r = co_await sock.Connect(_host, _port); r.IsError())
 		{
 			auto err = std::move(r.Error());
 			err.Context("[Http1Client/Execute]");

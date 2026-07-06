@@ -12,8 +12,8 @@
 #include "Buffer/BufferChain.h"
 
 BEGIN_NS(ne::network)
-	// 바이트 스트림 추상 인터페이스.
-	// Send/Recv 는 코루틴 반환 — co_await 로 비동기 완료 대기.
+	// 바이트 스트림 추상 인터페이스 (async-only).
+	// 모든 I/O 는 코루틴 반환 — co_await 로 비동기 완료 대기.
 	// 반환값 size_t == 0 → 상대방이 연결을 닫음 (EOF).
 	class IStream
 	{

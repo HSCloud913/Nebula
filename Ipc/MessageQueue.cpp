@@ -50,7 +50,7 @@ BEGIN_NS(ne::ipc)
 
 	public:
 		[[nodiscard]] HANDLE Handle() const noexcept { return handle; }
-		static constexpr DWORD MaxMessage = 65536;
+		static constexpr ulong_t MaxMessage = 65536;
 
 	public:
 		void_t Connect()
@@ -61,6 +61,7 @@ BEGIN_NS(ne::ipc)
 				{
 					throw ne::Exception("[MessageQueue/Connect]", std::format("Failed to WaitNamedPipeW function (error: {})", error));
 				}
+
 				Sleep(1);
 			}
 
@@ -76,8 +77,7 @@ BEGIN_NS(ne::ipc)
 
 		void_t Listen()
 		{
-			handle = ::CreateNamedPipeW(pipeName.c_str(), PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
-				PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT, 1, MaxMessage, MaxMessage, 0, nullptr);
+			handle = ::CreateNamedPipeW(pipeName.c_str(), PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED, PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT, 1, MaxMessage, MaxMessage, 0, nullptr);
 			if (handle == INVALID_HANDLE_VALUE)
 			{
 				throw ne::Exception("[MessageQueue/Listen]", std::format("Failed to CreateNamedPipeW function (error: {})", ::GetLastError()));
@@ -94,13 +94,12 @@ BEGIN_NS(ne::ipc)
 
 			if (!::ConnectNamedPipe(handle, &overlapped))
 			{
-				const DWORD error = ::GetLastError();
-				if (error == ERROR_IO_PENDING)
+				if (const ulong_t error = ::GetLastError(); error == ERROR_IO_PENDING)
 				{
-					DWORD transferred{};
+					ulong_t transferred{};
 					if (!::GetOverlappedResult(handle, &overlapped, &transferred, TRUE))
 					{
-						const DWORD waitError = ::GetLastError();
+						const ulong_t waitError = ::GetLastError();
 						::CloseHandle(overlapped.hEvent);
 						throw ne::Exception("[MessageQueue/Listen]", std::format("Failed to GetOverlappedResult function (error: {})", waitError));
 					}
@@ -128,15 +127,14 @@ BEGIN_NS(ne::ipc)
 				throw ne::Exception("[MessageQueue/Send]", std::format("Failed to CreateEventW function (error: {})", ::GetLastError()));
 			}
 
-			if (!::WriteFile(handle, _message.data(), static_cast<DWORD>(_message.size()), nullptr, &overlapped) &&
-				::GetLastError() != ERROR_IO_PENDING)
+			if (!::WriteFile(handle, _message.data(), static_cast<ulong_t>(_message.size()), nullptr, &overlapped) && ::GetLastError() != ERROR_IO_PENDING)
 			{
-				const DWORD error = ::GetLastError();
+				const ulong_t error = ::GetLastError();
 				::CloseHandle(overlapped.hEvent);
 				throw ne::Exception("[MessageQueue/Send]", std::format("Failed to WriteFile function (error: {})", error));
 			}
 
-			DWORD bytesWritten{};
+			ulong_t bytesWritten{};
 			WaitOverlapped(overlapped, bytesWritten, "[MessageQueue/Send]");
 			::CloseHandle(overlapped.hEvent);
 		}
@@ -155,19 +153,20 @@ BEGIN_NS(ne::ipc)
 				throw ne::Exception("[MessageQueue/Receive]", std::format("Failed to CreateEventW function (error: {})", ::GetLastError()));
 			}
 
-			if (!::ReadFile(handle, buffer.data(), static_cast<DWORD>(buffer.size()), nullptr, &overlapped) &&
-				::GetLastError() != ERROR_IO_PENDING)
+			if (!::ReadFile(handle, buffer.data(), buffer.size(), nullptr, &overlapped) && ::GetLastError() != ERROR_IO_PENDING)
 			{
-				const DWORD error = ::GetLastError();
+				const ulong_t error = ::GetLastError();
 				::CloseHandle(overlapped.hEvent);
+
 				throw ne::Exception("[MessageQueue/Receive]", std::format("Failed to ReadFile function (error: {})", error));
 			}
 
-			DWORD bytesRead{};
+			ulong_t bytesRead{};
 			WaitOverlapped(overlapped, bytesRead, "[MessageQueue/Receive]");
 			::CloseHandle(overlapped.hEvent);
 
 			buffer.resize(bytesRead);
+
 			return buffer;
 		}
 
@@ -181,6 +180,7 @@ BEGIN_NS(ne::ipc)
 				return result;
 
 			registered = true;
+
 			return ne::Result<void, ne::OsError>::Ok();
 		}
 
@@ -189,11 +189,11 @@ BEGIN_NS(ne::ipc)
 		// OVERLAPPED 를 대상으로 한 이벤트만 기다리므로, registered 가 false 인 동안(즉
 		// 아직 IocpEngine 에 등록되지 않은 동안)에는 RunOnce() 와 경합할 여지가 없다 — 등록 이후엔
 		// Send()/Receive() 진입 자체를 위에서 막는다.
-		void_t WaitOverlapped(OVERLAPPED& _overlapped, DWORD& _transferred, const string_view_t _context) const
+		void_t WaitOverlapped(OVERLAPPED& _overlapped, ulong_t& _transferred, const string_view_t _context) const
 		{
 			if (!::GetOverlappedResult(handle, &_overlapped, &_transferred, TRUE))
 			{
-				const DWORD error = ::GetLastError();
+				const ulong_t error = ::GetLastError();
 				throw ne::Exception(_context, std::format("Failed to GetOverlappedResult function (error: {})", error));
 			}
 		}
@@ -261,6 +261,7 @@ BEGIN_NS(ne::ipc)
 			{
 				const auto error = errno;
 				::close(listenHandle);
+
 				throw ne::Exception("[MessageQueue/Listen]", std::format("Failed to bind socket (error: {})", error));
 			}
 
@@ -268,6 +269,7 @@ BEGIN_NS(ne::ipc)
 			{
 				const auto error = errno;
 				::close(listenHandle);
+
 				throw ne::Exception("[MessageQueue/Listen]", std::format("Failed to listen socket (error: {})", error));
 			}
 
@@ -294,6 +296,7 @@ BEGIN_NS(ne::ipc)
 		[[nodiscard]] std::vector<std::byte> Receive() const
 		{
 			auto buffer = std::vector<std::byte>(MaxMessage);
+
 			const auto received = ::recv(handle, buffer.data(), buffer.size(), 0);
 			if (received == -1)
 			{

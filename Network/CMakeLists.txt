@@ -5,26 +5,25 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(SOURCES
-    Socket/Socket.cpp
-    Socket/SendFile.cpp
-    Buffer/BufferBlock.cpp
-    Stream/PlainStream.cpp
-    Stream/Tls/TlsStream.cpp
-    Stream/Ssh/SshStream.cpp
-    Protocol/Http/Http1/Client.cpp
-    Protocol/Http/Http1/Server.cpp
-    #Protocol/Http/Http2/Hpack.cpp
-    #Protocol/Http/Http2/Stream.cpp
-    #Protocol/Http/Http2/FlowControl.cpp
-    #Protocol/Http/Http2/Client.cpp
-    #Protocol/Http/Http2/Server.cpp
-    Protocol/Ftp/Client.cpp
-    Protocol/Sftp/Client.cpp
+        Socket/Socket.cpp
+        Buffer/BufferBlock.cpp
+        Stream/Plain/PlainStream.cpp
+        Stream/TLS/TlsStream.cpp
+        Stream/SSH/SshStream.cpp
+        Protocol/Http/Http1/Client.cpp
+        Protocol/Http/Http1/Server.cpp
+        #Protocol/Http/Http2/Hpack.cpp
+        #Protocol/Http/Http2/Stream.cpp
+        #Protocol/Http/Http2/FlowControl.cpp
+        #Protocol/Http/Http2/Client.cpp
+        #Protocol/Http/Http2/Server.cpp
+        Protocol/Ftp/Client.cpp
+        Protocol/Sftp/Client.cpp
 )
 
 if(WIN32)
     list(APPEND SOURCES
-        Stream/Tls/Schannel/TlsMessageBuffer.cpp
+            Stream/Tls/Schannel/TlsMessageBuffer.cpp
     )
 endif()
 

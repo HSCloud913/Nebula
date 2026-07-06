@@ -4,7 +4,7 @@
 
 #include "Server.h"
 #include "Socket/Socket.h"
-#include "Stream/PlainStream.h"
+#include "../../../Stream/Plain/PlainStream.h"
 #include "Coroutine/Awaitable.h"
 #include <array>
 #include <string>
@@ -23,7 +23,15 @@ BEGIN_NS(ne::network::http_1)
 
 	ne::Task<ne::Result<void, ne::OsError>> Server::Run(const string_view_t _host, const uint16_t _port)
 	{
-		auto listenerRes = Socket::CreateTcp();
+		auto familyRes = co_await Socket::ResolveFamily(_host);
+		if (familyRes.IsError())
+		{
+			auto err = std::move(familyRes.Error());
+			err.Context("[Server/Run]");
+			co_return ne::Result<void, ne::OsError>::Error(std::move(err));
+		}
+
+		auto listenerRes = Socket::Create(familyRes.Value(), SOCK_STREAM, IPPROTO_TCP);
 		if (listenerRes.IsError())
 		{
 			auto err = std::move(listenerRes.Error());
@@ -33,14 +41,14 @@ BEGIN_NS(ne::network::http_1)
 
 		Socket listener = std::move(listenerRes.Value());
 
-		if (auto r = listener.SetReuseAddr(true); r.IsError())
+		if (auto r = listener.SetReuseAddress(true); r.IsError())
 		{
 			auto err = std::move(r.Error());
 			err.Context("[Server/Run]");
 			co_return ne::Result<void, ne::OsError>::Error(std::move(err));
 		}
 
-		if (auto r = listener.Bind(_host, _port); r.IsError())
+		if (auto r = co_await listener.Bind(_host, _port); r.IsError())
 		{
 			auto err = std::move(r.Error());
 			err.Context("[Server/Run]");

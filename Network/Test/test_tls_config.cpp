@@ -3,7 +3,7 @@
 //
 
 #include <gtest/gtest.h>
-#include "Stream/TlsStream.h"
+#include "Stream/TLS/TlsStream.h"
 
 using namespace ne::network;
 

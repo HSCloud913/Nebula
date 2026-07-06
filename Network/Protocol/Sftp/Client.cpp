@@ -68,12 +68,17 @@ BEGIN_NS(ne::network::sftp)
 			ne::OsError(0).Context("[SftpClient/Connect] libssh2 not available"));
 #else
 		// 1. TCP connect
-		auto sockR = ne::network::Socket::CreateTcp();
+		auto familyR = co_await ne::network::Socket::ResolveFamily(_host);
+		if (familyR.IsError())
+			co_return ne::Result<Client, ne::OsError>::Error(
+				std::move(familyR.Error()).Context("[SftpClient/Connect/ResolveFamily]"));
+
+		auto sockR = ne::network::Socket::Create(familyR.Value(), SOCK_STREAM, IPPROTO_TCP);
 		if (sockR.IsError())
 			co_return ne::Result<Client, ne::OsError>::Error(
 				std::move(sockR.Error()).Context("[SftpClient/Connect/CreateTcp]"));
 
-		auto connR = sockR.Value().Connect(_host, _port);
+		auto connR = co_await sockR.Value().Connect(_host, _port);
 		if (connR.IsError())
 			co_return ne::Result<Client, ne::OsError>::Error(
 				std::move(connR.Error()).Context("[SftpClient/Connect/TcpConnect]"));

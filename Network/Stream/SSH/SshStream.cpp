@@ -47,18 +47,14 @@ BEGIN_NS(ne::network)
 
 
 
-	SshStream::SshStream(Socket&& _socket, ne::io::IIoEngine& _engine, void* _session, void* _channel, ne::memory::IAllocator* _allocator) noexcept
-		: socket(std::move(_socket))
-		, engine(&_engine)
-		, allocator(_allocator)
+	SshStream::SshStream(PlainStream&& _transport, void* _session, void* _channel) noexcept
+		: transport(std::move(_transport))
 		, session(_session)
 		, channel(_channel) {}
 
 	SshStream::SshStream(SshStream&& _other) noexcept
-		: socket(std::move(_other.socket))
-		, engine(_other.engine)
+		: transport(std::move(_other.transport))
 		, sshConfig(std::move(_other.sshConfig))
-		, allocator(std::exchange(_other.allocator, nullptr))
 		, session(std::exchange(_other.session, nullptr))
 		, channel(std::exchange(_other.channel, nullptr)) {}
 
@@ -67,10 +63,8 @@ BEGIN_NS(ne::network)
 		if (this != &_other)
 		{
 			(void)Close();
-			socket    = std::move(_other.socket);
-			engine    = _other.engine;
+			transport = std::move(_other.transport);
 			sshConfig = std::move(_other.sshConfig);
-			allocator = std::exchange(_other.allocator, nullptr);
 			session   = std::exchange(_other.session, nullptr);
 			channel   = std::exchange(_other.channel, nullptr);
 		}
@@ -105,7 +99,15 @@ BEGIN_NS(ne::network)
 
 		libssh2_session_set_blocking(tempSession, 0);
 
-		SshStream stream(std::move(_socket), _engine, tempSession, nullptr, _allocator);
+		// 소켓을 wire transport(PlainStream)로 감싼다 — 블로킹 모드는 그대로 유지.
+		auto transportRes = PlainStream::Create(std::move(_socket), _engine, _allocator);
+		if (transportRes.IsError())
+		{
+			libssh2_session_free(tempSession);
+			co_return ne::Result<SshStream, ne::OsError>::Error(std::move(transportRes.Error()).Context("[SshStream/Connect]"));
+		}
+
+		SshStream stream(std::move(transportRes.Value()), tempSession, nullptr);
 		stream.sshConfig = _config;
 
 		if (auto result = co_await stream.Handshake(); result.IsError()) co_return ne::Result<SshStream, ne::OsError>::Error(std::move(result.Error()));
@@ -122,12 +124,12 @@ BEGIN_NS(ne::network)
 		// SSH 계층 핸드셰이크
 		while (true)
 		{
-			int sshResult = libssh2_session_handshake(nativeSession, socket.Handle());
+			int sshResult = libssh2_session_handshake(nativeSession, transport.Handle());
 			if (sshResult == 0) break;
 
 			if (sshResult == LIBSSH2_ERROR_EAGAIN)
 			{
-				if (auto result = co_await WaitSocket(socket.Handle(), *engine, nativeSession); result.IsError()) co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
+				if (auto result = co_await WaitSocket(transport.Handle(), transport.Engine(), nativeSession); result.IsError()) co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
 			}
 			else
 			{
@@ -146,7 +148,7 @@ BEGIN_NS(ne::network)
 
 				if (sshResult == LIBSSH2_ERROR_EAGAIN)
 				{
-					if (auto result = co_await WaitSocket(socket.Handle(), *engine, nativeSession); result.IsError()) co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
+					if (auto result = co_await WaitSocket(transport.Handle(), transport.Engine(), nativeSession); result.IsError()) co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
 				}
 				else
 				{
@@ -164,7 +166,7 @@ BEGIN_NS(ne::network)
 
 				if (sshResult == LIBSSH2_ERROR_EAGAIN)
 				{
-					if (auto result = co_await WaitSocket(socket.Handle(), *engine, nativeSession); result.IsError()) co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
+					if (auto result = co_await WaitSocket(transport.Handle(), transport.Engine(), nativeSession); result.IsError()) co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
 				}
 				else
 				{
@@ -182,7 +184,7 @@ BEGIN_NS(ne::network)
 
 			if (libssh2_session_last_errno(nativeSession) == LIBSSH2_ERROR_EAGAIN)
 			{
-				if (auto result = co_await WaitSocket(socket.Handle(), *engine, nativeSession); result.IsError()) co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
+				if (auto result = co_await WaitSocket(transport.Handle(), transport.Engine(), nativeSession); result.IsError()) co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
 			}
 			else
 			{
@@ -200,7 +202,7 @@ BEGIN_NS(ne::network)
 
 				if (sshResult == LIBSSH2_ERROR_EAGAIN)
 				{
-					if (auto result = co_await WaitSocket(socket.Handle(), *engine, nativeSession); result.IsError())
+					if (auto result = co_await WaitSocket(transport.Handle(), transport.Engine(), nativeSession); result.IsError())
 					{
 						libssh2_channel_free(tempChannel);
 						co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
@@ -228,7 +230,7 @@ BEGIN_NS(ne::network)
 
 				if (sshResult == LIBSSH2_ERROR_EAGAIN)
 				{
-					if (auto result = co_await WaitSocket(socket.Handle(), *engine, nativeSession); result.IsError())
+					if (auto result = co_await WaitSocket(transport.Handle(), transport.Engine(), nativeSession); result.IsError())
 					{
 						libssh2_channel_free(tempChannel);
 						co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
@@ -247,7 +249,7 @@ BEGIN_NS(ne::network)
 
 				if (sshResult == LIBSSH2_ERROR_EAGAIN)
 				{
-					if (auto result = co_await WaitSocket(socket.Handle(), *engine, nativeSession); result.IsError())
+					if (auto result = co_await WaitSocket(transport.Handle(), transport.Engine(), nativeSession); result.IsError())
 					{
 						libssh2_channel_free(tempChannel);
 						co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
@@ -286,7 +288,7 @@ BEGIN_NS(ne::network)
 			}
 			else if (bytes == LIBSSH2_ERROR_EAGAIN)
 			{
-				if (auto result = co_await WaitSocket(socket.Handle(), *engine, nativeSession); result.IsError()) co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
+				if (auto result = co_await WaitSocket(transport.Handle(), transport.Engine(), nativeSession); result.IsError()) co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
 			}
 			else
 			{
@@ -301,9 +303,9 @@ BEGIN_NS(ne::network)
 	ne::Task<ne::Result<std::size_t, ne::OsError>> SshStream::Sendv(const BufferChain& _chain)
 	{
 		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "SSH stream closed" });
-		if (!allocator) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "no allocator for SshStream::Sendv" });
+		if (!transport.Allocator()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "no allocator for SshStream::Sendv" });
 
-		const auto flat = _chain.Flatten(*allocator);
+		const auto flat = _chain.Flatten(*transport.Allocator());
 		if (!flat.IsValid())
 			co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "BufferChain::Flatten failed" });
 
@@ -334,7 +336,7 @@ BEGIN_NS(ne::network)
 
 			if (bytes == LIBSSH2_ERROR_EAGAIN)
 			{
-				if (auto result = co_await WaitSocket(socket.Handle(), *engine, nativeSession); result.IsError()) co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
+				if (auto result = co_await WaitSocket(transport.Handle(), transport.Engine(), nativeSession); result.IsError()) co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
 			}
 			else
 			{
@@ -365,8 +367,7 @@ BEGIN_NS(ne::network)
 		libssh2_session_free(nativeSession);
 		session = nullptr;
 
-		(void)engine->Unwatch(socket.Handle());
-		[[maybe_unused]] auto closing = std::move(socket);
+		(void)transport.Close(); // engine Unwatch + fd 소멸
 
 		return ne::Result<void, ne::OsError>::Ok();
 	}
@@ -381,7 +382,7 @@ BEGIN_NS(ne::network)
 
 
 
-	SshStream::SshStream(Socket&&, ne::io::IIoEngine&, void*, void*, ne::memory::IAllocator*) noexcept {}
+	SshStream::SshStream(PlainStream&& _transport, void*, void*) noexcept : transport(std::move(_transport)) {}
 	SshStream::SshStream(SshStream&&) noexcept = default;
 	SshStream& SshStream::operator=(SshStream&&) noexcept = default;
 	SshStream::~SshStream() = default;

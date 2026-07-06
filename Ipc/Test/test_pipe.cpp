@@ -2,6 +2,10 @@
 // Created by nebula on 24. 11. 3.
 //
 
+#include <bits/c++config.h>   // 매크로 정의 + 인클루드 가드 트립
+#ifdef _GLIBCXX_HAVE_POSIX_SEMAPHORE
+#  undef _GLIBCXX_HAVE_POSIX_SEMAPHORE
+#endif
 #include <gtest/gtest.h>
 #include <atomic>
 #include <chrono>
