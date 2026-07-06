@@ -371,7 +371,7 @@ BEGIN_NS(ne::network)
 		co_return ne::Result<void, ne::OsError>::Ok();
 	}
 
-	ne::Task<ne::Result<std::size_t, ne::OsError>> TlsStream::Send(BufferView _data)
+	ne::Task<ne::Result<std::size_t, ne::OsError>> TlsStream::Send(ne::io::BufferView _data)
 	{
 		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "TLS stream closed" });
 
@@ -422,13 +422,13 @@ BEGIN_NS(ne::network)
 		co_return ne::Result<std::size_t, ne::OsError>::Ok(totalSent);
 	}
 
-	ne::Task<ne::Result<std::size_t, ne::OsError>> TlsStream::Sendv(const BufferChain& _chain)
+	ne::Task<ne::Result<std::size_t, ne::OsError>> TlsStream::Sendv(const ne::io::BufferChain& _chain)
 	{
 		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "TLS stream closed" });
 		if (!transport.Allocator()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "no allocator for TlsStream::Sendv" });
 
 		const auto flat = _chain.Flatten(*transport.Allocator());
-		if (!flat.IsValid()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "BufferChain::Flatten failed" });
+		if (!flat.IsValid()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "ne::io::BufferChain::Flatten failed" });
 
 		auto result = co_await Send(flat);
 		flat.owner->Release();
@@ -436,7 +436,7 @@ BEGIN_NS(ne::network)
 		co_return result;
 	}
 
-	ne::Task<ne::Result<std::size_t, ne::OsError>> TlsStream::Receive(BufferView _data)
+	ne::Task<ne::Result<std::size_t, ne::OsError>> TlsStream::Receive(ne::io::BufferView _data)
 	{
 		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "TLS stream closed" });
 
@@ -784,7 +784,7 @@ BEGIN_NS(ne::network)
 		co_return ne::Result<void, ne::OsError>::Ok();
 	}
 
-	ne::Task<ne::Result<std::size_t, ne::OsError>> TlsStream::Send(BufferView _data)
+	ne::Task<ne::Result<std::size_t, ne::OsError>> TlsStream::Send(ne::io::BufferView _data)
 	{
 		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "TLS stream closed" });
 
@@ -819,13 +819,13 @@ BEGIN_NS(ne::network)
 		co_return ne::Result<std::size_t, ne::OsError>::Ok(sent);
 	}
 
-	ne::Task<ne::Result<std::size_t, ne::OsError>> TlsStream::Sendv(const BufferChain& _chain)
+	ne::Task<ne::Result<std::size_t, ne::OsError>> TlsStream::Sendv(const ne::io::BufferChain& _chain)
 	{
 		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "TLS stream closed" });
 		if (!transport.Allocator()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "no allocator for TlsStream::Sendv" });
 
 		const auto flat = _chain.Flatten(*transport.Allocator());
-		if (!flat.IsValid()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "BufferChain::Flatten failed" });
+		if (!flat.IsValid()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "ne::io::BufferChain::Flatten failed" });
 
 		auto result = co_await Send(flat);
 		flat.owner->Release();
@@ -833,7 +833,7 @@ BEGIN_NS(ne::network)
 		co_return result;
 	}
 
-	ne::Task<ne::Result<std::size_t, ne::OsError>> TlsStream::Receive(BufferView _data)
+	ne::Task<ne::Result<std::size_t, ne::OsError>> TlsStream::Receive(ne::io::BufferView _data)
 	{
 		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "TLS stream closed" });
 
@@ -917,17 +917,17 @@ BEGIN_NS(ne::network)
 		co_return ne::Result<void, ne::OsError>::Error(NoTls("[TlsStream/Handshake]"));
 	}
 
-	ne::Task<ne::Result<std::size_t, ne::OsError>> TlsStream::Send(BufferView)
+	ne::Task<ne::Result<std::size_t, ne::OsError>> TlsStream::Send(ne::io::BufferView)
 	{
 		co_return ne::Result<std::size_t, ne::OsError>::Error(NoTls("[TlsStream/Send]"));
 	}
 
-	ne::Task<ne::Result<std::size_t, ne::OsError>> TlsStream::Receive(BufferView)
+	ne::Task<ne::Result<std::size_t, ne::OsError>> TlsStream::Receive(ne::io::BufferView)
 	{
 		co_return ne::Result<std::size_t, ne::OsError>::Error(NoTls("[TlsStream/Receive]"));
 	}
 
-	ne::Task<ne::Result<std::size_t, ne::OsError>> TlsStream::Sendv(const BufferChain&)
+	ne::Task<ne::Result<std::size_t, ne::OsError>> TlsStream::Sendv(const ne::io::BufferChain&)
 	{
 		co_return ne::Result<std::size_t, ne::OsError>::Error(NoTls("[TlsStream/Sendv]"));
 	}

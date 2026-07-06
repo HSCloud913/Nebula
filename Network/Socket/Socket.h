@@ -10,6 +10,7 @@
 #include "Result.h"
 #include "Error.h"
 #include "Coroutine/Task.h"
+#include "Engine/IIoEngine.h"
 
 BEGIN_NS(ne::network)
 	// 소켓의 주소 체계. fd 생성 시점에 고정되며, 이후 Bind/Connect 는 이 체계에
@@ -71,7 +72,16 @@ BEGIN_NS(ne::network)
 		[[nodiscard]] ne::Result<void, ne::OsError> SetReceiveTimeout(std::chrono::milliseconds _timeout);
 
 	public: /* Client */
+		// 완전 blocking connect — DNS 조회는 비동기이지만 실제 ::connect() syscall은 소켓이
+		// blocking 상태인 채로 DNS 워커 스레드 위에서 실행되어, 상대가 응답 없으면 그 스레드를
+		// OS 기본 connect 타임아웃(수십 초)까지 점유한다. libssh2 같은 의도적으로 완전
+		// blocking 인 세션과 짝지어 쓸 때만 사용할 것 — 그 외에는 아래 엔진 오버로드를 쓴다.
 		[[nodiscard]] ne::Task<ne::Result<void, ne::OsError>> Connect(string_view_t _address, uint16_t _port);
+
+		// non-blocking connect — 후보별로 SetNonBlocking(true) 후 connect() 를 시도하고,
+		// EINPROGRESS/WSAEWOULDBLOCK 이면 엔진의 Watch(Write|Error) 로 완료를 기다린 뒤
+		// SO_ERROR 로 성공/실패를 확정한다. DNS 워커 스레드를 connect 완료까지 붙잡지 않는다.
+		[[nodiscard]] ne::Task<ne::Result<void, ne::OsError>> Connect(string_view_t _address, uint16_t _port, ne::io::IIoEngine& _engine);
 
 	public: /* Server */
 		[[nodiscard]] ne::Task<ne::Result<void, ne::OsError>> Bind(string_view_t _address, uint16_t _port);
@@ -89,9 +99,14 @@ BEGIN_NS(ne::network)
 		// Connect 용 — 호스트명이 여러 주소(A/AAAA 레코드)로 풀리면 전부 반환해 페일오버를 지원한다.
 		[[nodiscard]] ne::Result<std::vector<sockaddr_storage>, ne::OsError> ResolveCandidates(string_view_t _address, uint16_t _port) const;
 
-		// candidates 를 순서대로 connect() 시도. 이전 시도가 실패하면 소켓을 새로 열어 재시도한다
-		// (실패한 소켓으로 connect() 를 재시도하는 것은 플랫폼별로 결과가 불명확하기 때문).
+		// candidates 를 순서대로 connect() 시도(완전 blocking). 이전 시도가 실패하면 소켓을 새로
+		// 열어 재시도한다(실패한 소켓으로 connect() 를 재시도하는 것은 플랫폼별로 결과가 불명확하기 때문).
 		[[nodiscard]] ne::Result<void, ne::OsError> ConnectResolved(const std::vector<sockaddr_storage>& _candidates);
+
+		// candidates 를 순서대로 non-blocking connect 시도 — 각 후보에 대해 SetNonBlocking(true) 후
+		// connect() 를 걸고, EINPROGRESS/WSAEWOULDBLOCK 이면 _engine 으로 완료를 기다린 뒤
+		// SO_ERROR 로 성공/실패를 확정한다. 실패하면 다음 후보로(소켓 재생성) 넘어간다.
+		[[nodiscard]] ne::Task<ne::Result<void, ne::OsError>> ConnectResolvedAsync(const std::vector<sockaddr_storage>& _candidates, ne::io::IIoEngine& _engine);
 
 	public:
 		[[nodiscard]] socket_t Handle() const noexcept { return handle.Get(); }

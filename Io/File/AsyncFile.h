@@ -9,6 +9,7 @@
 #include "Handle.h"
 #include "Type.h"
 #include "IoType.h"
+#include "Buffer/BufferChain.h"
 
 #if defined(IS_POSIX)
 #   include "Engine/IoUring/IoUringEngine.h"
@@ -62,6 +63,14 @@ BEGIN_NS(ne::io)
 	public:
 		[[nodiscard]] virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Read(std::span<ne::byte_t> _buffer, std::size_t _offset) override;
 		[[nodiscard]] virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Write(std::span<const ne::byte_t> _data, std::size_t _offset) override;
+
+	public: /* scatter/gather — IIoFile 밖(AsyncFile 전용). Linux: io_uring readv/writev 단일 syscall
+	         * (BufferChain::AsIovec() 로 바로 변환). Windows: ReadFileScatter/WriteFileGather 는
+	         * 세그먼트가 정확히 페이지 크기여야 하는 제약이 있어 임의 길이 버퍼에는 쓸 수 없다 —
+	         * 대신 SubmitRead/Write 를 세그먼트마다 순차 반복한다(단일 syscall은 아니지만 인터페이스는
+	         * 동일하고 정상 동작한다). */
+		[[nodiscard]] ne::Task<ne::Result<std::size_t, ne::OsError>> Readv(const BufferChain& _buffers, std::size_t _offset);
+		[[nodiscard]] ne::Task<ne::Result<std::size_t, ne::OsError>> Writev(const BufferChain& _buffers, std::size_t _offset);
 
 	public:
 		[[nodiscard]] virtual bool_t IsOpen() const noexcept override { return fd != InvalidFile; }

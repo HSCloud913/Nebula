@@ -11,6 +11,7 @@
 #include <type_traits>
 #include <utility>
 #include "ThreadPool.h"
+#include "Coroutine/Awaitable.h"
 #if defined(_WIN32)
 #   include <winsock2.h>
 #   include <ws2tcpip.h>
@@ -235,6 +236,22 @@ BEGIN_NS(ne::network)
 
 
 
+	ne::Task<ne::Result<void, ne::OsError>> Socket::Connect(const string_view_t _address, const uint16_t _port, ne::io::IIoEngine& _engine)
+	{
+		ne::string_t addressString(_address);
+
+		auto resolved = co_await dns::ResolveAwaitable([this, addressString = std::move(addressString), _port] { return ResolveCandidates(addressString, _port); });
+		if (!resolved)
+		{
+			resolved.Error().Context("[Socket/Connect]");
+			co_return ne::Result<void, ne::OsError>::Error(std::move(resolved.Error()));
+		}
+
+		co_return co_await ConnectResolvedAsync(resolved.Value(), _engine);
+	}
+
+
+
 	ne::Task<ne::Result<void, ne::OsError>> Socket::Bind(const string_view_t _address, const uint16_t _port)
 	{
 		ne::string_t addressString(_address);
@@ -385,6 +402,77 @@ BEGIN_NS(ne::network)
 		}
 
 		return ne::Result<void, ne::OsError>::Error(lastError.Context("[Socket/Connect]"));
+	}
+
+
+
+	ne::Task<ne::Result<void, ne::OsError>> Socket::ConnectResolvedAsync(const std::vector<sockaddr_storage>& _candidates, ne::io::IIoEngine& _engine)
+	{
+		ne::OsError lastError{ 0 };
+
+		for (std::size_t i = 0; i < _candidates.size(); ++i)
+		{
+			// 이전 후보의 connect() 가 실패한 소켓은 재사용하지 않고 새로 연다 —
+			// 실패한 소켓으로 connect() 를 재시도했을 때의 동작은 플랫폼마다 다르다.
+			if (i > 0)
+			{
+				const socket_t fd = ::socket(family == AddressFamily::IPv6 ? AF_INET6 : AF_INET, type, protocol);
+				if (fd == InvalidSocket)
+				{
+					lastError = ne::OsError{ LastOsError() };
+					continue;
+				}
+
+				handle = fd;
+			}
+
+			// connect() 전에 non-blocking 으로 전환 — 그렇지 않으면 이 syscall 이 상대가 응답할
+			// 때까지(OS 기본 타임아웃, 수십 초) 이 코루틴을 재개한 스레드(보통 DNS 워커 스레드)를
+			// 그대로 점유한다. 실패해도 이 후보는 어차피 버려지므로 별도 처리 없이 계속 진행.
+			if (auto nonBlocking = SetNonBlocking(true); nonBlocking.IsError())
+			{
+				lastError = std::move(nonBlocking.Error());
+				continue;
+			}
+
+			const auto& candidate = _candidates[i];
+			if (::connect(handle.Get(), reinterpret_cast<const sockaddr*>(&candidate), candidate.ss_family == AF_INET6 ? sizeof(sockaddr_in6) : sizeof(sockaddr_in)) == 0)
+				co_return ne::Result<void, ne::OsError>::Ok(); // 즉시 연결(로컬 루프백 등 드문 케이스)
+
+			const ulong_t connectError = LastOsError();
+	#if defined(_WIN32)
+			const bool_t inProgress = (connectError == WSAEWOULDBLOCK);
+	#elif defined(IS_POSIX)
+			const bool_t inProgress = (connectError == EINPROGRESS);
+	#endif
+
+			if (!inProgress)
+			{
+				lastError = ne::OsError{ connectError };
+				continue;
+			}
+
+			// 연결 완료(성공/실패 모두) 대기 — writable 또는 에러 이벤트. Send()/Sendv() 가 이미
+			// 쓰는 것과 동일한 Awaitable 이라 Epoll/IoUring/Iocp 세 엔진 모두 균일하게 지원된다.
+			if (auto waited = co_await ne::io::SendAwaitable{ handle.Get(), _engine }; waited.IsError())
+			{
+				lastError = std::move(waited.Error());
+				continue;
+			}
+
+			// writable 이벤트 자체는 연결 성공/실패 모두에서 발생할 수 있으므로 SO_ERROR 로
+			// 실제 결과를 확정해야 한다.
+			int_t soError = 0;
+			socklen_t soErrorLen = sizeof(soError);
+			::getsockopt(handle.Get(), SOL_SOCKET, SO_ERROR, reinterpret_cast<char_t*>(&soError), &soErrorLen);
+
+			if (soError == 0)
+				co_return ne::Result<void, ne::OsError>::Ok();
+
+			lastError = ne::OsError{ static_cast<ulong_t>(soError) };
+		}
+
+		co_return ne::Result<void, ne::OsError>::Error(lastError.Context("[Socket/Connect]"));
 	}
 
 END_NS

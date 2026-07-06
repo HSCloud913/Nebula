@@ -14,7 +14,7 @@
 #   include <sys/uio.h>
 #endif
 
-BEGIN_NS(ne::network)
+BEGIN_NS(ne::io)
 	// BufferView 연결 리스트 — scatter/gather I/O 지원.
 	class BufferChain
 	{
@@ -29,6 +29,25 @@ BEGIN_NS(ne::network)
 	public:
 		void Append(BufferView _view) { segments.push_back(_view); } // 경량 객체이므로 매개변수를 const 참조할 필요가 없음
 		void Clear() { segments.clear(); }
+
+		// 앞에서 _skipBytes 만큼 건너뛴 나머지를 새 체인으로 반환 (세그먼트 재슬라이스, 소유권 없음 —
+		// BufferView 와 동일 원칙). Sendv() 가 partial write 를 반환했을 때 남은 부분만 재시도하는 용도.
+		[[nodiscard]] BufferChain Suffix(std::size_t _skipBytes) const
+		{
+			BufferChain result;
+			std::size_t remaining = _skipBytes;
+
+			for (const auto& segment : segments)
+			{
+				if (remaining == 0) { result.Append(segment); continue; }
+				if (remaining >= segment.length) { remaining -= segment.length; continue; }
+
+				result.Append(segment.Slice(remaining, segment.length - remaining));
+				remaining = 0;
+			}
+
+			return result;
+		}
 
 		[[nodiscard]] std::size_t TotalSize() const noexcept
 		{

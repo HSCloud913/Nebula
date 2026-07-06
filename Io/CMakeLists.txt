@@ -12,6 +12,10 @@ set(HEADERS
 
         File/IIoFile.h
 
+        Buffer/BufferBlock.h
+        Buffer/BufferView.h
+        Buffer/BufferChain.h
+
         Coroutine/Awaitable.h
 
         Engine/IIoEngine.h
@@ -38,8 +42,9 @@ target_include_directories(${PROJECT_NAME} PUBLIC
         ${CMAKE_SOURCE_DIR}/Base
         ${CMAKE_SOURCE_DIR}/Concurrency
         ${CMAKE_SOURCE_DIR}/Time
+        ${CMAKE_SOURCE_DIR}/Memory
 )
-target_link_libraries(${PROJECT_NAME} PUBLIC NebulaBase NebulaConcurrency NebulaTime)
+target_link_libraries(${PROJECT_NAME} PUBLIC NebulaBase NebulaConcurrency NebulaTime NebulaMemory)
 
 if (UNIX AND NOT APPLE)
     find_package(PkgConfig REQUIRED)

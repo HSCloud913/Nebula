@@ -166,4 +166,80 @@ BEGIN_NS(ne::io)
 #endif
 	}
 
+
+
+#if defined(IS_POSIX)
+	ne::Task<ne::Result<std::size_t, ne::OsError>> AsyncFile::Readv(const BufferChain& _buffers, const std::size_t _offset)
+	{
+		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "file not open" });
+
+		const auto iov = _buffers.AsIovec();
+		co_return co_await ReadvSubmitAwaitable{ *engine, fd, iov.data(), static_cast<unsigned>(iov.size()), _offset };
+	}
+
+	ne::Task<ne::Result<std::size_t, ne::OsError>> AsyncFile::Writev(const BufferChain& _buffers, const std::size_t _offset)
+	{
+		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "file not open" });
+
+		const auto iov = _buffers.AsIovec();
+		co_return co_await WritevSubmitAwaitable{ *engine, fd, iov.data(), static_cast<unsigned>(iov.size()), _offset };
+	}
+
+#elif defined(_WIN32)
+	ne::Task<ne::Result<std::size_t, ne::OsError>> AsyncFile::Readv(const BufferChain& _buffers, const std::size_t _offset)
+	{
+		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "file not open" });
+
+		// ReadFileScatter 는 세그먼트가 정확히 페이지 크기여야 하는 제약이 있어 임의 길이
+		// 버퍼에는 쓸 수 없다 — 대신 기존 단일-버퍼 Read() 를 순차 반복(오프셋 누적)한다.
+		std::size_t total = 0;
+		std::size_t offset = _offset;
+
+		for (const auto& segment : _buffers.Segments())
+		{
+			auto r = co_await Read(std::span<ne::byte_t>(segment.ptr, segment.length), offset);
+			if (r.IsError()) co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(r.Error()).Context("[AsyncFile/Readv]"));
+
+			total += r.Value();
+			offset += r.Value();
+
+			if (r.Value() < segment.length) break; // short read — EOF 또는 더 읽을 데이터 없음
+		}
+
+		co_return ne::Result<std::size_t, ne::OsError>::Ok(total);
+	}
+
+	ne::Task<ne::Result<std::size_t, ne::OsError>> AsyncFile::Writev(const BufferChain& _buffers, const std::size_t _offset)
+	{
+		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "file not open" });
+
+		std::size_t total = 0;
+		std::size_t offset = _offset;
+
+		for (const auto& segment : _buffers.Segments())
+		{
+			auto r = co_await Write(segment.Span(), offset);
+			if (r.IsError()) co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(r.Error()).Context("[AsyncFile/Writev]"));
+
+			total += r.Value();
+			offset += r.Value();
+
+			if (r.Value() < segment.length) break; // partial write — 더 못 쓴 상태(디스크 풀 등)
+		}
+
+		co_return ne::Result<std::size_t, ne::OsError>::Ok(total);
+	}
+
+#else
+	ne::Task<ne::Result<std::size_t, ne::OsError>> AsyncFile::Readv(const BufferChain&, const std::size_t)
+	{
+		co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "not supported" });
+	}
+
+	ne::Task<ne::Result<std::size_t, ne::OsError>> AsyncFile::Writev(const BufferChain&, const std::size_t)
+	{
+		co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "not supported" });
+	}
+#endif
+
 END_NS

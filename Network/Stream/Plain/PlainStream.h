@@ -63,21 +63,24 @@ BEGIN_NS(ne::network)
 
 	public: /* IStream override (non-blocking 소켓 전제) */
 		virtual ne::Task<ne::Result<void, ne::OsError>> Handshake() override { co_return ne::Result<void, ne::OsError>::Ok(); }
-		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Send(BufferView _data) override;
-		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Sendv(const BufferChain& _chain) override;
-		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Receive(BufferView _data) override;
+		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Send(ne::io::BufferView _data) override;
+		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Sendv(const ne::io::BufferChain& _chain) override;
+		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Receive(ne::io::BufferView _data) override;
 		virtual ne::Task<ne::Result<void, ne::OsError>> Shutdown() override;
 		virtual ne::Result<void, ne::OsError> Close() override;
 
 	public: /* zero-copy scatter-gather — IStream 밖(Plain 전용). 파일 payload 는 CPU 복사 없이 DMA */
 		// 반환값: 실제 전송한 총 바이트 (head + file + tail).
-		// _head/_tail 은 owner 없는 BufferView 도 허용(ptr/length 만 유효하면 됨). 없으면 기본값 {}.
+		// _head/_tail 은 BufferChain — 여러 세그먼트를 이어붙여 보낼 수 있다(예: HTTP 헤더를
+		// 여러 조각으로 구성). 비어 있으면(기본값 {}) 해당 구간은 생략.
 		//
-		// NOTE: Windows 는 TransmitFile 이 overlapped(IOCP) 전용이라 엔진 SubmitSendFile
-		//       도입 전까지 미지원(에러 반환). Linux 는 sendfile(2) 로 완전 동작.
+		// Linux 는 sendfile(2) 로 zero-copy(Reactor 경로). Windows 는 TransmitFile 로 zero-copy
+		// (Proactor 경로, IocpEngine::SubmitTransmitFile) — 다만 TRANSMIT_FILE_BUFFERS 가 head/tail
+		// 각각 연속된 버퍼 1개만 지원해서, 2개 이상의 세그먼트가 들어오면 Flatten() 으로 먼저
+		// 합친다(이 경우 _allocator 가 반드시 있어야 함).
 		[[nodiscard]] ne::Task<ne::Result<std::size_t, ne::OsError>> SendFile(
 			ne::io::file_t _fileFd, std::size_t _offset, std::size_t _size,
-			BufferView _head = {}, BufferView _tail = {});
+			const ne::io::BufferChain& _head = {}, const ne::io::BufferChain& _tail = {});
 
 	public:
 		[[nodiscard]] socket_t Handle() const noexcept { return socket.Handle(); }

@@ -25,9 +25,9 @@ BEGIN_NS(ne::network)
 
 	public:
 		virtual ne::Task<ne::Result<void, ne::OsError>> Handshake() = 0;
-		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Send(BufferView _data) = 0;
-		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Sendv(const BufferChain& _chain) = 0;
-		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Receive(BufferView _data) = 0;
+		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Send(ne::io::BufferView _data) = 0;
+		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Sendv(const ne::io::BufferChain& _chain) = 0;
+		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Receive(ne::io::BufferView _data) = 0;
 		virtual ne::Task<ne::Result<void, ne::OsError>> Shutdown() = 0;
 		virtual ne::Result<void, ne::OsError> Close() = 0;
 

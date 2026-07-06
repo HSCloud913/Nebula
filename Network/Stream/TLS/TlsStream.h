@@ -57,9 +57,9 @@ BEGIN_NS(ne::network)
 
 	public:
 		virtual ne::Task<ne::Result<void, ne::OsError>> Handshake() override;
-		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Send(BufferView _data) override;
-		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Sendv(const BufferChain& _chain) override;
-		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Receive(BufferView _data) override;
+		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Send(ne::io::BufferView _data) override;
+		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Sendv(const ne::io::BufferChain& _chain) override;
+		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Receive(ne::io::BufferView _data) override;
 		virtual ne::Task<ne::Result<void, ne::OsError>> Shutdown() override;
 		virtual ne::Result<void, ne::OsError> Close() override;
 

@@ -6,7 +6,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(SOURCES
         Socket/Socket.cpp
-        Buffer/BufferBlock.cpp
         Stream/Plain/PlainStream.cpp
         Stream/TLS/TlsStream.cpp
         Stream/SSH/SshStream.cpp
@@ -44,7 +43,7 @@ target_link_libraries(NebulaNetwork PUBLIC
 )
 
 if(WIN32)
-    target_link_libraries(NebulaNetwork PRIVATE Ws2_32 Secur32 Crypt32)
+    target_link_libraries(NebulaNetwork PRIVATE Ws2_32 Secur32 Crypt32 Mswsock)
 endif()
 
 if(UNIX)

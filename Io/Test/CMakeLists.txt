@@ -10,11 +10,12 @@ add_executable(${PROJECT_NAME}
         test_asyncfile.cpp
         test_mmap.cpp
         test_engine_integration.cpp
+        test_buffer_chain.cpp
 )
-target_link_libraries(${PROJECT_NAME} PRIVATE NebulaBase NebulaConcurrency NebulaTime NebulaIo GTest::gtest_main)
+target_link_libraries(${PROJECT_NAME} PRIVATE NebulaBase NebulaConcurrency NebulaTime NebulaMemory NebulaIo GTest::gtest_main)
 
 if (WIN32)
-    target_link_libraries(${PROJECT_NAME} PRIVATE Ws2_32)
+    target_link_libraries(${PROJECT_NAME} PRIVATE Ws2_32 Mswsock)
 elseif (UNIX AND NOT APPLE)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(LIBURING REQUIRED liburing)

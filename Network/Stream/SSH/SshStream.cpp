@@ -270,7 +270,7 @@ BEGIN_NS(ne::network)
 		co_return ne::Result<void, ne::OsError>::Ok();
 	}
 
-	ne::Task<ne::Result<std::size_t, ne::OsError>> SshStream::Send(BufferView _data)
+	ne::Task<ne::Result<std::size_t, ne::OsError>> SshStream::Send(ne::io::BufferView _data)
 	{
 		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "SSH stream closed" });
 
@@ -300,14 +300,14 @@ BEGIN_NS(ne::network)
 		co_return ne::Result<std::size_t, ne::OsError>::Ok(totalSent);
 	}
 
-	ne::Task<ne::Result<std::size_t, ne::OsError>> SshStream::Sendv(const BufferChain& _chain)
+	ne::Task<ne::Result<std::size_t, ne::OsError>> SshStream::Sendv(const ne::io::BufferChain& _chain)
 	{
 		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "SSH stream closed" });
 		if (!transport.Allocator()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "no allocator for SshStream::Sendv" });
 
 		const auto flat = _chain.Flatten(*transport.Allocator());
 		if (!flat.IsValid())
-			co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "BufferChain::Flatten failed" });
+			co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "ne::io::BufferChain::Flatten failed" });
 
 		auto result = co_await Send(flat);
 		flat.owner->Release();
@@ -315,7 +315,7 @@ BEGIN_NS(ne::network)
 		co_return result;
 	}
 
-	ne::Task<ne::Result<std::size_t, ne::OsError>> SshStream::Receive(BufferView _data)
+	ne::Task<ne::Result<std::size_t, ne::OsError>> SshStream::Receive(ne::io::BufferView _data)
 	{
 		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "SSH stream closed" });
 
@@ -399,17 +399,17 @@ BEGIN_NS(ne::network)
 		co_return ne::Result<void, ne::OsError>::Error(NoLibssh2("[SshStream/Handshake]"));
 	}
 
-	ne::Task<ne::Result<std::size_t, ne::OsError>> SshStream::Send(BufferView)
+	ne::Task<ne::Result<std::size_t, ne::OsError>> SshStream::Send(ne::io::BufferView)
 	{
 		co_return ne::Result<std::size_t, ne::OsError>::Error(NoLibssh2("[SshStream/Send]"));
 	}
 
-	ne::Task<ne::Result<std::size_t, ne::OsError>> SshStream::Receive(BufferView)
+	ne::Task<ne::Result<std::size_t, ne::OsError>> SshStream::Receive(ne::io::BufferView)
 	{
 		co_return ne::Result<std::size_t, ne::OsError>::Error(NoLibssh2("[SshStream/Receive]"));
 	}
 
-	ne::Task<ne::Result<std::size_t, ne::OsError>> SshStream::Sendv(const BufferChain&)
+	ne::Task<ne::Result<std::size_t, ne::OsError>> SshStream::Sendv(const ne::io::BufferChain&)
 	{
 		co_return ne::Result<std::size_t, ne::OsError>::Error(NoLibssh2("[SshStream/Sendv]"));
 	}

@@ -26,14 +26,14 @@ BEGIN_NS(ne::network::http_2)
 		                 flags,
 		                 streamId);
 
-		auto r = co_await transport->Send(BufferView{ nullptr, header.data(), header.size() });
+		auto r = co_await transport->Send(ne::io::BufferView{ nullptr, header.data(), header.size() });
 		if (r.IsError())
 			co_return ne::Result<void, ne::HttpError>::Error(
 				ne::HttpError{ r.Error().What() }.Context("[Http2Stream/SendHeaders/Header]"));
 
 		if (!_hpackBlock.empty())
 		{
-			auto r2 = co_await transport->Send(BufferView{ nullptr, const_cast<ne::byte_t*>(_hpackBlock.data()), _hpackBlock.size() });
+			auto r2 = co_await transport->Send(ne::io::BufferView{ nullptr, const_cast<ne::byte_t*>(_hpackBlock.data()), _hpackBlock.size() });
 			if (r2.IsError())
 				co_return ne::Result<void, ne::HttpError>::Error(
 					ne::HttpError{ r2.Error().What() }.Context("[Http2Stream/SendHeaders/Block]"));
@@ -54,14 +54,14 @@ BEGIN_NS(ne::network::http_2)
 		                 flags,
 		                 streamId);
 
-		auto r = co_await transport->Send(BufferView{ nullptr, header.data(), header.size() });
+		auto r = co_await transport->Send(ne::io::BufferView{ nullptr, header.data(), header.size() });
 		if (r.IsError())
 			co_return ne::Result<void, ne::HttpError>::Error(
 				ne::HttpError{ r.Error().What() }.Context("[Http2Stream/SendData/Header]"));
 
 		if (!_data.empty())
 		{
-			auto r2 = co_await transport->Send(BufferView{ nullptr, const_cast<ne::byte_t*>(_data.data()), _data.size() });
+			auto r2 = co_await transport->Send(ne::io::BufferView{ nullptr, const_cast<ne::byte_t*>(_data.data()), _data.size() });
 			if (r2.IsError())
 				co_return ne::Result<void, ne::HttpError>::Error(
 					ne::HttpError{ r2.Error().What() }.Context("[Http2Stream/SendData/Payload]"));
@@ -94,7 +94,7 @@ BEGIN_NS(ne::network::http_2)
 			while (total < kFrameHeaderSize)
 			{
 				auto r = co_await transport->Receive(
-					BufferView{ nullptr, headerBuf.data() + total, kFrameHeaderSize - total });
+					ne::io::BufferView{ nullptr, headerBuf.data() + total, kFrameHeaderSize - total });
 				if (r.IsError())
 					co_return ne::Result<ne::network::HttpResponse, ne::HttpError>::Error(
 						ne::HttpError{ r.Error().What() }.Context("[Http2Stream/ReceiveResponse/FrameHeader]"));
@@ -112,7 +112,7 @@ BEGIN_NS(ne::network::http_2)
 				while (read < fh.length)
 				{
 					auto r = co_await transport->Receive(
-						BufferView{ nullptr, payload.data() + read, fh.length - read });
+						ne::io::BufferView{ nullptr, payload.data() + read, fh.length - read });
 					if (r.IsError())
 						co_return ne::Result<ne::network::HttpResponse, ne::HttpError>::Error(
 							ne::HttpError{ r.Error().What() }.Context("[Http2Stream/ReceiveResponse/Data]"));
@@ -139,7 +139,7 @@ BEGIN_NS(ne::network::http_2)
 				while (dread < fh.length)
 				{
 					auto r = co_await transport->Receive(
-						BufferView{ nullptr, discard.data() + dread, fh.length - dread });
+						ne::io::BufferView{ nullptr, discard.data() + dread, fh.length - dread });
 					if (r.IsError()) break;
 					dread += r.Value();
 				}

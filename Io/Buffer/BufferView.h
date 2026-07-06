@@ -9,7 +9,7 @@
 #include "BufferBlock.h"
 #include "Type.h"
 
-BEGIN_NS(ne::network)
+BEGIN_NS(ne::io)
 	// BufferBlock 슬라이스 뷰 (소유권 없음, 복사 없음).
 	struct BufferView
 	{

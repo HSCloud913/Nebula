@@ -269,6 +269,53 @@ BEGIN_NS(ne::io)
 
 		[[nodiscard]] ne::Result<std::size_t, ne::OsError> await_resume() noexcept { return std::move(context.result); }
 	};
+
+	// Proactor + zero-copy 파일 전송 대기 (IOCP TransmitFile). _head/_tail 은 각각 연속된 버퍼
+	// 1개만 지원(TRANSMIT_FILE_BUFFERS 제약) — 없으면 기본값 {} 로 생략.
+	// co_await → Result<size_t, OsError>
+	class TransmitFileSubmitAwaitable
+	{
+	public:
+		TransmitFileSubmitAwaitable(IocpEngine& _engine, const socket_t _socket, const file_t _file, const std::size_t _offset, const std::size_t _size,
+			const std::span<ne::byte_t> _head = {}, const std::span<ne::byte_t> _tail = {}) noexcept
+			: engine(_engine)
+			, socket(_socket)
+			, file(_file)
+			, offset(_offset)
+			, size(_size)
+			, head(_head)
+			, tail(_tail) {}
+
+	private:
+		IocpEngine& engine;
+		socket_t socket;
+		file_t file;
+		std::size_t offset;
+		std::size_t size;
+		std::span<ne::byte_t> head;
+		std::span<ne::byte_t> tail;
+		IoContext context{};
+
+	public:
+		[[nodiscard]] bool_t await_ready() const noexcept { return false; }
+
+		bool_t await_suspend(std::coroutine_handle<> _handle) noexcept
+		{
+			context.handle = _handle;
+
+			auto result = engine.SubmitTransmitFile(socket, file, offset, size,
+				head.data(), head.size(), tail.data(), tail.size(), &context);
+			if (result.IsError())
+			{
+				context.result = ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
+				return false;
+			}
+
+			return true;
+		}
+
+		[[nodiscard]] ne::Result<std::size_t, ne::OsError> await_resume() noexcept { return std::move(context.result); }
+	};
 #elif defined(IS_POSIX)
 	// 파일 읽기 비동기 대기 (io_uring).
 	// co_await → Result<size_t, OsError>
@@ -333,6 +380,85 @@ BEGIN_NS(ne::io)
 			context.handle = _handle;
 
 			if (auto result = engine.SubmitWrite(fd, buffer.data(), buffer.size(), offset, &context); result.IsError())
+			{
+				context.result = ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
+				return false;
+			}
+
+			return true;
+		}
+
+		[[nodiscard]] ne::Result<std::size_t, ne::OsError> await_resume() noexcept { return std::move(context.result); }
+	};
+
+	// 벡터 읽기 비동기 대기 (io_uring readv — 단일 syscall scatter I/O).
+	// _iov 가 가리키는 메모리는 완료될 때까지 호출자(AsyncFile::ReadV)가 살려둔다.
+	// co_await → Result<size_t, OsError>
+	class ReadvSubmitAwaitable
+	{
+	public:
+		ReadvSubmitAwaitable(IoUringEngine& _engine, const file_t _fd, const iovec* _iov, const unsigned _iovcnt, const std::size_t _offset) noexcept
+			: engine(_engine)
+			, fd(_fd)
+			, iov(_iov)
+			, iovcnt(_iovcnt)
+			, offset(_offset) {}
+
+	private:
+		IoUringEngine& engine;
+		file_t fd;
+		const iovec* iov;
+		unsigned iovcnt;
+		std::size_t offset;
+		IoContext context{};
+
+	public:
+		[[nodiscard]] bool_t await_ready() const noexcept { return false; }
+
+		bool_t await_suspend(std::coroutine_handle<> _handle) noexcept
+		{
+			context.handle = _handle;
+
+			if (auto result = engine.SubmitReadv(fd, iov, iovcnt, offset, &context); result.IsError())
+			{
+				context.result = ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
+				return false;
+			}
+
+			return true;
+		}
+
+		[[nodiscard]] ne::Result<std::size_t, ne::OsError> await_resume() noexcept { return std::move(context.result); }
+	};
+
+	// 벡터 쓰기 비동기 대기 (io_uring writev — 단일 syscall gather I/O).
+	// co_await → Result<size_t, OsError>
+	class WritevSubmitAwaitable
+	{
+	public:
+		WritevSubmitAwaitable(IoUringEngine& _engine, const file_t _fd, const iovec* _iov, const unsigned _iovcnt, const std::size_t _offset) noexcept
+			: engine(_engine)
+			, fd(_fd)
+			, iov(_iov)
+			, iovcnt(_iovcnt)
+			, offset(_offset) {}
+
+	private:
+		IoUringEngine& engine;
+		file_t fd;
+		const iovec* iov;
+		unsigned iovcnt;
+		std::size_t offset;
+		IoContext context{};
+
+	public:
+		[[nodiscard]] bool_t await_ready() const noexcept { return false; }
+
+		bool_t await_suspend(std::coroutine_handle<> _handle) noexcept
+		{
+			context.handle = _handle;
+
+			if (auto result = engine.SubmitWritev(fd, iov, iovcnt, offset, &context); result.IsError())
 			{
 				context.result = ne::Result<std::size_t, ne::OsError>::Error(std::move(result.Error()));
 				return false;

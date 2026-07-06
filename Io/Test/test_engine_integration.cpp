@@ -10,6 +10,7 @@
 #include <gtest/gtest.h>
 #include <atomic>
 #include <chrono>
+#include <cstring>
 #include <filesystem>
 #include <thread>
 #include "Engine/IIoEngine.h"
@@ -238,6 +239,7 @@ TEST(IoEngineIntegration, IoUringSocketAndFileConcurrent)
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include "Engine/Iocp/IocpEngine.h"
+#include "Coroutine/Awaitable.h"
 
 // 로컬루프백 TCP 소켓 페어 생성 헬퍼
 static bool MakeSocketPair(SOCKET& _s1, SOCKET& _s2)
@@ -466,6 +468,66 @@ TEST(IoEngineIntegration, IocpSocketAndFileConcurrent)
     EXPECT_GT(socketFired.load(), 0) << "Socket event must have fired";
 
     (void)file.Close();
+    ::closesocket(s1);
+    ::closesocket(s2);
+    fs::remove(path);
+}
+
+// ── IocpEngine: SubmitTransmitFile — Proactor + zero-copy 파일→소켓 전송 ────────
+TEST(IoEngineIntegration, IocpTransmitFile)
+{
+    IocpEngine engine;
+    ASSERT_TRUE(engine.IsValid());
+
+    SOCKET s1 = INVALID_SOCKET;
+    SOCKET s2 = INVALID_SOCKET;
+    ASSERT_TRUE(MakeSocketPair(s1, s2));
+
+    const ne::string_t path = "test_integration_transmitfile.bin";
+    const ne::byte_t payload[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02 };
+
+    HANDLE fileHandle = ::CreateFileA(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
+        CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, nullptr);
+    ASSERT_NE(fileHandle, INVALID_HANDLE_VALUE);
+
+    // 파일에 페이로드를 기록(테스트 준비 단계, 아직 IOCP 미등록 — GetOverlappedResult 로 대기).
+    {
+        OVERLAPPED ov{};
+        DWORD written = 0;
+        const BOOL ok = ::WriteFile(fileHandle, payload, sizeof(payload), nullptr, &ov);
+        ASSERT_TRUE(ok || ::GetLastError() == ERROR_IO_PENDING);
+        ASSERT_TRUE(::GetOverlappedResult(fileHandle, &ov, &written, TRUE));
+        ASSERT_EQ(written, sizeof(payload));
+    }
+
+    ASSERT_TRUE(engine.RegisterFileHandle(fileHandle).IsOk());
+
+    std::atomic<bool> done{ false };
+    ne::Result<std::size_t, ne::OsError> result = ne::Result<std::size_t, ne::OsError>::Ok(0);
+
+    auto task = [&]() -> ne::Task<void>
+    {
+        result = co_await ne::io::TransmitFileSubmitAwaitable{ engine, static_cast<socket_t>(s1), fileHandle, 0, sizeof(payload) };
+        done.store(true, std::memory_order_release);
+    }();
+    task.Resume();
+
+    DriveEngine(engine, done, std::chrono::milliseconds(2000));
+    ASSERT_TRUE(done.load());
+    ASSERT_TRUE(result.IsOk()) << result.Error().What();
+    EXPECT_EQ(result.Value(), sizeof(payload));
+
+    char recvBuf[sizeof(payload)]{};
+    int totalReceived = 0;
+    while (totalReceived < static_cast<int>(sizeof(payload)))
+    {
+        const int n = ::recv(s2, recvBuf + totalReceived, sizeof(payload) - totalReceived, 0);
+        ASSERT_GT(n, 0);
+        totalReceived += n;
+    }
+    EXPECT_EQ(std::memcmp(recvBuf, payload, sizeof(payload)), 0);
+
+    ::CloseHandle(fileHandle);
     ::closesocket(s1);
     ::closesocket(s2);
     fs::remove(path);

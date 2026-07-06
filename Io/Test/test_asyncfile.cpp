@@ -2,6 +2,7 @@
 #include "File/AsyncFile.h"
 #include <atomic>
 #include <chrono>
+#include <cstring>
 #include <filesystem>
 #include <vector>
 
@@ -191,5 +192,80 @@ TEST(AsyncFileTest, TrueAsyncRead)
     EXPECT_EQ(rbuf[0], static_cast<ne::byte_t>(0xAB));
 
     (void)file.Close();
+    fs::remove(path);
+}
+
+// ─── scatter/gather: WriteV 로 여러 세그먼트를 한 번에 쓰고 ReadV 로 여러
+// 세그먼트로 나눠 읽어 내용이 원본과 바이트 단위로 일치하는지 검증.
+// (Linux: io_uring writev/readv 단일 syscall. Windows: SubmitWrite/Read 순차 반복.)
+TEST(AsyncFileTest, WriteVAndReadV)
+{
+    TestEngine engine;
+    const ne::string_t path = "test_asyncfile_vectored.bin";
+
+    ne::byte_t segmentA[4] = { 1, 2, 3, 4 };
+    ne::byte_t segmentB[3] = { 5, 6, 7 };
+    ne::byte_t segmentC[5] = { 8, 9, 10, 11, 12 };
+
+    // Write
+    {
+        auto cr = AsyncFile::Create(path, engine);
+        ASSERT_TRUE(cr.IsOk());
+        AsyncFile file = std::move(cr.Value());
+
+        BufferChain writeChain;
+        writeChain.Append({ nullptr, segmentA, sizeof(segmentA) });
+        writeChain.Append({ nullptr, segmentB, sizeof(segmentB) });
+        writeChain.Append({ nullptr, segmentC, sizeof(segmentC) });
+
+        std::atomic<bool> done{ false };
+        ne::Result<std::size_t, ne::OsError> wr = ne::Result<std::size_t, ne::OsError>::Ok(0);
+
+        auto wt = [&]() -> ne::Task<void>
+        {
+            wr = co_await file.Writev(writeChain, 0);
+            done.store(true, std::memory_order_release);
+        }();
+        wt.Resume();
+
+        DriveEngine(engine, done);
+        ASSERT_TRUE(done.load());
+        ASSERT_TRUE(wr.IsOk()) << wr.Error().What();
+        EXPECT_EQ(wr.Value(), sizeof(segmentA) + sizeof(segmentB) + sizeof(segmentC));
+    }
+
+    // Read back — 다른 크기의 세그먼트 조합으로 나눠 읽는다.
+    {
+        auto or_ = AsyncFile::Open(path, engine, true);
+        ASSERT_TRUE(or_.IsOk());
+        AsyncFile file = std::move(or_.Value());
+
+        ne::byte_t readA[6]{};
+        ne::byte_t readB[6]{};
+
+        BufferChain readChain;
+        readChain.Append({ nullptr, readA, sizeof(readA) });
+        readChain.Append({ nullptr, readB, sizeof(readB) });
+
+        std::atomic<bool> done{ false };
+        ne::Result<std::size_t, ne::OsError> rr = ne::Result<std::size_t, ne::OsError>::Ok(0);
+
+        auto rt = [&]() -> ne::Task<void>
+        {
+            rr = co_await file.Readv(readChain, 0);
+            done.store(true, std::memory_order_release);
+        }();
+        rt.Resume();
+
+        DriveEngine(engine, done);
+        ASSERT_TRUE(done.load());
+        ASSERT_TRUE(rr.IsOk()) << rr.Error().What();
+        EXPECT_EQ(rr.Value(), 12u);
+
+        const ne::byte_t expected[12] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 };
+        EXPECT_EQ(std::memcmp(readA, expected, 6), 0);
+        EXPECT_EQ(std::memcmp(readB, expected + 6, 6), 0);
+    }
+
     fs::remove(path);
 }

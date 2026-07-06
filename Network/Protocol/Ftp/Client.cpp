@@ -59,7 +59,7 @@ BEGIN_NS(ne::network::ftp)
 				}
 
 				std::array<ne::byte_t, 4096> buffer{};
-				auto result = co_await controlStream->Receive(BufferView{ nullptr, buffer.data(), buffer.size() });
+				auto result = co_await controlStream->Receive(ne::io::BufferView{ nullptr, buffer.data(), buffer.size() });
 				if (result.IsError())
 					co_return ne::Result<string_t, ne::Error>::Error(
 						ne::Error(result.Error().What()).Context("[FtpClient/ReadReply]"));
@@ -114,7 +114,7 @@ BEGIN_NS(ne::network::ftp)
 		string_t buffer{ _cmd };
 		buffer += "\r\n";
 
-		auto result = co_await controlStream->Send(BufferView{ nullptr, const_cast<ne::byte_t*>(reinterpret_cast<const ne::byte_t*>(buffer.data())), buffer.size() });
+		auto result = co_await controlStream->Send(ne::io::BufferView{ nullptr, const_cast<ne::byte_t*>(reinterpret_cast<const ne::byte_t*>(buffer.data())), buffer.size() });
 		if (result.IsError())
 			co_return ne::Result<FtpReply, ne::Error>::Error(
 				ne::Error(result.Error().What()).Context("[FtpClient/SendCommand]"));
@@ -364,7 +364,7 @@ BEGIN_NS(ne::network::ftp)
 		while (true)
 		{
 			std::array<ne::byte_t, 8192> tmp{};
-			auto r = co_await dataStream->Receive(BufferView{ nullptr, tmp.data(), tmp.size() });
+			auto r = co_await dataStream->Receive(ne::io::BufferView{ nullptr, tmp.data(), tmp.size() });
 			if (r.IsError() || r.Value() == 0) break;
 			raw.append(reinterpret_cast<const char*>(tmp.data()), r.Value());
 		}
@@ -408,7 +408,7 @@ BEGIN_NS(ne::network::ftp)
 		while (true)
 		{
 			std::array<ne::byte_t, 65536> tmp{};
-			auto r = co_await dataStream->Receive(BufferView{ nullptr, tmp.data(), tmp.size() });
+			auto r = co_await dataStream->Receive(ne::io::BufferView{ nullptr, tmp.data(), tmp.size() });
 			if (r.IsError() || r.Value() == 0) break;
 			_sink(std::span<const ne::byte_t>(tmp.data(), r.Value()));
 		}
@@ -449,7 +449,7 @@ BEGIN_NS(ne::network::ftp)
 		std::size_t sent = 0;
 		while (sent < _data.size())
 		{
-			auto r = co_await dataStream->Send(BufferView{ nullptr, const_cast<ne::byte_t*>(_data.data() + sent), _data.size() - sent });
+			auto r = co_await dataStream->Send(ne::io::BufferView{ nullptr, const_cast<ne::byte_t*>(_data.data() + sent), _data.size() - sent });
 			if (r.IsError())
 				co_return ne::Result<void, ne::Error>::Error(
 					ne::Error(r.Error().What()).Context("[FtpClient/Put/send]"));

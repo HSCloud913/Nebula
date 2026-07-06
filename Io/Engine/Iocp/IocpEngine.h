@@ -77,6 +77,12 @@ BEGIN_NS(ne::io)
 		[[nodiscard]] virtual ne::Result<void, ne::OsError> SubmitSend(socket_t _fd, const void* _buffer, std::size_t _length, IoContext* _context) noexcept override;
 		[[nodiscard]] virtual ne::Result<void, ne::OsError> SubmitReceive(socket_t _fd, void* _buffer, std::size_t _length, IoContext* _context) noexcept override;
 
+	public: // Socket+File Proactor (zero-copy 파일 전송, IIoEngine 외부 — PlainStream::SendFile 전용)
+		// TransmitFile: 파일을 소켓으로 커널 안에서 직접 전송(zero-copy) + IOCP 완료 통지.
+		// _head/_tail 은 각각 연속된 버퍼 1개만 지원(TRANSMIT_FILE_BUFFERS 제약) — 없으면 nullptr/0.
+		[[nodiscard]] ne::Result<void, ne::OsError> SubmitTransmitFile(socket_t _socket, HANDLE _file, std::size_t _offset, std::size_t _size,
+			void* _headPtr, std::size_t _headLength, void* _tailPtr, std::size_t _tailLength, IoContext* _context) noexcept;
+
 	public: // Common
 		[[nodiscard]] virtual ne::Result<void, ne::OsError> RunOnce(ne::int_t _timeoutMs = -1) override;
 		virtual void SetTimerWheel(ne::time::TimerWheel* _wheel) noexcept override { timerWheel = _wheel; }

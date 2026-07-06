@@ -74,7 +74,7 @@ BEGIN_NS(ne::network::http_2)
 	ne::Task<ne::Result<void, ne::HttpError>> Http2Client::SendPreface()
 	{
 		const auto pref = reinterpret_cast<const ne::byte_t*>(kClientPreface.data());
-		auto r = co_await stream->Send(BufferView{ nullptr, const_cast<ne::byte_t*>(pref), kClientPreface.size() });
+		auto r = co_await stream->Send(ne::io::BufferView{ nullptr, const_cast<ne::byte_t*>(pref), kClientPreface.size() });
 		if (r.IsError())
 			co_return ne::Result<void, ne::HttpError>::Error(
 				ne::HttpError{ r.Error().What() }.Context("[Http2Client/SendPreface]"));
@@ -87,7 +87,7 @@ BEGIN_NS(ne::network::http_2)
 		std::array<ne::byte_t, kFrameHeaderSize> frame{};
 		BuildFrameHeader(frame.data(), 0, FrameType::Settings, 0, 0);
 
-		auto r = co_await stream->Send(BufferView{ nullptr, frame.data(), frame.size() });
+		auto r = co_await stream->Send(ne::io::BufferView{ nullptr, frame.data(), frame.size() });
 		if (r.IsError())
 			co_return ne::Result<void, ne::HttpError>::Error(
 				ne::HttpError{ r.Error().What() }.Context("[Http2Client/SendSettings]"));
@@ -101,7 +101,7 @@ BEGIN_NS(ne::network::http_2)
 		BuildFrameHeader(frame.data(), 4, FrameType::WindowUpdate, 0, _streamId);
 		WriteU32(frame.data() + kFrameHeaderSize, static_cast<uint32_t>(_increment) & 0x7FFFFFFFu);
 
-		auto r = co_await stream->Send(BufferView{ nullptr, frame.data(), frame.size() });
+		auto r = co_await stream->Send(ne::io::BufferView{ nullptr, frame.data(), frame.size() });
 		if (r.IsError())
 			co_return ne::Result<void, ne::HttpError>::Error(
 				ne::HttpError{ r.Error().What() }.Context("[Http2Client/SendWindowUpdate]"));
@@ -118,7 +118,7 @@ BEGIN_NS(ne::network::http_2)
 			while (read < kFrameHeaderSize)
 			{
 				auto r = co_await stream->Receive(
-					BufferView{ nullptr, hbuf.data() + read, kFrameHeaderSize - read });
+					ne::io::BufferView{ nullptr, hbuf.data() + read, kFrameHeaderSize - read });
 				if (r.IsError())
 					co_return ne::Result<ne::network::HttpHeaders, ne::HttpError>::Error(
 						ne::HttpError{ r.Error().What() }.Context("[Http2Client/ReadHeaders]"));
@@ -137,7 +137,7 @@ BEGIN_NS(ne::network::http_2)
 				while (blockRead < fh.length)
 				{
 					auto r = co_await stream->Receive(
-						BufferView{ nullptr, block.data() + blockRead, fh.length - blockRead });
+						ne::io::BufferView{ nullptr, block.data() + blockRead, fh.length - blockRead });
 					if (r.IsError())
 						co_return ne::Result<ne::network::HttpHeaders, ne::HttpError>::Error(
 							ne::HttpError{ r.Error().What() }.Context("[Http2Client/ReadHeaders/Block]"));
@@ -153,7 +153,7 @@ BEGIN_NS(ne::network::http_2)
 			while (discarded < fh.length)
 			{
 				auto r = co_await stream->Receive(
-					BufferView{ nullptr, discard.data() + discarded, fh.length - discarded });
+					ne::io::BufferView{ nullptr, discard.data() + discarded, fh.length - discarded });
 				if (r.IsError()) break;
 				discarded += r.Value();
 			}
@@ -163,7 +163,7 @@ BEGIN_NS(ne::network::http_2)
 				// SETTINGS 에 ACK 응답
 				std::array<ne::byte_t, kFrameHeaderSize> ack{};
 				BuildFrameHeader(ack.data(), 0, FrameType::Settings, Flag::Ack, 0);
-				(void)co_await stream->Send(BufferView{ nullptr, ack.data(), ack.size() });
+				(void)co_await stream->Send(ne::io::BufferView{ nullptr, ack.data(), ack.size() });
 			}
 		}
 	}

@@ -7,6 +7,7 @@
 
 #include <coroutine>
 #include <unordered_map>
+#include <sys/uio.h>
 #include <liburing.h>
 #include "Engine/IIoEngine.h"
 #include "Result.h"
@@ -75,6 +76,11 @@ BEGIN_NS (ne::io)
 	public: // File 전용 (Proactor, IIoEngine 외부 — AsyncFile 전용)
 		[[nodiscard]] ne::Result<void, ne::OsError> SubmitRead(int _fd, void* _buffer, std::size_t _length, std::size_t _offset, IoContext* _context) noexcept;
 		[[nodiscard]] ne::Result<void, ne::OsError> SubmitWrite(int _fd, const void* _buffer, std::size_t _length, std::size_t _offset, IoContext* _context) noexcept;
+
+		// 벡터 I/O (scatter/gather) — readv/writev 를 단일 syscall(단일 SQE)로 제출.
+		// _iov 는 호출자(AsyncFile)가 완료될 때까지 살려둔다(코루틴 프레임에 보관).
+		[[nodiscard]] ne::Result<void, ne::OsError> SubmitReadv(int _fd, const iovec* _iov, unsigned _iovcnt, std::size_t _offset, IoContext* _context) noexcept;
+		[[nodiscard]] ne::Result<void, ne::OsError> SubmitWritev(int _fd, const iovec* _iov, unsigned _iovcnt, std::size_t _offset, IoContext* _context) noexcept;
 
 	private: // 내부 구현
 		void ProcessCqe(io_uring_cqe* _cqe) noexcept;

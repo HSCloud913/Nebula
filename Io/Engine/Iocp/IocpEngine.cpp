@@ -6,6 +6,7 @@
 
 #if defined(_WIN32)
 #include <winsock2.h>
+#include <mswsock.h>
 #include "Timer/TimerWheel.h"
 
 
@@ -183,6 +184,38 @@ BEGIN_NS(ne::io)
 			if (const int error = ::WSAGetLastError(); error != WSA_IO_PENDING)
 				return ne::Result<void, ne::OsError>::Error(
 					ne::OsError{ static_cast<ne::ulong_t>(error) }.Context("[IocpEngine/SubmitReceive]"));
+		}
+
+		return ne::Result<void, ne::OsError>::Ok();
+	}
+
+
+
+	// Proactor + zero-copy: TransmitFile 이 파일 내용을 커널 안에서 소켓으로 직접 복사해 전송하고,
+	// 완료는 다른 Proactor 호출들과 동일하게 RunOnce() 의 ProactorKey 분기로 통지된다(코드 공유).
+	ne::Result<void, ne::OsError> IocpEngine::SubmitTransmitFile(const socket_t _socket, const HANDLE _file, const std::size_t _offset, const std::size_t _size,
+		void* _headPtr, const std::size_t _headLength, void* _tailPtr, const std::size_t _tailLength, IoContext* _context) noexcept
+	{
+		std::lock_guard lock(mutex);
+
+		if (auto result = EnsureSocketInIocp(_socket, ProactorKey); result.IsError()) return result;
+
+		_context->overlapped = { .Offset = static_cast<ulong_t>(_offset & 0xFFFFFFFF), .OffsetHigh = static_cast<ulong_t>(_offset >> 32) };
+
+		TRANSMIT_FILE_BUFFERS buffers{};
+		const bool_t hasHead = _headPtr != nullptr && _headLength > 0;
+		const bool_t hasTail = _tailPtr != nullptr && _tailLength > 0;
+
+		if (hasHead) { buffers.Head = _headPtr; buffers.HeadLength = static_cast<DWORD>(_headLength); }
+		if (hasTail) { buffers.Tail = _tailPtr; buffers.TailLength = static_cast<DWORD>(_tailLength); }
+
+		LPTRANSMIT_FILE_BUFFERS transmitBuffers = (hasHead || hasTail) ? &buffers : nullptr;
+
+		if (!::TransmitFile(_socket, _file, static_cast<DWORD>(_size), 0, &_context->overlapped, transmitBuffers, 0))
+		{
+			if (const int error = ::WSAGetLastError(); error != WSA_IO_PENDING)
+				return ne::Result<void, ne::OsError>::Error(
+					ne::OsError{ static_cast<ne::ulong_t>(error) }.Context("[IocpEngine/SubmitTransmitFile]"));
 		}
 
 		return ne::Result<void, ne::OsError>::Ok();

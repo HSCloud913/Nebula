@@ -13,6 +13,7 @@
 #   include <windows.h>
 #   include <mswsock.h>
 #   include <ws2tcpip.h>
+#   include "Engine/Iocp/IocpEngine.h"
 #elif defined(IS_POSIX)
 #   include <sys/socket.h>
 #   include <sys/uio.h>
@@ -85,10 +86,9 @@ BEGIN_NS(ne::network)
 
 		Socket sock = std::move(sockRes.Value());
 
-		if (auto r = co_await sock.Connect(_host, _port); r.IsError())
-			co_return R::Error(std::move(r.Error()).Context("[PlainStream/Connect]"));
-
-		if (auto r = sock.SetNonBlocking(true); r.IsError())
+		// engine 오버로드: non-blocking connect + writable 대기 + SO_ERROR 확인 — DNS 워커
+		// 스레드를 실제 connect 완료까지 붙잡지 않는다. 성공 시 소켓은 이미 non-blocking.
+		if (auto r = co_await sock.Connect(_host, _port, _engine); r.IsError())
 			co_return R::Error(std::move(r.Error()).Context("[PlainStream/Connect]"));
 
 		co_return R::Ok(PlainStream{ std::move(sock), _engine, _allocator, _mode });
@@ -124,7 +124,7 @@ BEGIN_NS(ne::network)
 
 	// ─── 송수신 (non-blocking 소켓 전제) ─────────────────────────────────────────
 
-	ne::Task<ne::Result<std::size_t, ne::OsError>> PlainStream::Send(BufferView _data)
+	ne::Task<ne::Result<std::size_t, ne::OsError>> PlainStream::Send(ne::io::BufferView _data)
 	{
 		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "stream is closed" });
 
@@ -145,7 +145,7 @@ BEGIN_NS(ne::network)
 		co_return ne::Result<std::size_t, ne::OsError>::Ok(static_cast<std::size_t>(bytes));
 	}
 
-	ne::Task<ne::Result<std::size_t, ne::OsError>> PlainStream::Sendv(const BufferChain& _chain)
+	ne::Task<ne::Result<std::size_t, ne::OsError>> PlainStream::Sendv(const ne::io::BufferChain& _chain)
 	{
 		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "stream is closed" });
 
@@ -162,6 +162,11 @@ BEGIN_NS(ne::network)
 					ne::OsError{ ne::LastOsError() }.Context("[PlainStream/Sendv]"));
 
 			total += static_cast<std::size_t>(bytes);
+
+			// 이 세그먼트가 partial 하게 전송됐으면 다음 세그먼트로 넘어가지 않고 즉시 멈춘다 —
+			// 그렇지 않으면 세그먼트 순서가 뒤섞여 수신측이 잘못된 바이트열을 보게 된다.
+			// 호출자가 total(=지금까지의 실제 전송량) 기준으로 BufferChain::Suffix() 재시도.
+			if (static_cast<std::size_t>(bytes) < segment.length) break;
 		}
 
 		co_return ne::Result<std::size_t, ne::OsError>::Ok(total);
@@ -180,7 +185,7 @@ BEGIN_NS(ne::network)
 	#endif
 	}
 
-	ne::Task<ne::Result<std::size_t, ne::OsError>> PlainStream::Receive(BufferView _data)
+	ne::Task<ne::Result<std::size_t, ne::OsError>> PlainStream::Receive(ne::io::BufferView _data)
 	{
 		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "stream is closed" });
 
@@ -227,15 +232,15 @@ BEGIN_NS(ne::network)
 
 	ne::Task<ne::Result<std::size_t, ne::OsError>> PlainStream::SendFile(
 		const ne::io::file_t _fileFd, const std::size_t _offset, const std::size_t _size,
-		BufferView _head, BufferView _tail)
+		const ne::io::BufferChain& _head, const ne::io::BufferChain& _tail)
 	{
 		using R = ne::Result<std::size_t, ne::OsError>;
 		if (!IsOpen()) co_return R::Error(ne::OsError{ 0, "stream is closed" });
 
 	#if defined(IS_POSIX)
 		const socket_t fd = socket.Handle();
-		const bool_t hasHead = _head.ptr != nullptr && _head.length > 0;
-		const bool_t hasTail = _tail.ptr != nullptr && _tail.length > 0;
+		const bool_t hasHead = !_head.IsEmpty();
+		const bool_t hasTail = !_tail.IsEmpty();
 		const bool_t cork    = hasHead || hasTail;
 
 		// 코킹 해제(flush)를 모든 종료 경로에서 보장 — 코루틴 프레임 소멸 시 실행.
@@ -244,18 +249,20 @@ BEGIN_NS(ne::network)
 
 		std::size_t total = 0;
 
-		// head — Send 경로 재사용(reactor/proactor 모두 반영)
+		// head — Sendv 경로 재사용(scatter-gather, reactor/proactor 모두 반영). Sendv 는 partial
+		// write 를 그대로 반환하므로 다 보낼 때까지 Suffix() 로 남은 부분만 재구성해 재시도한다.
 		if (hasHead)
 		{
+			const std::size_t headTotal = _head.TotalSize();
 			std::size_t sent = 0;
-			while (sent < _head.length)
+			while (sent < headTotal)
 			{
-				auto r = co_await Send(_head.Slice(sent, _head.length - sent));
+				auto r = co_await Sendv(sent == 0 ? _head : _head.Suffix(sent));
 				if (r.IsError()) co_return R::Error(std::move(r.Error()).Context("[PlainStream/SendFile head]"));
 				if (r.Value() == 0) co_return R::Error(ne::OsError{ 0, "peer closed during SendFile head" });
 				sent += r.Value();
 			}
-			total += _head.length;
+			total += headTotal;
 		}
 
 		// file — sendfile(2) zero-copy. EAGAIN 이면 writable 대기 후 재시도.
@@ -281,23 +288,83 @@ BEGIN_NS(ne::network)
 		// tail
 		if (hasTail)
 		{
+			const std::size_t tailTotal = _tail.TotalSize();
 			std::size_t sent = 0;
-			while (sent < _tail.length)
+			while (sent < tailTotal)
 			{
-				auto r = co_await Send(_tail.Slice(sent, _tail.length - sent));
+				auto r = co_await Sendv(sent == 0 ? _tail : _tail.Suffix(sent));
 				if (r.IsError()) co_return R::Error(std::move(r.Error()).Context("[PlainStream/SendFile tail]"));
 				if (r.Value() == 0) co_return R::Error(ne::OsError{ 0, "peer closed during SendFile tail" });
 				sent += r.Value();
 			}
-			total += _tail.length;
+			total += tailTotal;
 		}
 
 		co_return R::Ok(total);
 
 	#elif defined(_WIN32)
-		// TransmitFile 은 overlapped(IOCP) 전용 → 엔진 SubmitSendFile 도입 전까지 미지원.
-		(void)_fileFd; (void)_offset; (void)_size; (void)_head; (void)_tail;
-		co_return R::Error(ne::OsError{ 0, "SendFile not yet supported on Windows (needs engine SubmitSendFile)" });
+		// Proactor + zero-copy: TransmitFile 이 파일 내용을 커널 안에서 소켓으로 직접 전송한다.
+		auto& iocpEngine = static_cast<ne::io::IocpEngine&>(*engine);
+
+		const bool_t hasHead = !_head.IsEmpty();
+		const bool_t hasTail = !_tail.IsEmpty();
+
+		// TRANSMIT_FILE_BUFFERS 는 head/tail 각각 연속된 버퍼 1개만 지원한다 — 세그먼트가
+		// 여럿이면 먼저 Flatten() 으로 합친다(TlsStream/SshStream::Sendv 와 동일 패턴).
+		ne::io::BufferView headView{};
+		bool_t ownsHead = false;
+		if (hasHead)
+		{
+			if (_head.Segments().size() == 1)
+			{
+				headView = _head.Segments().front();
+			}
+			else
+			{
+				if (!allocator) co_return R::Error(ne::OsError{ 0, "SendFile: multi-segment head requires an allocator on Windows" });
+				headView = _head.Flatten(*allocator);
+				if (!headView.IsValid()) co_return R::Error(ne::OsError{ 0, "SendFile: head Flatten failed" });
+				ownsHead = true;
+			}
+		}
+
+		ne::io::BufferView tailView{};
+		bool_t ownsTail = false;
+		if (hasTail)
+		{
+			if (_tail.Segments().size() == 1)
+			{
+				tailView = _tail.Segments().front();
+			}
+			else
+			{
+				if (!allocator)
+				{
+					if (ownsHead) headView.owner->Release();
+					co_return R::Error(ne::OsError{ 0, "SendFile: multi-segment tail requires an allocator on Windows" });
+				}
+				tailView = _tail.Flatten(*allocator);
+				if (!tailView.IsValid())
+				{
+					if (ownsHead) headView.owner->Release();
+					co_return R::Error(ne::OsError{ 0, "SendFile: tail Flatten failed" });
+				}
+				ownsTail = true;
+			}
+		}
+
+		auto result = co_await ne::io::TransmitFileSubmitAwaitable{
+			iocpEngine, socket.Handle(), _fileFd, _offset, _size,
+			hasHead ? std::span<ne::byte_t>(headView.ptr, headView.length) : std::span<ne::byte_t>{},
+			hasTail ? std::span<ne::byte_t>(tailView.ptr, tailView.length) : std::span<ne::byte_t>{}
+		};
+
+		if (ownsHead) headView.owner->Release();
+		if (ownsTail) tailView.owner->Release();
+
+		if (result.IsError()) co_return R::Error(std::move(result.Error()).Context("[PlainStream/SendFile]"));
+
+		co_return R::Ok(result.Value());
 	#else
 		(void)_fileFd; (void)_offset; (void)_size; (void)_head; (void)_tail;
 		co_return R::Error(ne::OsError{ 0, "SendFile not supported on this platform" });

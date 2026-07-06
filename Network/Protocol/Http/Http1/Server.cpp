@@ -102,7 +102,7 @@ BEGIN_NS(ne::network::http_1)
 
 		while (raw.find("\r\n\r\n") == string_t::npos)
 		{
-			auto r = co_await stream.Receive(BufferView{ nullptr, buf.data(), buf.size() });
+			auto r = co_await stream.Receive(ne::io::BufferView{ nullptr, buf.data(), buf.size() });
 			if (r.IsError() || r.Value() == 0) co_return;
 			raw.append(reinterpret_cast<const char*>(buf.data()), r.Value());
 		}
@@ -114,7 +114,7 @@ BEGIN_NS(ne::network::http_1)
 
 		while (raw.size() < totalNeeded)
 		{
-			auto r = co_await stream.Receive(BufferView{ nullptr, buf.data(), buf.size() });
+			auto r = co_await stream.Receive(ne::io::BufferView{ nullptr, buf.data(), buf.size() });
 			if (r.IsError() || r.Value() == 0) break;
 			raw.append(reinterpret_cast<const char*>(buf.data()), r.Value());
 		}
@@ -125,7 +125,7 @@ BEGIN_NS(ne::network::http_1)
 		HttpResponse resp = co_await handler(reqRes.Value());
 
 		const string_t respStr = SerializeResponse(resp);
-		const BufferView sendView{
+		const ne::io::BufferView sendView{
 			nullptr,
 			const_cast<byte_t*>(reinterpret_cast<const byte_t*>(respStr.data())),
 			respStr.size()

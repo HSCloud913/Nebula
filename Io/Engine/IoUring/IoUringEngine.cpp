@@ -233,6 +233,38 @@ BEGIN_NS (ne::io)
 
 
 
+	ne::Result<void, ne::OsError> IoUringEngine::SubmitReadv(const int _fd, const iovec* _iov, const unsigned _iovcnt, const std::size_t _offset, IoContext* _context) noexcept
+	{
+		io_uring_sqe* sqe = ::io_uring_get_sqe(&ring);
+		if (!sqe)
+			return ne::Result<void, ne::OsError>::Error(ne::OsError{ EBUSY }.Context("[IoUringEngine/SubmitReadv] SQ ring full"));
+
+		::io_uring_prep_readv(sqe, _fd, _iov, _iovcnt, static_cast<uint64_t>(_offset));
+		::io_uring_sqe_set_data64(sqe, reinterpret_cast<uint64_t>(_context));
+
+		if (::io_uring_submit(&ring) < 0)
+			return ne::Result<void, ne::OsError>::Error(ne::OsError{ errno }.Context("[IoUringEngine/SubmitReadv]"));
+
+		return ne::Result<void, ne::OsError>::Ok();
+	}
+
+	ne::Result<void, ne::OsError> IoUringEngine::SubmitWritev(const int _fd, const iovec* _iov, const unsigned _iovcnt, const std::size_t _offset, IoContext* _context) noexcept
+	{
+		io_uring_sqe* sqe = ::io_uring_get_sqe(&ring);
+		if (!sqe)
+			return ne::Result<void, ne::OsError>::Error(ne::OsError{ EBUSY }.Context("[IoUringEngine/SubmitWritev] SQ ring full"));
+
+		::io_uring_prep_writev(sqe, _fd, _iov, _iovcnt, static_cast<uint64_t>(_offset));
+		::io_uring_sqe_set_data64(sqe, reinterpret_cast<uint64_t>(_context));
+
+		if (::io_uring_submit(&ring) < 0)
+			return ne::Result<void, ne::OsError>::Error(ne::OsError{ errno }.Context("[IoUringEngine/SubmitWritev]"));
+
+		return ne::Result<void, ne::OsError>::Ok();
+	}
+
+
+
 	void IoUringEngine::ProcessCqe(io_uring_cqe* _cqe) noexcept
 	{
 		const uint64_t userData = ::io_uring_cqe_get_data64(_cqe);

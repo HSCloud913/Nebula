@@ -39,7 +39,7 @@ BEGIN_NS(ne::network::http_1)
 
 	ne::Task<ne::Result<HttpResponse, ne::OsError>> Client::Execute(string_view_t _host, uint16_t _port, HttpRequest _request) const
 	{
-		// Create + connect socket (async DNS resolution, sync connect, async send/recv)
+		// Create + connect socket (async DNS resolution, non-blocking async connect, async send/recv)
 		auto familyRes = co_await Socket::ResolveFamily(_host);
 		if (familyRes.IsError())
 		{
@@ -58,14 +58,7 @@ BEGIN_NS(ne::network::http_1)
 
 		Socket sock = std::move(sockRes.Value());
 
-		if (auto r = co_await sock.Connect(_host, _port); r.IsError())
-		{
-			auto err = std::move(r.Error());
-			err.Context("[Http1Client/Execute]");
-			co_return ne::Result<HttpResponse, ne::OsError>::Error(std::move(err));
-		}
-
-		if (auto r = sock.SetNonBlocking(true); r.IsError())
+		if (auto r = co_await sock.Connect(_host, _port, engine); r.IsError())
 		{
 			auto err = std::move(r.Error());
 			err.Context("[Http1Client/Execute]");
@@ -84,7 +77,7 @@ BEGIN_NS(ne::network::http_1)
 
 		// Serialize and send
 		const string_t reqStr = Serialize(_request, _host);
-		const BufferView sendView{
+		const ne::io::BufferView sendView{
 			nullptr,
 			const_cast<byte_t*>(reinterpret_cast<const byte_t*>(reqStr.data())),
 			reqStr.size()
@@ -104,7 +97,7 @@ BEGIN_NS(ne::network::http_1)
 
 		while (true)
 		{
-			auto r = co_await stream.Receive(BufferView{ nullptr, buf.data(), buf.size() });
+			auto r = co_await stream.Receive(ne::io::BufferView{ nullptr, buf.data(), buf.size() });
 			if (r.IsError())
 			{
 				auto err = std::move(r.Error());
