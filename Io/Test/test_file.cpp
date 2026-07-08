@@ -5,7 +5,7 @@
 #include <chrono>
 #include <cstring>
 #include <span>
-#include "IoContext.h" // winsock2 → windows 순서를 IoType.h 가 보장(DeleteFileA 포함)
+#include "Context/IoContext.h" // winsock2 → windows 순서를 IoType.h 가 보장(DeleteFileA 포함)
 #include "File/File.h"
 #include "Coroutine/Task.h"
 #include "Engine/Iocp/IocpEngine.h"
@@ -55,6 +55,52 @@ TEST(FileTest, WriteThenRead)
 
 	EXPECT_TRUE(file.Close().IsOk());
 	EXPECT_FALSE(file.IsValid());
+	::DeleteFileA(path);
+}
+
+// ── File: scatter/gather Writev → Readv 왕복 ──
+TEST(FileTest, WritevThenReadvRoundTrip)
+{
+	IocpEngine engine;
+	ASSERT_TRUE(engine.IsValid());
+	IoContext context{ engine };
+
+	const lpcstr_t path = "test_file_level3_vectored.bin";
+	auto opened = File::Open(context, path, OpenMode::ReadWrite);
+	ASSERT_TRUE(opened.IsOk()) << opened.Error().What();
+	File file = std::move(opened.Value());
+
+	char partA[] = "hello-";
+	char partB[] = "vectored-";
+	char partC[] = "world";
+	BufferChain writeChain;
+	writeChain.Append(BufferView{ reinterpret_cast<ne::byte_t*>(partA), sizeof(partA) - 1 });
+	writeChain.Append(BufferView{ reinterpret_cast<ne::byte_t*>(partB), sizeof(partB) - 1 });
+	writeChain.Append(BufferView{ reinterpret_cast<ne::byte_t*>(partC), sizeof(partC) - 1 });
+	const std::size_t totalLength = writeChain.TotalSize();
+
+	auto writeTask = file.Writev(writeChain, 0);
+	auto writeResult = Drive(context, writeTask);
+	ASSERT_TRUE(writeResult.IsOk()) << writeResult.Error().What();
+	EXPECT_EQ(writeResult.Value(), totalLength);
+
+	ne::byte_t bufferA[6]{};
+	ne::byte_t bufferB[9]{};
+	ne::byte_t bufferC[5]{};
+	BufferChain readChain;
+	readChain.Append(BufferView{ bufferA, sizeof(bufferA) });
+	readChain.Append(BufferView{ bufferB, sizeof(bufferB) });
+	readChain.Append(BufferView{ bufferC, sizeof(bufferC) });
+
+	auto readTask = file.Readv(readChain, 0);
+	auto readResult = Drive(context, readTask);
+	ASSERT_TRUE(readResult.IsOk()) << readResult.Error().What();
+	EXPECT_EQ(readResult.Value(), totalLength);
+	EXPECT_EQ(std::memcmp(bufferA, partA, sizeof(bufferA)), 0);
+	EXPECT_EQ(std::memcmp(bufferB, partB, sizeof(bufferB)), 0);
+	EXPECT_EQ(std::memcmp(bufferC, partC, sizeof(bufferC)), 0);
+
+	EXPECT_TRUE(file.Close().IsOk());
 	::DeleteFileA(path);
 }
 

@@ -32,27 +32,32 @@ BEGIN_NS(ne::io)
 	struct IoCompletionHandler
 	{
 		std::coroutine_handle<> handle{};
-		longlong_t              result{ 0 };
-		bool_t                  completed{ false };
-		bool_t                  abandoned{ false };
+		longlong_t result{ 0 };
+		bool_t isCompleted{ false };
+		bool_t isAbandoned{ false };
 	};
 
 	class IoContext
 	{
 	public:
-		NEBULA_NON_COPYABLE_MOVABLE(IoContext)
-
 		explicit IoContext(IIoEngine& _engine) noexcept;
 		~IoContext() = default;
+
+		NEBULA_NON_COPYABLE_MOVABLE(IoContext)
 
 	private:
 		static constexpr int_t MaxBatch = 128; // WaitCompletions 한 번에 회수할 완료 상한
 
-		IIoEngine&            engine;
+	private:
+		IIoEngine& engine;
 		ne::time::TimerWheel* timerWheel;                       // optional — 있으면 루프가 Tick/타임아웃 반영
-		std::mutex            postMutex;                        // postedHandles 보호(다른 스레드 Post)
+		std::mutex postMutex;                        // postedHandles 보호(다른 스레드 Post)
 		std::vector<std::coroutine_handle<>> postedHandles;     // Post 로 넘어와 다음 루프에서 resume 될 작업
-		std::atomic<bool_t>   running{ false };
+		std::atomic<bool_t> isRunning{ false };
+		// Run() 이 실제로 시작하기 전에(다른 스레드가 스폰 직후 곧장) Stop() 이 먼저 도착하면,
+		// Run() 진입부의 running=true 세팅이 그 Stop() 을 덮어써 무기한 대기에 빠질 수 있다 —
+		// 그 경합을 잡기 위한 플래그(자세한 내용은 IoContext.cpp 참고).
+		std::atomic<bool_t> isStopRequested{ false };
 
 	public:
 		// 완료/타이머/Post 작업이 소진되도록 Stop() 까지 계속 루프한다.
@@ -64,7 +69,7 @@ BEGIN_NS(ne::io)
 		void_t Post(std::coroutine_handle<> _handle);
 		// Run() 루프를 종료시킨다(다음 iteration 에서 빠져나옴).
 		void_t Stop() noexcept;
-		void_t SetTimerWheel(ne::time::TimerWheel* _timerWheel) noexcept;
+		void_t SetTimerWheel(ne::time::TimerWheel* _timerWheel) noexcept { timerWheel = _timerWheel; }
 
 	private:
 		// timerWheel 이 있으면 다음 만료까지, 없으면 _timeout 을 그대로 유효 타임아웃으로 계산.
@@ -72,8 +77,8 @@ BEGIN_NS(ne::io)
 		void_t DrainPosted();
 
 	public:
-		[[nodiscard]] IIoEngine& Engine() noexcept { return engine; }
-		[[nodiscard]] bool_t IsRunning() const noexcept { return running.load(std::memory_order_acquire); }
+		[[nodiscard]] IIoEngine& Engine() const noexcept { return engine; }
+		[[nodiscard]] bool_t IsRunning() const noexcept { return isRunning.load(std::memory_order_acquire); }
 	};
 
 END_NS

@@ -13,6 +13,7 @@
 #include "Handle.h"
 #include "IoResult.h"
 #include "Coroutine/Task.h"
+#include "Buffer/BufferChain.h"
 
 BEGIN_NS(ne::io)
 	class IoContext;
@@ -61,6 +62,10 @@ BEGIN_NS(ne::io)
 
 		[[nodiscard]] ne::Task<IoResult<std::size_t>> Read(std::span<ne::byte_t> _buffer, ulonglong_t _offset);
 		[[nodiscard]] ne::Task<IoResult<std::size_t>> Write(std::span<const ne::byte_t> _buffer, ulonglong_t _offset);
+
+		// scatter/gather — 여러 세그먼트를 한 요청으로 읽고/쓴다. _chain 은 완료까지 호출자가 살려둬야 한다.
+		[[nodiscard]] ne::Task<IoResult<std::size_t>> Readv(const BufferChain& _chain, ulonglong_t _offset);
+		[[nodiscard]] ne::Task<IoResult<std::size_t>> Writev(const BufferChain& _chain, ulonglong_t _offset);
 
 		// 명시적 해제(silently close 하는 소멸자와 별도, 규칙). 이후 IsValid()==false.
 		[[nodiscard]] ne::Result<void_t, IoError> Close();

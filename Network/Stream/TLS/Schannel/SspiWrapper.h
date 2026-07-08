@@ -8,9 +8,6 @@
 #pragma once
 #ifdef _WIN32
 
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
 #ifndef SECURITY_WIN32
 #define SECURITY_WIN32
 #endif

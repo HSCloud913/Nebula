@@ -5,8 +5,8 @@
 #include "Socket.h"
 
 #include <utility>
-#include "IoContext.h"
-#include "Coroutine/IoAwaitable.h"
+#include "Context/IoContext.h"
+#include "Coroutine/Awaitable.h"
 #include "Error.h"
 
 #if defined(_WIN32)
@@ -29,17 +29,8 @@ BEGIN_NS(ne::io)
 			::close(_handle);
 #endif
 		}
-	}
 
-	namespace
-	{
-		[[nodiscard]] ulonglong_t ToHandleValue(const socket_t _handle) noexcept
-		{
-			return static_cast<ulonglong_t>(_handle);
-		}
-
-		// 숫자 IP 를 sockaddr_storage 로 파싱(IPv4 우선, 실패 시 IPv6). DNS 는 상위 계층.
-		[[nodiscard]] bool_t ParseEndpoint(const Endpoint& _endpoint, sockaddr_storage& _out, int_t& _length) noexcept
+		bool_t ParseEndpoint(const Endpoint& _endpoint, sockaddr_storage& _out, int_t& _length) noexcept
 		{
 			const string_t ip{ _endpoint.ip };
 
@@ -63,6 +54,36 @@ BEGIN_NS(ne::io)
 
 			return false;
 		}
+
+		PeerAddress FormatAddress(const sockaddr_storage& _address) noexcept
+		{
+			char_t buffer[INET6_ADDRSTRLEN]{};
+			PeerAddress result;
+
+			if (_address.ss_family == AF_INET)
+			{
+				const auto* v4 = reinterpret_cast<const sockaddr_in*>(&_address);
+				::inet_ntop(AF_INET, &v4->sin_addr, buffer, sizeof(buffer));
+				result.port = ::ntohs(v4->sin_port);
+			}
+			else if (_address.ss_family == AF_INET6)
+			{
+				const auto* v6 = reinterpret_cast<const sockaddr_in6*>(&_address);
+				::inet_ntop(AF_INET6, &v6->sin6_addr, buffer, sizeof(buffer));
+				result.port = ::ntohs(v6->sin6_port);
+			}
+
+			result.ip = buffer;
+			return result;
+		}
+	}
+
+	namespace
+	{
+		[[nodiscard]] ulonglong_t ToHandleValue(const socket_t _handle) noexcept
+		{
+			return static_cast<ulonglong_t>(_handle);
+		}
 	}
 
 	Socket::Socket(SocketHandle&& _handle, IoContext& _context) noexcept
@@ -77,24 +98,24 @@ BEGIN_NS(ne::io)
 		return IoResult<Socket>::Ok(Socket{ SocketHandle{ _handle }, _context });
 	}
 
-	ne::Task<IoResult<Socket>> Socket::Connect(IoContext& _context, Endpoint _endpoint)
+	ne::Task<IoResult<Socket>> Socket::Connect(IoContext& _context, Endpoint _endpoint, const int_t _type, const int_t _protocol)
 	{
 		sockaddr_storage address{};
 		int_t addressLength = 0;
-		if (!ParseEndpoint(_endpoint, address, addressLength))
+		if (!detail::ParseEndpoint(_endpoint, address, addressLength))
 			co_return IoResult<Socket>::Error(IoError{ IoErrorKind::INVALID_BUFFER, "invalid endpoint ip" }.Context("[Socket/Connect]"));
 
 #if defined(_WIN32)
-		const socket_t raw = static_cast<socket_t>(::WSASocketW(address.ss_family, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED));
+		const socket_t raw = static_cast<socket_t>(::WSASocketW(address.ss_family, _type, _protocol, nullptr, 0, WSA_FLAG_OVERLAPPED));
 #elif defined(IS_POSIX)
-		const socket_t raw = ::socket(address.ss_family, SOCK_STREAM, 0);
+		const socket_t raw = ::socket(address.ss_family, _type, _protocol);
 #endif
 		if (raw == InvalidSocket)
 			co_return IoResult<Socket>::Error(IoError{ ne::OsError{ ne::LastOsError() } }.Context("[Socket/Connect socket]"));
 
 		SocketHandle socketHandle{ raw }; // 프레임이 소유 — 에러 시 소멸자가 닫고, 성공 시 Socket 으로 이동
 
-		auto result = co_await IoAwaitable{ _context, IoRequest{
+		auto result = co_await Awaitable{ _context, IoRequest{
 			.op = OpCode::Connect, .handle = ToHandleValue(raw),
 			.address = &address, .addressLength = addressLength } };
 		if (result.IsError())
@@ -105,7 +126,7 @@ BEGIN_NS(ne::io)
 
 	ne::Task<IoResult<Socket>> Socket::Accept()
 	{
-		auto result = co_await IoAwaitable{ *context, IoRequest{ .op = OpCode::Accept, .handle = ToHandleValue(handle.Get()) } };
+		auto result = co_await Awaitable{ *context, IoRequest{ .op = OpCode::Accept, .handle = ToHandleValue(handle.Get()) } };
 		if (result.IsError())
 			co_return IoResult<Socket>::Error(std::move(result.Error()).Context("[Socket/Accept]"));
 
@@ -115,16 +136,58 @@ BEGIN_NS(ne::io)
 
 	ne::Task<IoResult<std::size_t>> Socket::Receive(std::span<ne::byte_t> _buffer)
 	{
-		co_return co_await IoAwaitable{ *context, IoRequest{
+		co_return co_await Awaitable{ *context, IoRequest{
 			.op = OpCode::Receive, .handle = ToHandleValue(handle.Get()),
 			.buffer = _buffer.data(), .length = _buffer.size() } };
 	}
 
 	ne::Task<IoResult<std::size_t>> Socket::Send(std::span<const ne::byte_t> _buffer)
 	{
-		co_return co_await IoAwaitable{ *context, IoRequest{
+		co_return co_await Awaitable{ *context, IoRequest{
 			.op = OpCode::Send, .handle = ToHandleValue(handle.Get()),
 			.buffer = const_cast<ne::byte_t*>(_buffer.data()), .length = _buffer.size() } };
+	}
+
+	ne::Task<IoResult<std::size_t>> Socket::Receivev(const BufferChain& _chain)
+	{
+		co_return co_await Awaitable{ *context, IoRequest{
+			.op = OpCode::Receive, .handle = ToHandleValue(handle.Get()),
+			.length = _chain.TotalSize(), .chain = &_chain } };
+	}
+
+	ne::Task<IoResult<std::size_t>> Socket::Sendv(const BufferChain& _chain)
+	{
+		co_return co_await Awaitable{ *context, IoRequest{
+			.op = OpCode::Send, .handle = ToHandleValue(handle.Get()),
+			.length = _chain.TotalSize(), .chain = &_chain } };
+	}
+
+	ne::Task<IoResult<std::size_t>> Socket::SendTo(std::span<const ne::byte_t> _buffer, const Endpoint _destination)
+	{
+		sockaddr_storage address{};
+		int_t addressLength = 0;
+		if (!detail::ParseEndpoint(_destination, address, addressLength))
+			co_return IoResult<std::size_t>::Error(IoError{ IoErrorKind::INVALID_BUFFER, "invalid endpoint ip" }.Context("[Socket/SendTo]"));
+
+		co_return co_await Awaitable{ *context, IoRequest{
+			.op = OpCode::SendTo, .handle = ToHandleValue(handle.Get()),
+			.buffer = const_cast<ne::byte_t*>(_buffer.data()), .length = _buffer.size(),
+			.address = &address, .addressLength = addressLength } };
+	}
+
+	ne::Task<IoResult<ReceiveFromResult>> Socket::ReceiveFrom(std::span<ne::byte_t> _buffer)
+	{
+		sockaddr_storage fromAddress{};
+		int_t fromAddressLength = static_cast<int_t>(sizeof(fromAddress));
+
+		auto result = co_await Awaitable{ *context, IoRequest{
+			.op = OpCode::ReceiveFrom, .handle = ToHandleValue(handle.Get()),
+			.buffer = _buffer.data(), .length = _buffer.size(),
+			.fromAddress = &fromAddress, .fromAddressLength = &fromAddressLength } };
+		if (result.IsError())
+			co_return IoResult<ReceiveFromResult>::Error(std::move(result.Error()).Context("[Socket/ReceiveFrom]"));
+
+		co_return IoResult<ReceiveFromResult>::Ok(ReceiveFromResult{ result.Value(), detail::FormatAddress(fromAddress) });
 	}
 
 	ne::Result<void_t, IoError> Socket::Close()

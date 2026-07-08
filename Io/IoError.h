@@ -3,9 +3,20 @@
 //
 
 #pragma once
+#include "Type.h"
+
+// Base/Error.h 가 windef.h/errhandlingapi.h/winbase.h 를 windows.h 없이 직접 include 하는데,
+// 이 헤더가 번역 단위에서 가장 먼저 Windows SDK 헤더를 건드리면 winnt.h 가 필요로 하는
+// 아키텍처 매크로(_AMD64_ 등)가 아직 없어 "No Target Architecture"(C1189) 로 빌드가 깨진다.
+// Base/Error.h 자체는 건드리지 않고, 여기서 windows.h 를 먼저 포함해 그 전처리기 preamble이
+// 항상 먼저 실행되도록 한다 — windef.h 등은 include guard 로 이미 처리된 상태라 이후
+// Base/Error.h 의 include 는 아무 효과 없는 안전한 중복이 된다.
+#if defined(_WIN32)
+#	include <windows.h>
+#endif
+
 #include <cstdint>
 #include "Error.h"
-#include "Type.h"
 
 BEGIN_NS(ne::io)
 	// 등록 버퍼/capability 경로 전용 에러 분류. 기존 ne::Error 체계를 상속해

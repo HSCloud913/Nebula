@@ -10,6 +10,11 @@
 #	ifndef WIN32_LEAN_AND_MEAN
 #		define WIN32_LEAN_AND_MEAN
 #	endif
+#	ifndef NOMINMAX
+#		define NOMINMAX // windows.h 의 max/min 매크로가 std::max/std::min 을 텍스트 치환해 깨뜨리는 것을 방지
+#	endif
+
+#	include <windows.h>
 #	ifdef _WIN64
 //define something for Windows (64-bit only)
 #	endif

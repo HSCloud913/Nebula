@@ -16,7 +16,7 @@
 #include <chrono>
 #include "Type.h"
 #include "IoType.h"
-#include "Engine/IoOperation.h"
+#include "Context/IoOperation.h"
 
 BEGIN_NS(ne::io)
 	class IIoEngine
@@ -45,6 +45,18 @@ BEGIN_NS(ne::io)
 
 		// 런타임 기능 질의 — 상위 API 가 *_fixed/*_zc 경로 사용 여부를 이걸로만 판단한다.
 		[[nodiscard]] virtual bool_t Supports(Capability _capability) const = 0;
+
+		// 엔진 생성이 성공했는지(예: IOCP/io_uring 인스턴스 확보) — 예외 없이 값으로 실패를
+		// 드러내는 프로젝트 원칙에 따라, EngineFactory 가 프록시 생성 실패를 다형적으로
+		// 확인하고 리액터로 폴백하기 위해 필요하다. 각 구현체가 이미 갖고 있던 비가상
+		// IsValid() 를 여기로 승격한 것.
+		[[nodiscard]] virtual bool_t IsValid() const noexcept = 0;
+
+		// 등록 버퍼(zero-copy) provider 접근 — RIO(IocpEngine)/io_uring Fixed Buffer(IoUringEngine)
+		// 처럼 사전 등록이 필요한 엔진만 재정의한다. 기본 nullptr(미지원 — EpollEngine/WsaPollEngine).
+		// ReadFixed/WriteFixed/SendZeroCopy 는 provider 없이도 각 엔진이 폴백 동작을 제공할 수 있다
+		// (자세한 매트릭스는 Supports() 참고) — 이건 어디까지나 "사전 등록"이 필요한 진짜 등록 경로용.
+		[[nodiscard]] virtual class IRegisteredBufferProvider* AsRegisteredBufferProvider() noexcept { return nullptr; }
 	};
 
 END_NS

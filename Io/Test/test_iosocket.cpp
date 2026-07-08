@@ -8,7 +8,7 @@
 #include <chrono>
 #include <cstring>
 #include <span>
-#include "IoContext.h"
+#include "Context/IoContext.h"
 #include "Socket/Socket.h"
 #include "Coroutine/Task.h"
 #include "Engine/Iocp/IocpEngine.h"
@@ -104,6 +104,56 @@ TEST(SocketLevel3Test, SendThenReceive)
 	// sender/receiver 소멸자가 소켓을 닫는다(Adopt 로 소유권 이전).
 }
 
+// ── Socket: scatter/gather SendV → ReceiveV 왕복 (WSASend/WSARecv 멀티 WSABUF) ──
+TEST(SocketLevel3Test, SendVThenReceiveVRoundTrip)
+{
+	const WsaScope wsa;
+	IocpEngine engine;
+	ASSERT_TRUE(engine.IsValid());
+	IoContext context{ engine };
+
+	SOCKET rawA = INVALID_SOCKET;
+	SOCKET rawB = INVALID_SOCKET;
+	ASSERT_TRUE(MakeConnectedPair(rawA, rawB));
+
+	auto adoptedA = Socket::Adopt(context, static_cast<socket_t>(rawA));
+	auto adoptedB = Socket::Adopt(context, static_cast<socket_t>(rawB));
+	ASSERT_TRUE(adoptedA.IsOk());
+	ASSERT_TRUE(adoptedB.IsOk());
+	Socket sender = std::move(adoptedA.Value());
+	Socket receiver = std::move(adoptedB.Value());
+
+	char partA[] = "scatter-";
+	char partB[] = "gather-";
+	char partC[] = "socket";
+	BufferChain sendChain;
+	sendChain.Append(BufferView{ reinterpret_cast<ne::byte_t*>(partA), sizeof(partA) - 1 });
+	sendChain.Append(BufferView{ reinterpret_cast<ne::byte_t*>(partB), sizeof(partB) - 1 });
+	sendChain.Append(BufferView{ reinterpret_cast<ne::byte_t*>(partC), sizeof(partC) - 1 });
+	const std::size_t totalLength = sendChain.TotalSize();
+
+	auto sendTask = sender.Sendv(sendChain);
+	auto sendResult = Drive(context, sendTask);
+	ASSERT_TRUE(sendResult.IsOk()) << sendResult.Error().What();
+	EXPECT_EQ(sendResult.Value(), totalLength);
+
+	ne::byte_t bufferA[8]{};
+	ne::byte_t bufferB[7]{};
+	ne::byte_t bufferC[6]{};
+	BufferChain receiveChain;
+	receiveChain.Append(BufferView{ bufferA, sizeof(bufferA) });
+	receiveChain.Append(BufferView{ bufferB, sizeof(bufferB) });
+	receiveChain.Append(BufferView{ bufferC, sizeof(bufferC) });
+
+	auto receiveTask = receiver.Receivev(receiveChain);
+	auto receiveResult = Drive(context, receiveTask);
+	ASSERT_TRUE(receiveResult.IsOk()) << receiveResult.Error().What();
+	EXPECT_EQ(receiveResult.Value(), totalLength);
+	EXPECT_EQ(std::memcmp(bufferA, partA, sizeof(bufferA)), 0);
+	EXPECT_EQ(std::memcmp(bufferB, partB, sizeof(bufferB)), 0);
+	EXPECT_EQ(std::memcmp(bufferC, partC, sizeof(bufferC)), 0);
+}
+
 TEST(SocketLevel3Test, AdoptInvalidFails)
 {
 	IocpEngine engine;
@@ -172,6 +222,62 @@ TEST(SocketLevel3Test, AcceptConnectRoundTrip)
 	ASSERT_TRUE(receiveResult.IsOk()) << receiveResult.Error().What();
 	EXPECT_EQ(receiveResult.Value(), length);
 	EXPECT_EQ(std::memcmp(buffer, payload, length), 0);
+}
+
+// ── UDP(SOCK_DGRAM) SendTo → ReceiveFrom 왕복 — 발신자 주소까지 검증 ──
+TEST(SocketLevel3Test, SendToReceiveFromRoundTrip)
+{
+	const WsaScope wsa;
+	IocpEngine engine;
+	ASSERT_TRUE(engine.IsValid());
+	IoContext context{ engine };
+
+	// 두 UDP 소켓을 loopback 에 바인딩(포트는 OS 가 골라줌) — connect 없이 SendTo/ReceiveFrom 만 사용.
+	const SOCKET rawA = ::WSASocketW(AF_INET, SOCK_DGRAM, IPPROTO_UDP, nullptr, 0, WSA_FLAG_OVERLAPPED);
+	const SOCKET rawB = ::WSASocketW(AF_INET, SOCK_DGRAM, IPPROTO_UDP, nullptr, 0, WSA_FLAG_OVERLAPPED);
+	ASSERT_NE(rawA, INVALID_SOCKET);
+	ASSERT_NE(rawB, INVALID_SOCKET);
+
+	sockaddr_in addressA{};
+	addressA.sin_family = AF_INET;
+	addressA.sin_addr.s_addr = ::htonl(INADDR_LOOPBACK);
+	int_t addressALength = static_cast<int_t>(sizeof(addressA));
+	ASSERT_EQ(::bind(rawA, reinterpret_cast<sockaddr*>(&addressA), addressALength), 0);
+	ASSERT_EQ(::getsockname(rawA, reinterpret_cast<sockaddr*>(&addressA), &addressALength), 0);
+	const uint16_t portA = ::ntohs(addressA.sin_port);
+
+	sockaddr_in addressB{};
+	addressB.sin_family = AF_INET;
+	addressB.sin_addr.s_addr = ::htonl(INADDR_LOOPBACK);
+	int_t addressBLength = static_cast<int_t>(sizeof(addressB));
+	ASSERT_EQ(::bind(rawB, reinterpret_cast<sockaddr*>(&addressB), addressBLength), 0);
+	ASSERT_EQ(::getsockname(rawB, reinterpret_cast<sockaddr*>(&addressB), &addressBLength), 0);
+	const uint16_t portB = ::ntohs(addressB.sin_port);
+
+	auto adoptedA = Socket::Adopt(context, static_cast<socket_t>(rawA));
+	auto adoptedB = Socket::Adopt(context, static_cast<socket_t>(rawB));
+	ASSERT_TRUE(adoptedA.IsOk());
+	ASSERT_TRUE(adoptedB.IsOk());
+	Socket socketA = std::move(adoptedA.Value());
+	Socket socketB = std::move(adoptedB.Value());
+
+	const char payload[] = "udp-sendto-receivefrom";
+	const std::size_t length = sizeof(payload) - 1;
+
+	auto sendTask = socketA.SendTo(std::span<const ne::byte_t>{ reinterpret_cast<const ne::byte_t*>(payload), length },
+	                                Endpoint{ "127.0.0.1", portB });
+	auto sendResult = Drive(context, sendTask);
+	ASSERT_TRUE(sendResult.IsOk()) << sendResult.Error().What();
+	EXPECT_EQ(sendResult.Value(), length);
+
+	ne::byte_t buffer[64]{};
+	auto receiveTask = socketB.ReceiveFrom(std::span<ne::byte_t>{ buffer, sizeof(buffer) });
+	auto receiveResult = Drive(context, receiveTask);
+	ASSERT_TRUE(receiveResult.IsOk()) << receiveResult.Error().What();
+	EXPECT_EQ(receiveResult.Value().length, length);
+	EXPECT_EQ(std::memcmp(buffer, payload, length), 0);
+	EXPECT_EQ(receiveResult.Value().from.ip, "127.0.0.1");
+	EXPECT_EQ(receiveResult.Value().from.port, portA);
 }
 
 #endif // _WIN32

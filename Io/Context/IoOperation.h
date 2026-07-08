@@ -7,6 +7,7 @@
 #pragma once
 #include "Type.h"
 #include "IoType.h"
+#include "Buffer/BufferChain.h"
 
 BEGIN_NS(ne::io)
 	// 엔진이 제공하는 zero-copy / 오버헤드 감소 세부 기능. 엔진 서브클래스가 아니라 런타임
@@ -34,6 +35,8 @@ BEGIN_NS(ne::io)
 		WriteFixed,   // 등록 버퍼 write (Level 3.5)
 		SendZeroCopy, // 메모리→소켓 zero-copy send (Level 3.5)
 		SendFile,     // 파일→소켓 zero-copy 전송  (Level 3.5)
+		SendTo,       // 비연결형(UDP 등) 송신 — address/addressLength 가 매 호출 목적지
+		ReceiveFrom,  // 비연결형(UDP 등) 수신 — fromAddress/fromAddressLength 에 발신자 주소를 채움
 	};
 
 	// 엔진에 제출하는 단일 I/O 요청 (값 기반).
@@ -43,15 +46,23 @@ BEGIN_NS(ne::io)
 	//            정규화해 보관한다(Win64 SOCKET/HANDLE, POSIX fd 모두 수용). 엔진이 원 타입으로 복원.
 	struct IoRequest
 	{
-		OpCode      op{ OpCode::Read };
-		void*       userData{ static_cast<void*>(nullptr) };
+		OpCode op{ OpCode::Read };
+		void* userData{ nullptr };
 		ulonglong_t handle{ 0 };
-		void*       buffer{ static_cast<void*>(nullptr) };
+		void* buffer{ nullptr };
 		std::size_t length{ 0 };
 		ulonglong_t offset{ 0 };
-		uint_t      bufferId{ 0 };                            // 등록 버퍼 index/id (Level 3.5, 0 = 미사용)
-		const void* address{ static_cast<const void*>(nullptr) }; // Connect 대상 sockaddr (Accept/Connect 전용)
-		int_t       addressLength{ 0 };
+		ulonglong_t bufferId{ 0 };                            // 등록 버퍼 handle 값(BufferHandle.value) / io_uring buf_index (Level 3.5, 0 = 미사용)
+		const void* address{ nullptr }; // Connect 대상 sockaddr (Accept/Connect 전용)
+		int_t addressLength{ 0 };
+		ulonglong_t auxHandle{ 0 };                           // SendFile 전용 — 원본 파일(handle 은 Send 계열과 동일하게 목적지 소켓)
+		const BufferChain* chain{ nullptr }; // 지정 시 buffer/length 대신 이 체인으로 scatter/gather 수행
+
+		// ReceiveFrom 전용 — 호출자가 마련한 sockaddr_storage(fromAddress)와 그 용량/실채움길이
+		// (fromAddressLength, in: 버퍼 용량 / out: 엔진이 recvfrom·WSARecvFrom 완료 후 채운 실제
+		// 길이)를 넘긴다. 완료까지 두 포인터가 가리키는 메모리가 살아있어야 한다(buffer 와 동일 계약).
+		void* fromAddress{ nullptr };
+		int_t* fromAddressLength{ nullptr };
 	};
 
 	// 엔진이 돌려주는 단일 완료 결과 (값 기반).
@@ -59,7 +70,8 @@ BEGIN_NS(ne::io)
 	//   result <  0 : 실패, -(OS 에러코드). 상위에서 IoError 로 변환한다.
 	struct IoCompletion
 	{
-		void*      userData{ static_cast<void*>(nullptr) };
+		void* userData{ nullptr };
 		longlong_t result{ 0 };
 	};
+
 END_NS

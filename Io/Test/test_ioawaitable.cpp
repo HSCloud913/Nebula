@@ -7,8 +7,8 @@
 #include <chrono>
 #include <cstring>
 #include <stop_token>
-#include "IoContext.h"
-#include "Coroutine/IoAwaitable.h"
+#include "Context/IoContext.h"
+#include "Coroutine/Awaitable.h"
 #include "Coroutine/Task.h"
 #include "Engine/Iocp/IocpEngine.h"
 
@@ -57,12 +57,12 @@ namespace
 
 	ne::Task<IoResult<std::size_t>> ReceiveOp(IoContext& _context, const ulonglong_t _handle, void* _buffer, const std::size_t _length)
 	{
-		co_return co_await IoAwaitable{ _context, IoRequest{ .op = OpCode::Receive, .handle = _handle, .buffer = _buffer, .length = _length } };
+		co_return co_await Awaitable{ _context, IoRequest{ .op = OpCode::Receive, .handle = _handle, .buffer = _buffer, .length = _length } };
 	}
 
 	ne::Task<IoResult<std::size_t>> ReceiveOpCancellable(IoContext& _context, const ulonglong_t _handle, void* _buffer, const std::size_t _length, std::stop_token _token)
 	{
-		co_return co_await IoAwaitable{ _context, IoRequest{ .op = OpCode::Receive, .handle = _handle, .buffer = _buffer, .length = _length }, std::move(_token) };
+		co_return co_await Awaitable{ _context, IoRequest{ .op = OpCode::Receive, .handle = _handle, .buffer = _buffer, .length = _length }, std::move(_token) };
 	}
 
 	template <typename T>

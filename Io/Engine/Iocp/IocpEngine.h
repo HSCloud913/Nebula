@@ -15,59 +15,63 @@
 #if defined(_WIN32)
 
 #include "Engine/IIoEngine.h"
+#include "Engine/Iocp/Provider/RioProvider.h"
+#include <memory>
 #include <mutex>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 #include "Handle.h"
 
 BEGIN_NS(ne::io)
 	class IocpEngine final :public IIoEngine
 	{
 	public:
-		NEBULA_NON_COPYABLE_MOVABLE(IocpEngine)
-
 		explicit IocpEngine(ulong_t _concurrentThreads = 0) noexcept;
 		virtual ~IocpEngine() override = default;
 
+		NEBULA_NON_COPYABLE_MOVABLE(IocpEngine)
+
 	private:
-		// PostQueuedCompletionStatus 웨이크업 식별 키(널 overlapped 와 함께). 실제 op 완료와 구분.
-		static constexpr ulonglong_t WakeKey = 1;
-		// WaitCompletions 한 번에 수확할 최대 완료 개수 상한(스택 버퍼).
-		static constexpr int_t MaxBatch = 128;
+		static constexpr ulonglong_t WakeKey = 1; // PostQueuedCompletionStatus 웨이크업 식별 키(널 overlapped 와 함께). 실제 op 완료와 구분.
+		static constexpr ulonglong_t RioKey = 2; // RIO_CQ 를 이 키로 IOCP 에 바인딩해 일반 op 완료(key=0)/wake(key=WakeKey)와 구분한다.
+		static constexpr int_t MaxBatch = 128; // WaitCompletions 한 번에 수확할 최대 완료 개수 상한(스택 버퍼).
+		static constexpr std::size_t AcceptAddressBufferSize = 256; // AcceptEx 주소 출력 버퍼 크기 — 2 × (최대 sockaddr + 16). sockaddr_in6(28)+16=44, ×2=88 < 256.
+
+		struct IocpOperation
+		{ // 제출 op 당 컨텍스트. overlapped 는 반드시 첫 멤버.
+			OVERLAPPED overlapped{};
+			void* userData{ nullptr };
+			HANDLE handle{ nullptr }; // CancelIoEx 대상
+			OpCode op{ OpCode::Read };                     // 완료 후처리 분기용(Accept/Connect)
+			socket_t acceptSocket{ InvalidSocket };          // Accept: AcceptEx 로 채워질 새 소켓
+			socket_t contextSocket{ InvalidSocket };         // Accept: listen 소켓 / Connect: 연결 소켓 (SO_UPDATE_*)
+			longlong_t syncResult{ 0 };       // 동기 제출 실패/완료 시 미리 계산한 결과(성공은 바이트수, 실패는 -에러). hasSyncResult 일 때만 유효.
+			bool_t hasSyncResult{ false };
+			char acceptBuffer[AcceptAddressBufferSize]{}; // AcceptEx local/remote 주소 출력 버퍼
+			std::vector<WSABUF> wsaBuffers; // chain(scatter/gather) 요청일 때만 채움 — WSARecv/WSASend 에 넘길 배열, 완료까지 살아있어야 함
+		};
 
 		using IocpHandle = ne::Handle<HANDLE, decltype([](const HANDLE _handle) { ::CloseHandle(_handle); })>;
 
-		// AcceptEx 주소 출력 버퍼 크기 — 2 × (최대 sockaddr + 16). sockaddr_in6(28)+16=44, ×2=88 < 256.
-		static constexpr std::size_t AcceptAddressBufferSize = 256;
-
-		// 제출 op 당 컨텍스트. overlapped 는 반드시 첫 멤버.
-		struct IocpOperation
-		{
-			OVERLAPPED overlapped{};
-			void*      userData{ static_cast<void*>(nullptr) };
-			HANDLE     handle{ static_cast<HANDLE>(nullptr) }; // CancelIoEx 대상
-			OpCode     op{ OpCode::Read };                     // 완료 후처리 분기용(Accept/Connect)
-			socket_t   acceptSocket{ InvalidSocket };          // Accept: AcceptEx 로 채워질 새 소켓
-			socket_t   contextSocket{ InvalidSocket };         // Accept: listen 소켓 / Connect: 연결 소켓 (SO_UPDATE_*)
-			longlong_t syncResult{ 0 };       // 동기 제출 실패 시 미리 계산한 결과(-에러). hasSyncResult 일 때만 유효.
-			bool_t     hasSyncResult{ false };
-			char       acceptBuffer[AcceptAddressBufferSize]{}; // AcceptEx local/remote 주소 출력 버퍼
-		};
-
+	private:
 		IocpHandle iocpHandle;
 		std::mutex mutex;                                   // associated / inflight / 확장함수 보호(멀티스레드 Submit/WaitCompletions/Cancel)
 		std::unordered_set<ulonglong_t> associated;         // 이미 IOCP 에 연결된 handle 집합
 		std::unordered_map<void*, IocpOperation*> inflight; // userData → 진행 중 op (Cancel 조회용)
-		void*      acceptExPtr{ static_cast<void*>(nullptr) };  // LPFN_ACCEPTEX (lazy, WSAIoctl 로 획득)
-		void*      connectExPtr{ static_cast<void*>(nullptr) }; // LPFN_CONNECTEX
-		bool_t     extensionsLoaded{ false };
+		void* acceptExPtr{ nullptr };  // LPFN_ACCEPTEX (lazy, WSAIoctl 로 획득)
+		void* connectExPtr{ nullptr }; // LPFN_CONNECTEX
+		bool_t isExtensionsLoaded{ false };
+		std::unique_ptr<RioProvider> rioProvider; // SendZeroCopy(RIOSend) 전용 — lazy 초기화, IsValid() 와 무관하게 항상 생성
 
 	public:
-		void_t Submit(const IoRequest& _request) override;
-		[[nodiscard]] int_t WaitCompletions(IoCompletion* _out, int_t _max, std::chrono::milliseconds _timeout) override;
-		void_t Wake() override;
-		void_t Cancel(void* _userData) noexcept override;
-		[[nodiscard]] bool_t Supports(Capability _capability) const noexcept override;
+		virtual void_t Submit(const IoRequest& _request) override;
+		[[nodiscard]] virtual int_t WaitCompletions(IoCompletion* _out, int_t _max, std::chrono::milliseconds _timeout) override;
+		virtual void_t Wake() override;
+		virtual void_t Cancel(void* _userData) noexcept override;
+		[[nodiscard]] virtual bool_t Supports(Capability _capability) const noexcept override;
+		[[nodiscard]] virtual bool_t IsValid() const noexcept override { return static_cast<bool_t>(iocpHandle); }
+		[[nodiscard]] virtual IRegisteredBufferProvider* AsRegisteredBufferProvider() noexcept override { return rioProvider.get(); }
 
 	private:
 		// handle 을 IOCP 에 최초 1회 연결한다(이미 연결됐으면 no-op). mutex 를 이미 쥔 상태로 호출.
@@ -76,9 +80,10 @@ BEGIN_NS(ne::io)
 		[[nodiscard]] bool_t EnsureExtensions(socket_t _socket) noexcept;
 		// op 를 커널에 발행하고, 동기 실패면 -에러를 담은 완료를 IOCP 로 되돌린다.
 		void_t Dispatch(IocpOperation* _operation, const IoRequest& _request, HANDLE _handle) noexcept;
+		// RioKey 로 식별된 IOCP 엔트리 하나를 RIODequeueCompletion 으로 풀어 _out 에 채운다(최대 _max 개).
+		[[nodiscard]] int_t DrainRioCompletions(IoCompletion* _out, int_t _max) noexcept;
 
 	public:
-		[[nodiscard]] bool_t IsValid() const noexcept { return static_cast<bool_t>(iocpHandle); }
 		[[nodiscard]] HANDLE NativeHandle() const noexcept { return iocpHandle.Get(); }
 	};
 

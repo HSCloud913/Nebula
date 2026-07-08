@@ -4,10 +4,8 @@
 
 #pragma once
 #include <cstddef>
-#include <cstring>
 #include <vector>
 #include "BufferView.h"
-#include "Allocator/IAllocator.h"
 #include "Type.h"
 
 #if defined(IS_POSIX)
@@ -32,7 +30,7 @@ BEGIN_NS(ne::io)
 
 		// 앞에서 _skipBytes 만큼 건너뛴 나머지를 새 체인으로 반환 (세그먼트 재슬라이스, 소유권 없음 —
 		// BufferView 와 동일 원칙). Sendv() 가 partial write 를 반환했을 때 남은 부분만 재시도하는 용도.
-		[[nodiscard]] BufferChain Suffix(std::size_t _skipBytes) const
+		[[nodiscard]] BufferChain Suffix(const std::size_t _skipBytes) const
 		{
 			BufferChain result;
 			std::size_t remaining = _skipBytes;
@@ -52,7 +50,7 @@ BEGIN_NS(ne::io)
 		[[nodiscard]] std::size_t TotalSize() const noexcept
 		{
 			std::size_t total = 0;
-			for (const auto& segment : segments) total += segment.length;
+			for (const auto& [ptr, length] : segments) total += length;
 			return total;
 		}
 
@@ -65,24 +63,6 @@ BEGIN_NS(ne::io)
 			return v;
 		}
 #endif
-
-		[[nodiscard]] BufferView Flatten(ne::memory::IAllocator& _pool) const
-		{ // 연속 메모리가 필요할 때만 사용.
-			const std::size_t totalSize = TotalSize();
-
-			auto rawBuffer = BufferBlock::Acquire(_pool, totalSize);
-			if (rawBuffer.IsError()) return {};
-
-			BufferBlock* buffer = rawBuffer.Value();
-			ne::byte_t* destination = buffer->Data().data();
-			for (const auto& segment : segments)
-			{
-				std::memcpy(destination, segment.ptr, segment.length);
-				destination += segment.length;
-			}
-
-			return { buffer, buffer->Data().data(), totalSize };
-		}
 
 	public:
 		[[nodiscard]] bool_t IsEmpty() const noexcept { return segments.empty(); }

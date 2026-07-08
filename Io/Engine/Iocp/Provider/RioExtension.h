@@ -110,10 +110,12 @@ typedef struct _RIO_EXTENSION_FUNCTION_TABLE
 #define WSAID_MULTIPLE_RIO \
 	{ 0x8509e081, 0x96dd, 0x4005, { 0xb1, 0x65, 0x9e, 0x2e, 0xe8, 0xc7, 0x9e, 0x3f } }
 
+#endif // WSAID_MULTIPLE_RIO
+
+// mswsock.h 가 WSAID_MULTIPLE_RIO 는 정의하면서(즉 위 블록은 skip) 이 IOCTL 상수는 빠뜨린 SDK
+// 조합이 실측 확인됨 — WSAID_MULTIPLE_RIO 유무와 무관하게 독립적으로 폴백을 둔다.
 #ifndef SIO_GET_MULTIPLE_EXTENSION_FUNCTION_POINTERS
 #define SIO_GET_MULTIPLE_EXTENSION_FUNCTION_POINTERS _WSAIORW(IOC_WS2, 36)
 #endif
-
-#endif // WSAID_MULTIPLE_RIO
 
 #endif // _WIN32

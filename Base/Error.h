@@ -6,11 +6,7 @@
 #include <format>
 #include "Type.h"
 
-#if defined(_WIN32)
-#	include <windef.h>
-#	include <errhandlingapi.h>
-#	include <winbase.h>
-#elif defined(IS_POSIX)
+#if defined(IS_POSIX)
 #	include <cerrno>
 #   include <cstring>
 #endif
@@ -95,36 +91,6 @@ BEGIN_NS(ne)
 #else
 			return std::format("OS error [{}]", _code);
 #endif
-		}
-	};
-
-	class HttpError :public Error
-	{
-	public:
-		explicit HttpError(string_view_t _message)
-			: Error(_message) {}
-
-		HttpError(const uint16_t _statusCode, string_view_t _message)
-			: Error(HttpMessage(_statusCode, _message))
-			, statusCode(_statusCode) {}
-
-	private:
-		uint16_t statusCode{ 0 };
-
-	public:
-		HttpError& Context(string_view_t _context)
-		{
-			Error::Context(_context);
-			return *this;
-		}
-
-	public:
-		[[nodiscard]] uint16_t StatusCode() const noexcept { return statusCode; }
-
-	private:
-		[[nodiscard]] static string_t HttpMessage(const ulong_t _statusCode, string_view_t _message)
-		{
-			return std::format("[{}] {}", _statusCode, _message.empty() ? "Unknown error" : _message);
 		}
 	};
 

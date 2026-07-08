@@ -133,13 +133,113 @@ TEST(IoEngineTest, SocketSendThenReceiveRoundTrip)
 	::closesocket(b);
 }
 
+// ── SendFile(TransmitFile) — 파일 → 소켓 zero-copy 전송 ──
+TEST(IoEngineTest, SendFileZeroCopyRoundTrip)
+{
+	const WsaScope wsa;
+	IocpEngine engine;
+	ASSERT_TRUE(engine.IsValid());
+
+	const lpcstr_t path = "test_engine_sendfile.bin";
+	const char payload[] = "iocp-sendfile-zerocopy";
+	const std::size_t length = sizeof(payload) - 1;
+	{
+		const HANDLE file = ::CreateFileA(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+		ASSERT_NE(file, INVALID_HANDLE_VALUE);
+		ulong_t written = 0;
+		ASSERT_TRUE(::WriteFile(file, payload, static_cast<ulong_t>(length), &written, nullptr));
+		::CloseHandle(file);
+	}
+
+	const HANDLE sourceFile = ::CreateFileA(path, GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
+	ASSERT_NE(sourceFile, INVALID_HANDLE_VALUE);
+
+	SOCKET a = INVALID_SOCKET;
+	SOCKET b = INVALID_SOCKET;
+	ASSERT_TRUE(MakeConnectedPair(a, b));
+
+	int_t sendFileTag = 0;
+	IoRequest sendFile{ .op = OpCode::SendFile, .userData = &sendFileTag, .handle = static_cast<ulonglong_t>(a),
+	                    .length = length, .offset = 0, .auxHandle = reinterpret_cast<ulonglong_t>(sourceFile) };
+	engine.Submit(sendFile);
+	EXPECT_EQ(WaitFor(engine, &sendFileTag), static_cast<longlong_t>(length));
+
+	char receiveBuffer[64]{};
+	int_t receiveTag = 0;
+	IoRequest receive{ .op = OpCode::Receive, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b),
+	                   .buffer = receiveBuffer, .length = length };
+	engine.Submit(receive);
+	EXPECT_EQ(WaitFor(engine, &receiveTag), static_cast<longlong_t>(length));
+	EXPECT_EQ(std::memcmp(receiveBuffer, payload, length), 0);
+
+	::CloseHandle(sourceFile);
+	::closesocket(a);
+	::closesocket(b);
+	::DeleteFileA(path);
+}
+
+// ── SendZeroCopy(RIO) — 등록 버퍼로 메모리 → 소켓 zero-copy 전송 ──
+TEST(IoEngineTest, SendZeroCopyRegisteredBufferRoundTrip)
+{
+	const WsaScope wsa;
+	IocpEngine engine;
+	ASSERT_TRUE(engine.IsValid());
+
+	IRegisteredBufferProvider* provider = engine.AsRegisteredBufferProvider();
+	ASSERT_NE(provider, nullptr);
+
+	char region[64] = "iocp-rio-zerocopy-send";
+	const std::size_t length = std::strlen(region);
+	auto registered = provider->RegisterBuffer(std::span<ne::byte_t>{ reinterpret_cast<ne::byte_t*>(region), sizeof(region) });
+	ASSERT_TRUE(registered.IsOk()) << registered.Error().What();
+	const BufferHandle handle = registered.Value();
+
+	// RIOSend 를 호출할 소켓(a)은 WSA_FLAG_REGISTERED_IO 로 만들어야 한다 — 일반 소켓은
+	// RIORequestQueue 생성 자체가 WSAEOPNOTSUPP 로 실패한다. 대칭인 b(수신측)는 일반 소켓으로 충분.
+	const SOCKET listener = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	ASSERT_NE(listener, INVALID_SOCKET);
+	sockaddr_in address{};
+	address.sin_family = AF_INET;
+	address.sin_addr.s_addr = ::htonl(INADDR_LOOPBACK);
+	address.sin_port = 0;
+	int_t addressLength = static_cast<int_t>(sizeof(address));
+	ASSERT_EQ(::bind(listener, reinterpret_cast<sockaddr*>(&address), addressLength), 0);
+	ASSERT_EQ(::getsockname(listener, reinterpret_cast<sockaddr*>(&address), &addressLength), 0);
+	ASSERT_EQ(::listen(listener, 1), 0);
+
+	const SOCKET a = ::WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED | WSA_FLAG_REGISTERED_IO);
+	ASSERT_NE(a, INVALID_SOCKET);
+	ASSERT_EQ(::connect(a, reinterpret_cast<sockaddr*>(&address), addressLength), 0);
+	const SOCKET b = ::accept(listener, nullptr, nullptr);
+	ASSERT_NE(b, INVALID_SOCKET);
+	::closesocket(listener);
+
+	int_t sendTag = 0;
+	IoRequest send{ .op = OpCode::SendZeroCopy, .userData = &sendTag, .handle = static_cast<ulonglong_t>(a),
+	                .buffer = region, .length = length, .bufferId = handle.value };
+	engine.Submit(send);
+	EXPECT_EQ(WaitFor(engine, &sendTag), static_cast<longlong_t>(length));
+
+	char receiveBuffer[64]{};
+	int_t receiveTag = 0;
+	IoRequest receive{ .op = OpCode::Receive, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b),
+	                   .buffer = receiveBuffer, .length = length };
+	engine.Submit(receive);
+	EXPECT_EQ(WaitFor(engine, &receiveTag), static_cast<longlong_t>(length));
+	EXPECT_EQ(std::memcmp(receiveBuffer, region, length), 0);
+
+	provider->UnregisterBuffer(handle);
+	::closesocket(a);
+	::closesocket(b);
+}
+
 // ── Capability 매트릭스 (스펙 2.2) ──
 TEST(IoEngineTest, SupportsMatrix)
 {
 	const IocpEngine engine;
 	EXPECT_TRUE(engine.Supports(Capability::SendFileZeroCopy));
 	EXPECT_TRUE(engine.Supports(Capability::SendMemZeroCopy));
-	EXPECT_TRUE(engine.Supports(Capability::RecvOverheadReduced));
+	EXPECT_FALSE(engine.Supports(Capability::RecvOverheadReduced)); // ReadFixed/WriteFixed 는 일반 파일 I/O 폴백(RIO 는 소켓 전용)
 	EXPECT_FALSE(engine.Supports(Capability::RecvTrueZeroCopy));
 }
 
@@ -252,6 +352,8 @@ TEST(EpollEngineTest, Supports)
 {
 	const EpollEngine engine;
 	EXPECT_TRUE(engine.Supports(Capability::SendFileZeroCopy));
+	EXPECT_TRUE(engine.Supports(Capability::SendMemZeroCopy)); // MSG_ZEROCOPY
+	EXPECT_FALSE(engine.Supports(Capability::RecvOverheadReduced)); // 등록 버퍼 없음(plain epoll)
 	EXPECT_FALSE(engine.Supports(Capability::RecvTrueZeroCopy));
 }
 

@@ -11,47 +11,40 @@ set(HEADERS
         IoType.h
         IoError.h
         IoResult.h
-        IoContext.h
-        Coroutine/IoAwaitable.h
+        Context/IoContext.h
+        Coroutine/Awaitable.h
         File/File.h
         Socket/Socket.h
 
-        File/IIoFile.h
-
-        Buffer/BufferBlock.h
         Buffer/BufferView.h
         Buffer/BufferChain.h
 
-        Coroutine/Awaitable.h
-
-        Engine/ReactorType.h
-        Engine/ProactorType.h
-        Engine/IoCapability.h
-        Engine/IoOperation.h
+        Context/IoOperation.h
         Engine/IIoEngine.h
         Engine/IRegisteredBufferProvider.h
         Engine/IoUring/IoUringEngine.h
+        Engine/IoUring/Provider/IoUringProvider.h
         Engine/Epoll/EpollEngine.h
         Engine/Iocp/IocpEngine.h
-        Engine/Iocp/Rio/RioExtension.h
-        Engine/Iocp/Rio/RioProvider.h
+        Engine/Iocp/Provider/RioExtension.h
+        Engine/Iocp/Provider/RioProvider.h
+        Engine/WsaPoll/WsaPollEngine.h
 )
 
-# Phase 2: 엔진 인터페이스 완료기반 in-place 개조 중.
-# 구 인터페이스(Watch/RunOnce/SubmitSend)에 의존하는 AsyncFile / RioProvider 는
-# Level 1~3.5 재구축(Phase 3~7) 때 새 모델로 되살린다 — 지금은 빌드에서 제외.
 set(SOURCES
-        IoContext.cpp
+        Context/IoContext.cpp
         File/File.cpp
-        File/MemoryMapFile.cpp
         Socket/Socket.cpp
 )
 
 if (WIN32)
     list(APPEND SOURCES Engine/Iocp/IocpEngine.cpp)
+    list(APPEND SOURCES Engine/WsaPoll/WsaPollEngine.cpp)
+    list(APPEND SOURCES Engine/Iocp/Provider/RioProvider.cpp)
 elseif (UNIX AND NOT APPLE)
     list(APPEND SOURCES Engine/Epoll/EpollEngine.cpp)
     list(APPEND SOURCES Engine/IoUring/IoUringEngine.cpp)
+    list(APPEND SOURCES Engine/IoUring/Provider/IoUringProvider.cpp)
 endif ()
 
 add_library(${PROJECT_NAME} STATIC ${HEADERS} ${SOURCES})
@@ -63,6 +56,14 @@ target_include_directories(${PROJECT_NAME} PUBLIC
         ${CMAKE_SOURCE_DIR}/Memory
 )
 target_link_libraries(${PROJECT_NAME} PUBLIC NebulaBase NebulaConcurrency NebulaTime NebulaMemory)
+
+if (MSVC)
+    # 이 저장소 소스는 BOM 없는 UTF-8 이라, /utf-8 없이는 MSVC 가 시스템 코드페이지(한국어 Windows
+    # 는 CP949)로 소스를 잘못 해석한다. 한글 주석의 멀티바이트 시퀀스가 깨지면 토큰화 자체가
+    # 어긋나서, 전혀 상관없어 보이는 곳(예: 함수 끝의 return 문)에서 원인을 알기 어려운 연쇄
+    # 구문 오류(C4716 등)가 난다. PUBLIC 으로 전파해 NebulaIo 를 쓰는 소비자도 같은 문제를 피한다.
+    target_compile_options(${PROJECT_NAME} PUBLIC /utf-8)
+endif ()
 
 # IocpEngine.cpp 가 WSA*(Ws2_32) 와 TransmitFile(Mswsock) 을 호출한다. PUBLIC 으로 링크해
 # NebulaIo 를 쓰는 모든 소비자(Network, Ipc, 각 Test)가 자동 상속하게 한다 —

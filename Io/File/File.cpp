@@ -5,8 +5,8 @@
 #include "File.h"
 
 #include <utility>
-#include "IoContext.h"
-#include "Coroutine/IoAwaitable.h"
+#include "Context/IoContext.h"
+#include "Coroutine/Awaitable.h"
 #include "Error.h"
 
 #if defined(_WIN32)
@@ -86,16 +86,30 @@ BEGIN_NS(ne::io)
 
 	ne::Task<IoResult<std::size_t>> File::Read(std::span<ne::byte_t> _buffer, const ulonglong_t _offset)
 	{
-		co_return co_await IoAwaitable{ *context, IoRequest{
+		co_return co_await Awaitable{ *context, IoRequest{
 			.op = OpCode::Read, .handle = ToHandleValue(handle.Get()),
 			.buffer = _buffer.data(), .length = _buffer.size(), .offset = _offset } };
 	}
 
 	ne::Task<IoResult<std::size_t>> File::Write(std::span<const ne::byte_t> _buffer, const ulonglong_t _offset)
 	{
-		co_return co_await IoAwaitable{ *context, IoRequest{
+		co_return co_await Awaitable{ *context, IoRequest{
 			.op = OpCode::Write, .handle = ToHandleValue(handle.Get()),
 			.buffer = const_cast<ne::byte_t*>(_buffer.data()), .length = _buffer.size(), .offset = _offset } };
+	}
+
+	ne::Task<IoResult<std::size_t>> File::Readv(const BufferChain& _chain, const ulonglong_t _offset)
+	{
+		co_return co_await Awaitable{ *context, IoRequest{
+			.op = OpCode::Read, .handle = ToHandleValue(handle.Get()),
+			.length = _chain.TotalSize(), .offset = _offset, .chain = &_chain } };
+	}
+
+	ne::Task<IoResult<std::size_t>> File::Writev(const BufferChain& _chain, const ulonglong_t _offset)
+	{
+		co_return co_await Awaitable{ *context, IoRequest{
+			.op = OpCode::Write, .handle = ToHandleValue(handle.Get()),
+			.length = _chain.TotalSize(), .offset = _offset, .chain = &_chain } };
 	}
 
 	ne::Result<void_t, IoError> File::Close()

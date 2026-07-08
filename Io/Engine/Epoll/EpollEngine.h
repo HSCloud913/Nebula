@@ -9,21 +9,21 @@
 
 #pragma once
 #include "Type.h" // IS_POSIX 정의 — 아래 가드 전에 반드시 포함(빌트인 아님)
+
 #if defined(IS_POSIX)
+#	include "Engine/IIoEngine.h"
+#	include <mutex>
+#	include <vector>
+#	include <unordered_map>
 
-#include "Engine/IIoEngine.h"
-#include <mutex>
-#include <vector>
-#include <unordered_map>
-
-BEGIN_NS(ne::io)
+BEGIN_NS (ne::io)
 	class EpollEngine final :public IIoEngine
 	{
 	public:
-		NEBULA_NON_COPYABLE_MOVABLE(EpollEngine)
-
 		EpollEngine() noexcept;
 		virtual ~EpollEngine() override;
+
+		NEBULA_NON_COPYABLE_MOVABLE(EpollEngine)
 
 	private:
 		static constexpr int_t MaxEvents = 64;
@@ -32,25 +32,27 @@ BEGIN_NS(ne::io)
 		struct PendingOperation
 		{
 			IoRequest request;
-			bool_t    isWrite; // true=EPOLLOUT(write/send/connect), false=EPOLLIN(read/receive/accept)
+			bool_t isWrite; // true=EPOLLOUT(write/send/connect), false=EPOLLIN(read/receive/accept)
 		};
 
-		int_t      epollFd{ -1 };
-		int_t      wakeEventFd{ -1 };
-		bool_t     valid{ false };
+	private:
+		int_t epollFd{ -1 };
+		int_t wakeEventFd{ -1 };
+		bool_t isValid{ false };
 		std::mutex mutex;
 		std::unordered_map<void*, PendingOperation> pending;   // userData → 대기 op
-		std::unordered_map<int_t, void*>            readWaiter;  // fd → EPOLLIN 대기 userData
-		std::unordered_map<int_t, void*>            writeWaiter; // fd → EPOLLOUT 대기 userData
-		std::vector<IoCompletion>                   ready;        // 즉시/합성 완료
-		std::vector<void*>                          pendingCancels;
+		std::unordered_map<int_t, void*> readWaiter;  // fd → EPOLLIN 대기 userData
+		std::unordered_map<int_t, void*> writeWaiter; // fd → EPOLLOUT 대기 userData
+		std::vector<IoCompletion> ready;        // 즉시/합성 완료
+		std::vector<void*> pendingCancels;
 
 	public:
-		void_t Submit(const IoRequest& _request) override;
-		[[nodiscard]] int_t WaitCompletions(IoCompletion* _out, int_t _max, std::chrono::milliseconds _timeout) override;
-		void_t Wake() override;
-		void_t Cancel(void* _userData) noexcept override;
-		[[nodiscard]] bool_t Supports(Capability _capability) const noexcept override;
+		virtual void_t Submit(const IoRequest& _request) override;
+		[[nodiscard]] virtual int_t WaitCompletions(IoCompletion* _out, int_t _max, std::chrono::milliseconds _timeout) override;
+		virtual void_t Wake() override;
+		virtual void_t Cancel(void* _userData) noexcept override;
+		[[nodiscard]] virtual bool_t Supports(Capability _capability) const noexcept override;
+		[[nodiscard]] virtual bool_t IsValid() const noexcept override { return isValid; }
 
 	private:
 		// op 를 즉시 non-blocking 수행. true=완료(_result 설정), false=EAGAIN(epoll 대기 필요).
@@ -58,9 +60,6 @@ BEGIN_NS(ne::io)
 		[[nodiscard]] static bool_t IsWriteDirection(OpCode _op) noexcept;
 		void_t UpdateEpoll(int_t _fd) noexcept;                 // readWaiter/writeWaiter 기준 epoll_ctl ADD/MOD/DEL
 		void_t ProcessCancels();
-
-	public:
-		[[nodiscard]] bool_t IsValid() const noexcept { return valid; }
 	};
 
 END_NS

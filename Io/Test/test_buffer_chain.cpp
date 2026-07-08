@@ -10,10 +10,9 @@ using namespace ne::io;
 
 namespace
 {
-	// 소유권 없는 BufferView — Suffix()/TotalSize() 는 owner 를 보지 않으므로 nullptr 로 충분.
 	BufferView MakeView(ne::byte_t* _ptr, const std::size_t _length)
 	{
-		return { nullptr, _ptr, _length };
+		return { _ptr, _length };
 	}
 }
 
