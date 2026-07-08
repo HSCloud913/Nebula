@@ -9,6 +9,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(HEADERS
         IoType.h
+        IoError.h
+        IoResult.h
+        IoContext.h
+        Coroutine/IoAwaitable.h
+        File/File.h
+        Socket/Socket.h
 
         File/IIoFile.h
 
@@ -18,15 +24,27 @@ set(HEADERS
 
         Coroutine/Awaitable.h
 
+        Engine/ReactorType.h
+        Engine/ProactorType.h
+        Engine/IoCapability.h
+        Engine/IoOperation.h
         Engine/IIoEngine.h
+        Engine/IRegisteredBufferProvider.h
         Engine/IoUring/IoUringEngine.h
         Engine/Epoll/EpollEngine.h
         Engine/Iocp/IocpEngine.h
+        Engine/Iocp/Rio/RioExtension.h
+        Engine/Iocp/Rio/RioProvider.h
 )
 
+# Phase 2: 엔진 인터페이스 완료기반 in-place 개조 중.
+# 구 인터페이스(Watch/RunOnce/SubmitSend)에 의존하는 AsyncFile / RioProvider 는
+# Level 1~3.5 재구축(Phase 3~7) 때 새 모델로 되살린다 — 지금은 빌드에서 제외.
 set(SOURCES
-        File/AsyncFile.cpp
+        IoContext.cpp
+        File/File.cpp
         File/MemoryMapFile.cpp
+        Socket/Socket.cpp
 )
 
 if (WIN32)
@@ -45,6 +63,14 @@ target_include_directories(${PROJECT_NAME} PUBLIC
         ${CMAKE_SOURCE_DIR}/Memory
 )
 target_link_libraries(${PROJECT_NAME} PUBLIC NebulaBase NebulaConcurrency NebulaTime NebulaMemory)
+
+# IocpEngine.cpp 가 WSA*(Ws2_32) 와 TransmitFile(Mswsock) 을 호출한다. PUBLIC 으로 링크해
+# NebulaIo 를 쓰는 모든 소비자(Network, Ipc, 각 Test)가 자동 상속하게 한다 —
+# 소비자마다 Mswsock 을 빠뜨려 링크 실패하는 문제를 원천 차단.
+if (WIN32)
+    # ntdll: RtlNtStatusToDosError (완료 entry.Internal NTSTATUS → Win32 에러코드 변환)
+    target_link_libraries(${PROJECT_NAME} PUBLIC Ws2_32 Mswsock ntdll)
+endif ()
 
 if (UNIX AND NOT APPLE)
     find_package(PkgConfig REQUIRED)

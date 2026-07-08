@@ -21,6 +21,25 @@ BEGIN_NS(ne::network)
 		IPv6,
 	};
 
+	// 소켓 생성 옵션 (비트플래그). 기본 None 은 현행 동작(::socket).
+	enum class SocketCreateFlags : uint32_t
+	{
+		None         = 0,
+		// Windows: WSA_FLAG_REGISTERED_IO 로 생성해 RIO(RIORegisterBuffer/RIOCreateRequestQueue)를 쓸 수 있게 한다.
+		// POSIX: no-op — io_uring registered buffer 는 소켓 생성 플래그가 필요 없다.
+		RegisteredIo = 1u << 0,
+	};
+
+	[[nodiscard]] constexpr SocketCreateFlags operator|(const SocketCreateFlags _a, const SocketCreateFlags _b) noexcept
+	{
+		return static_cast<SocketCreateFlags>(static_cast<uint32_t>(_a) | static_cast<uint32_t>(_b));
+	}
+
+	[[nodiscard]] constexpr bool_t HasFlag(const SocketCreateFlags _set, const SocketCreateFlags _bit) noexcept
+	{
+		return (static_cast<uint32_t>(_set) & static_cast<uint32_t>(_bit)) == static_cast<uint32_t>(_bit);
+	}
+
 	// 소켓 RAII 래퍼.
 	// 역할: fd 생성/소멸, Connect/Bind/Listen/Accept, 소켓 옵션.
 	// 송수신 없음 — 송수신은 상위 Stream 레이어 책임.
@@ -56,7 +75,8 @@ BEGIN_NS(ne::network)
 		int_t protocol{};
 
 	public:
-		[[nodiscard]] static Result<Socket, OsError> Create(AddressFamily _family, int_t _type, int_t _protocol);
+		[[nodiscard]] static Result<Socket, OsError> Create(AddressFamily _family, int_t _type, int_t _protocol,
+			SocketCreateFlags _flags = SocketCreateFlags::None);
 
 		// _address 가 IPv4/IPv6 리터럴이면 파싱만으로, 호스트명이면 DNS 조회로 패밀리를 추정.
 		// Create 에 넘길 패밀리를 미리 정하는 용도 — 실제 주소 해석은 Bind/Connect 가

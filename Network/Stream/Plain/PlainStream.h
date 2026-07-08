@@ -82,6 +82,23 @@ BEGIN_NS(ne::network)
 			ne::io::file_t _fileFd, std::size_t _offset, std::size_t _size,
 			const ne::io::BufferChain& _head = {}, const ne::io::BufferChain& _tail = {});
 
+		// zero-copy 소켓→파일 수신 (SendFile 의 대칭). 소켓에서 최대 _size 바이트를 받아 _fileFd
+		// 의 _offset 위치부터 기록한다. 반환값: 실제 기록한 총 바이트(상대가 _size 전에 닫으면 더 작음).
+		//   Linux   : splice(2) (소켓→파이프→파일) 로 유저공간을 거치지 않는 zero-copy.
+		//   Windows : 커널 소켓→파일 zero-copy primitive 가 없어 recv+write 폴백(비 zero-copy).
+		//             _fileFd 는 동기 핸들이어야 한다(FILE_FLAG_OVERLAPPED 아님).
+		[[nodiscard]] ne::Task<ne::Result<std::size_t, ne::OsError>> ReceiveFile(
+			ne::io::file_t _fileFd, std::size_t _offset, std::size_t _size);
+
+	public: /* 등록 버퍼 경로 — SendFile/ReceiveFile 과 같은 IStream 밖 Plain 전용 (transport 최적화) */
+		// 미리 등록한 버퍼(RegisteredBuffer)로 송수신한다. 엔진이 IoCapability::RegisteredIo 를
+		// 제공하면(RIO / io_uring fixed) 검증·lock 을 생략한 fast path 로 가고, 없으면 일반
+		// Send/Receive 로 **투명 폴백**한다 — 호출자는 플랫폼/등록 여부를 몰라도 된다(에러 타입도
+		// 일반 경로와 동일한 OsError 유지). 등록 자체는 Engine().AsRegisteredBufferProvider() 로
+		// 수행하며 그 경로만 IoError 를 쓴다.
+		[[nodiscard]] ne::Task<ne::Result<std::size_t, ne::OsError>> SendRegistered(const ne::io::RegisteredBuffer& _buffer);
+		[[nodiscard]] ne::Task<ne::Result<std::size_t, ne::OsError>> ReceiveRegistered(ne::io::RegisteredBuffer& _buffer);
+
 	public:
 		[[nodiscard]] socket_t Handle() const noexcept { return socket.Handle(); }
 		[[nodiscard]] IoMode Mode() const noexcept { return ioMode; }

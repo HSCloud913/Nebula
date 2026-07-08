@@ -72,9 +72,22 @@ BEGIN_NS(ne::network)
 
 
 
-	Result<Socket, OsError> Socket::Create(const AddressFamily _family, const int_t _type, const int_t _protocol)
+	Result<Socket, OsError> Socket::Create(const AddressFamily _family, const int_t _type, const int_t _protocol,
+		const SocketCreateFlags _flags)
 	{
-		const socket_t fd = ::socket(_family == AddressFamily::IPv6 ? AF_INET6 : AF_INET, _type, _protocol);
+		const int_t af = (_family == AddressFamily::IPv6) ? AF_INET6 : AF_INET;
+
+	#if defined(_WIN32)
+		// RIO 소켓은 WSASocketW + WSA_FLAG_REGISTERED_IO 로 만들어야 RIORegisterBuffer/
+		// RIOCreateRequestQueue 가 성립한다. WSA_FLAG_OVERLAPPED 도 함께 줘 IOCP 완료 통지를 쓴다.
+		const socket_t fd = HasFlag(_flags, SocketCreateFlags::RegisteredIo)
+			? ::WSASocketW(af, _type, _protocol, nullptr, 0, WSA_FLAG_OVERLAPPED | WSA_FLAG_REGISTERED_IO)
+			: ::socket(af, _type, _protocol);
+	#elif defined(IS_POSIX)
+		(void)_flags; // RegisteredIo 는 POSIX 소켓 생성에 영향 없음(io_uring 등록버퍼는 소켓 플래그 불요).
+		const socket_t fd = ::socket(af, _type, _protocol);
+	#endif
+
 		if (fd == InvalidSocket)
 			return ne::Result<Socket, ne::OsError>::Error(
 				ne::OsError{ LastOsError() }.Context("[Socket/Create]")

@@ -8,6 +8,7 @@
 //   3. 소켓 이벤트 + 파일 I/O 가 같은 엔진에서 경쟁 없이 동작한다.
 
 #include <gtest/gtest.h>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstring>
@@ -37,6 +38,7 @@ static void DriveEngine(IIoEngine& _engine, const std::atomic<bool>& _done,
 #include <unistd.h>
 #include "Engine/Epoll/EpollEngine.h"
 #include "Engine/IoUring/IoUringEngine.h"
+#include "Coroutine/Awaitable.h"
 
 // ── EpollEngine: 소켓 이벤트 콜백 디스패치 ───────────────────────────────────
 TEST(IoEngineIntegration, EpollSocketDispatch)
@@ -233,6 +235,74 @@ TEST(IoEngineIntegration, IoUringSocketAndFileConcurrent)
     fs::remove(path);
 }
 
+// ── 진행 중 Proactor 수신을 Task 중도 폐기 → 완료가 도착해도 UAF/재개 없어야 함 (1b) ──
+// 수신 버퍼는 코루틴 프레임 밖(테스트 프레임)에 둔다 — 검증 대상은 IoContext(완료 통지) 수명이지
+// 버퍼 수명이 아니다. 폐기 후 완료가 도착하면 엔진은 resume 없이 IoContext 를 해제해야 한다.
+TEST(IoEngineIntegration, IoUringAbandonedProactorReceiveIsSafe)
+{
+    IoUringEngine engine;
+    ASSERT_TRUE(engine.IsValid());
+
+    int fds[2];
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+
+    std::array<ne::byte_t, 16> rbuf{};
+    std::atomic<bool> resumed{ false };
+
+    {
+        auto task = [&]() -> ne::Task<void>
+        {
+            (void)co_await ReceiveSubmitAwaitable{ engine, static_cast<socket_t>(fds[0]), rbuf.data(), rbuf.size() };
+            resumed.store(true, std::memory_order_release); // abandoned 면 절대 실행되면 안 됨
+        }();
+        task.Resume(); // 수신 제출 + suspend (데이터 없음 → pending)
+    } // task 소멸 → 프레임 파괴 → IoContextHolder 소멸자가 abandoned=true
+
+    const char msg[4] = { 'a', 'b', 'c', 'd' };
+    ASSERT_EQ(::write(fds[1], msg, sizeof(msg)), static_cast<ssize_t>(sizeof(msg)));
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+    while (std::chrono::steady_clock::now() < deadline) engine.RunOnce(10);
+
+    EXPECT_FALSE(resumed.load()) << "abandoned coroutine must never resume";
+
+    ::close(fds[0]);
+    ::close(fds[1]);
+}
+
+// EpollEngine 은 reactor-emulated — abandon 시 콜백이 recv 를 건너뛰고 IoContext 만 해제하는 분기를 검증.
+TEST(IoEngineIntegration, EpollAbandonedProactorReceiveIsSafe)
+{
+    EpollEngine engine;
+    ASSERT_TRUE(engine.IsValid());
+
+    int fds[2];
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+
+    std::array<ne::byte_t, 16> rbuf{};
+    std::atomic<bool> resumed{ false };
+
+    {
+        auto task = [&]() -> ne::Task<void>
+        {
+            (void)co_await ReceiveSubmitAwaitable{ engine, static_cast<socket_t>(fds[0]), rbuf.data(), rbuf.size() };
+            resumed.store(true, std::memory_order_release);
+        }();
+        task.Resume();
+    }
+
+    const char msg[4] = { 'a', 'b', 'c', 'd' };
+    ASSERT_EQ(::write(fds[1], msg, sizeof(msg)), static_cast<ssize_t>(sizeof(msg)));
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+    while (std::chrono::steady_clock::now() < deadline) engine.RunOnce(10);
+
+    EXPECT_FALSE(resumed.load()) << "abandoned coroutine must never resume";
+
+    ::close(fds[0]);
+    ::close(fds[1]);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 #elif defined(_WIN32)
 
@@ -240,6 +310,8 @@ TEST(IoEngineIntegration, IoUringSocketAndFileConcurrent)
 #include <ws2tcpip.h>
 #include "Engine/Iocp/IocpEngine.h"
 #include "Coroutine/Awaitable.h"
+#include "Buffer/BufferBlock.h"
+#include "Allocator/PoolAllocator.h"
 
 // 로컬루프백 TCP 소켓 페어 생성 헬퍼
 static bool MakeSocketPair(SOCKET& _s1, SOCKET& _s2)
@@ -531,6 +603,118 @@ TEST(IoEngineIntegration, IocpTransmitFile)
     ::closesocket(s1);
     ::closesocket(s2);
     fs::remove(path);
+}
+
+// ── IocpEngine: 진행 중 Proactor 수신을 Task 중도 폐기 → 완료가 도착해도 UAF/재개 없어야 함 (1b) ──
+// 수신 버퍼는 코루틴 프레임 밖(테스트 프레임)에 둔다 — 검증 대상은 IoContext(완료 통지) 수명이지
+// 버퍼 수명이 아니다. 폐기 후 WSARecv 완료가 IOCP 로 통지되면 엔진은 resume 없이 IoContext 를 해제해야 한다.
+TEST(IoEngineIntegration, IocpAbandonedProactorReceiveIsSafe)
+{
+    IocpEngine engine;
+    ASSERT_TRUE(engine.IsValid());
+
+    SOCKET s1 = INVALID_SOCKET;
+    SOCKET s2 = INVALID_SOCKET;
+    ASSERT_TRUE(MakeSocketPair(s1, s2));
+
+    std::array<ne::byte_t, 16> rbuf{};
+    std::atomic<bool> resumed{ false };
+
+    {
+        auto task = [&]() -> ne::Task<void>
+        {
+            (void)co_await ReceiveSubmitAwaitable{ engine, static_cast<socket_t>(s1), rbuf.data(), rbuf.size() };
+            resumed.store(true, std::memory_order_release); // abandoned 면 절대 실행되면 안 됨
+        }();
+        task.Resume(); // WSARecv 제출 + suspend (데이터 없음 → pending)
+    } // task 소멸 → 프레임 파괴 → IoContextHolder 소멸자가 abandoned=true
+
+    const char msg[4] = { 'a', 'b', 'c', 'd' };
+    ASSERT_NE(::send(s2, msg, sizeof(msg), 0), SOCKET_ERROR);
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+    while (std::chrono::steady_clock::now() < deadline) engine.RunOnce(10);
+
+    EXPECT_FALSE(resumed.load()) << "abandoned coroutine must never resume";
+
+    ::closesocket(s1);
+    ::closesocket(s2);
+}
+
+// ── #4: Proactor 수신 버퍼는 op 완료 전 호출자가 ref 를 놓아도 살아있어야 한다 ──
+// 커널이 비동기로 write 하는 버퍼가 완료 전 풀로 반납되면 UAF. IoContext 가 잡은 ref 로
+// op 진행 중에는 살아있고, 완료 후 정확히 반납되는지를 pool.Available() 로 직접 검증.
+TEST(IoEngineIntegration, IocpProactorBufferOutlivesCallerRelease)
+{
+    IocpEngine engine;
+    ASSERT_TRUE(engine.IsValid());
+
+    SOCKET s1 = INVALID_SOCKET;
+    SOCKET s2 = INVALID_SOCKET;
+    ASSERT_TRUE(MakeSocketPair(s1, s2));
+
+    ne::memory::PoolAllocator pool(256, 4);
+    auto blockRes = BufferBlock::Acquire(pool, 64);
+    ASSERT_TRUE(blockRes.IsOk());
+    BufferBlock* block = blockRes.Value(); // refCount 1 (호출자 소유)
+    ASSERT_EQ(pool.Available(), 3u) << "one block acquired";
+
+    std::atomic<bool> done{ false };
+    ne::Result<std::size_t, ne::OsError> result = ne::Result<std::size_t, ne::OsError>::Ok(0);
+
+    auto task = [&]() -> ne::Task<void>
+    {
+        const auto span = block->Data();
+        result = co_await ReceiveSubmitAwaitable{ engine, static_cast<socket_t>(s1), span.data(), span.size(), block };
+        done.store(true, std::memory_order_release);
+    }();
+    task.Resume(); // WSARecv 제출 → awaitable 이 block 을 AddRef (refCount 2)
+
+    // 호출자가 즉시 자기 ref 를 놓는다 — 수정 전이라면 완료 전에 풀로 반납돼(커널이 freed 버퍼에 write) UAF.
+    block->Release();
+
+    // op 진행 중 — IoContext 가 ref 를 쥐고 있으므로 블록은 아직 살아있어야 한다(반납 X).
+    EXPECT_EQ(pool.Available(), 3u) << "buffer must stay alive while the proactor op is in flight";
+
+    const char msg[] = { 'h', 'e', 'l', 'l', 'o' };
+    ASSERT_NE(::send(s2, msg, sizeof(msg), 0), SOCKET_ERROR);
+
+    DriveEngine(engine, done, std::chrono::milliseconds(2000));
+    ASSERT_TRUE(done.load());
+    ASSERT_TRUE(result.IsOk()) << result.Error().What();
+    EXPECT_EQ(result.Value(), sizeof(msg));
+
+    // 완료로 awaitable(→ IoContext) 소멸 → 마지막 ref 해제 → 블록이 풀로 반납됐어야 한다.
+    EXPECT_EQ(pool.Available(), 4u) << "buffer must be released back to the pool after completion";
+
+    ::closesocket(s1);
+    ::closesocket(s2);
+}
+
+// ── IocpEngine: RIO 등록 버퍼 provider — capability 광고 + register/unregister ──
+TEST(IoEngineIntegration, IocpRegisteredBufferProvider)
+{
+    IocpEngine engine;
+    ASSERT_TRUE(engine.IsValid());
+
+    // capability 에 RegisteredIo 가 광고돼야 하고, provider 접근자가 non-null 이어야 한다.
+    EXPECT_TRUE(HasCapability(engine.Capabilities(), IoCapability::RegisteredIo));
+    auto* provider = engine.AsRegisteredBufferProvider();
+    ASSERT_NE(provider, nullptr);
+
+    // 실제 등록 → 유효 핸들 (lazy 로 RIO 테이블 + 공유 CQ 가 이때 초기화된다).
+    std::array<ne::byte_t, 4096> region{};
+    auto reg = provider->RegisterBuffer(std::span<ne::byte_t>{ region });
+    ASSERT_TRUE(reg.IsOk()) << reg.Error().What();
+    EXPECT_TRUE(reg.Value().IsValid());
+
+    // 해제는 크래시/에러 없이 수행돼야 한다.
+    provider->UnregisterBuffer(reg.Value());
+
+    // 빈 영역은 InvalidBuffer 로 거부.
+    auto empty = provider->RegisterBuffer(std::span<ne::byte_t>{});
+    ASSERT_TRUE(empty.IsError());
+    EXPECT_EQ(empty.Error().Kind(), IoErrorKind::INVALID_BUFFER);
 }
 
 #endif // platform

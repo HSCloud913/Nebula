@@ -1,52 +1,66 @@
 //
 // Created by hscloud on 25. 6. 29.
 //
+// Level 0 — Linux epoll 백엔드(Reactor). readiness 알림을 받아 read/write 를 직접 수행하고
+// synthetic completion 을 만들어 완료 기반 IIoEngine 계약(Submit/WaitCompletions)으로 노출한다.
+//   Submit          : op 를 즉시 non-blocking 시도. 완료면 합성 완료 큐로, EAGAIN 이면 epoll 등록.
+//   WaitCompletions : 합성 완료 배출 → epoll_wait → 준비된 fd 의 대기 op 를 수행해 완료 생성.
+//   Wake / Cancel   : eventfd / 지연취소(-ECANCELED 합성 완료).
 
 #pragma once
+#include "Type.h" // IS_POSIX 정의 — 아래 가드 전에 반드시 포함(빌트인 아님)
 #if defined(IS_POSIX)
 
-#include <unordered_map>
 #include "Engine/IIoEngine.h"
-#include "Handle.h"
+#include <mutex>
+#include <vector>
+#include <unordered_map>
 
 BEGIN_NS(ne::io)
 	class EpollEngine final :public IIoEngine
 	{
 	public:
-		EpollEngine();
-		virtual ~EpollEngine() override = default;
-
 		NEBULA_NON_COPYABLE_MOVABLE(EpollEngine)
 
-	private: // epoll_wait 한 번에 가져올 수 있는 최대 이벤트 개수.
-		static constexpr int MaxEvents = 64;
+		EpollEngine() noexcept;
+		virtual ~EpollEngine() override;
 
 	private:
-		using EpollFdHandle = ne::Handle<int_t, decltype([](const int_t _fd) { ::close(_fd); }), -1>;
+		static constexpr int_t MaxEvents = 64;
 
-		EpollFdHandle epollFd;
-		std::unordered_map<socket_t, WatchSlots> watches; // fd 별 Read/Write 방향 독립 감시
-		ne::time::TimerWheel* timerWheel{ nullptr };
+		// readiness 대기 중인 op — 준비되면 그대로 재수행한다.
+		struct PendingOperation
+		{
+			IoRequest request;
+			bool_t    isWrite; // true=EPOLLOUT(write/send/connect), false=EPOLLIN(read/receive/accept)
+		};
 
-	public: // Socket Reactor
-		[[nodiscard]] virtual ne::Result<void, ne::OsError> Watch(socket_t _fd, uint32_t _events, IoCallback _callback) override;
-		[[nodiscard]] virtual ne::Result<void, ne::OsError> Unwatch(socket_t _fd, uint32_t _events = IoEvent::Read | IoEvent::Write) override;
-
-	public: // Socket Proactor — 내부적으로 epoll watch + recv/send 로 에뮬레이션
-		[[nodiscard]] virtual ne::Result<void, ne::OsError> SubmitSend(socket_t _fd, const void* _buffer, std::size_t _length, IoContext* _context) noexcept override;
-		[[nodiscard]] virtual ne::Result<void, ne::OsError> SubmitReceive(socket_t _fd, void* _buffer, std::size_t _length, IoContext* _context) noexcept override;
-
-	public: // Common
-		[[nodiscard]] virtual ne::Result<void, ne::OsError> RunOnce(ne::int_t _timeoutMs = -1) override;
-		virtual void SetTimerWheel(ne::time::TimerWheel* _wheel) noexcept override { timerWheel = _wheel; }
-
-	private: // 이벤트 변환
-		static uint32_t ToEpollEvents(uint32_t _events) noexcept;
-		static uint32_t FromEpollEvents(uint32_t _events) noexcept;
-		static uint32_t CombinedInterest(const WatchSlots& _slots) noexcept; // read/write 슬롯 중 활성(callback 존재)인 쪽의 이벤트만 모아 epoll_ctl 에 넘길 마스크를 만든다.
+		int_t      epollFd{ -1 };
+		int_t      wakeEventFd{ -1 };
+		bool_t     valid{ false };
+		std::mutex mutex;
+		std::unordered_map<void*, PendingOperation> pending;   // userData → 대기 op
+		std::unordered_map<int_t, void*>            readWaiter;  // fd → EPOLLIN 대기 userData
+		std::unordered_map<int_t, void*>            writeWaiter; // fd → EPOLLOUT 대기 userData
+		std::vector<IoCompletion>                   ready;        // 즉시/합성 완료
+		std::vector<void*>                          pendingCancels;
 
 	public:
-		[[nodiscard]] bool_t IsValid() const noexcept { return static_cast<bool_t>(epollFd); }
+		void_t Submit(const IoRequest& _request) override;
+		[[nodiscard]] int_t WaitCompletions(IoCompletion* _out, int_t _max, std::chrono::milliseconds _timeout) override;
+		void_t Wake() override;
+		void_t Cancel(void* _userData) noexcept override;
+		[[nodiscard]] bool_t Supports(Capability _capability) const noexcept override;
+
+	private:
+		// op 를 즉시 non-blocking 수행. true=완료(_result 설정), false=EAGAIN(epoll 대기 필요).
+		[[nodiscard]] bool_t Perform(const IoRequest& _request, bool_t _isRetry, longlong_t& _result) noexcept;
+		[[nodiscard]] static bool_t IsWriteDirection(OpCode _op) noexcept;
+		void_t UpdateEpoll(int_t _fd) noexcept;                 // readWaiter/writeWaiter 기준 epoll_ctl ADD/MOD/DEL
+		void_t ProcessCancels();
+
+	public:
+		[[nodiscard]] bool_t IsValid() const noexcept { return valid; }
 	};
 
 END_NS

@@ -28,8 +28,8 @@ BEGIN_NS(ne::memory)
 		std::size_t blockSize;
 		std::size_t blockCount;
 		std::size_t available;
-		ne::byte_t* pool{ static_cast<ne::byte_t*>(nullptr) };
-		FreeNode* freeList{ static_cast<FreeNode*>(nullptr) };
+		ne::byte_t* pool{ nullptr };
+		FreeNode* freeList{ nullptr };
 		mutable std::mutex mutex;
 
 	public:

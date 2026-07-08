@@ -5,9 +5,14 @@
 #include <gtest/gtest.h>
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
+#include <cstring>
 #include <thread>
 #include "Socket/Socket.h"
+#include "Stream/Plain/PlainStream.h"
 #include "Coroutine/Task.h"
+#include "Allocator/PoolAllocator.h"
+#include "Buffer/BufferBlock.h"
 
 #if defined(IS_POSIX)
 #	include "Engine/Epoll/EpollEngine.h"
@@ -56,6 +61,15 @@ namespace
 		while (!_task.IsReady() && std::chrono::steady_clock::now() < deadline)
 			_engine.RunOnce(10);
 
+		// 미완료 Task 를 await_resume() 하면 빈 optional 역참조(UB)이고, 그대로 반환해
+		// Task 를 소멸시키면 진행 중 I/O 가 참조하는 코루틴 프레임이 파괴돼 UAF 가 된다.
+		// 둘 다 안전하지 않으므로 테스트를 즉시 실패시킨다.
+		if (!_task.IsReady())
+		{
+			ADD_FAILURE() << "RunSyncWithEngine: task did not complete within timeout";
+			std::abort();
+		}
+
 		return _task.await_resume();
 	}
 
@@ -88,6 +102,16 @@ TEST(SocketTest, CreateUdpSucceeds)
 	ASSERT_TRUE(result.IsOk());
 	EXPECT_TRUE(result.Value().IsValid());
 }
+
+#if defined(_WIN32)
+TEST(SocketTest, CreateRegisteredIoSucceeds)
+{
+	// RIO 소켓은 WSASocketW + WSA_FLAG_REGISTERED_IO 로 생성돼야 한다(RIO provider 전제).
+	auto result = Socket::Create(AddressFamily::IPv4, SOCK_STREAM, IPPROTO_TCP, SocketCreateFlags::RegisteredIo);
+	ASSERT_TRUE(result.IsOk());
+	EXPECT_TRUE(result.Value().IsValid());
+}
+#endif
 
 TEST(SocketTest, MoveInvalidatesSource)
 {
@@ -206,3 +230,191 @@ TEST(SocketTest, ConnectAsyncFailsQuicklyOnRefusedPort)
 	EXPECT_TRUE(connectResult.IsError());
 	EXPECT_LT(elapsed, 2000) << "refused connect must fail quickly, not block for the OS connect timeout";
 }
+
+#if defined(_WIN32)
+// ── PlainStream::ReceiveFile — 소켓 바이트를 파일로 드레인 (A: 소켓→파일) ──
+TEST(SocketTest, PlainStreamReceiveFileDrainsSocketToFile)
+{
+	TestEngine engine;
+	ASSERT_TRUE(engine.IsValid());
+
+	// 리스너 + 클라이언트 연결
+	auto serverResult = CreateTcp();
+	ASSERT_TRUE(serverResult.IsOk());
+	Socket server = std::move(serverResult.Value());
+	auto portResult = BindEphemeralListener(server);
+	ASSERT_TRUE(portResult.IsOk()) << portResult.Error().What();
+
+	auto clientResult = CreateTcp();
+	ASSERT_TRUE(clientResult.IsOk());
+	Socket client = std::move(clientResult.Value());
+	auto connectResult = RunSyncWithEngine(engine, client.Connect("127.0.0.1", portResult.Value(), engine));
+	ASSERT_TRUE(connectResult.IsOk()) << connectResult.Error().What();
+
+	// 서버 accept → PlainStream 수신자
+	auto acceptRes = server.Accept();
+	ASSERT_TRUE(acceptRes.IsOk()) << acceptRes.Error().What();
+	auto psRes = PlainStream::Accept(std::move(acceptRes.Value()), engine);
+	ASSERT_TRUE(psRes.IsOk()) << psRes.Error().What();
+	PlainStream receiver = std::move(psRes.Value());
+
+	// 클라이언트가 정확히 payload 만큼 전송
+	const char payload[] = "hello-receive-file-zero-copy";
+	const int payloadLen = static_cast<int>(sizeof(payload) - 1);
+	ASSERT_EQ(::send(client.Handle(), payload, payloadLen, 0), payloadLen);
+
+	// 수신 파일(동기 핸들 — Windows ReceiveFile 전제)
+	const char* path = "test_receivefile.bin";
+	HANDLE file = ::CreateFileA(path, GENERIC_READ | GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+	ASSERT_NE(file, INVALID_HANDLE_VALUE);
+
+	auto rfRes = RunSyncWithEngine(engine, receiver.ReceiveFile(file, 0, static_cast<std::size_t>(payloadLen)));
+	ASSERT_TRUE(rfRes.IsOk()) << rfRes.Error().What();
+	EXPECT_EQ(rfRes.Value(), static_cast<std::size_t>(payloadLen));
+
+	// 파일 내용 검증
+	::SetFilePointer(file, 0, nullptr, FILE_BEGIN);
+	char readBuf[64]{};
+	DWORD read = 0;
+	ASSERT_TRUE(::ReadFile(file, readBuf, payloadLen, &read, nullptr));
+	EXPECT_EQ(static_cast<int>(read), payloadLen);
+	EXPECT_EQ(std::memcmp(readBuf, payload, payloadLen), 0);
+
+	::CloseHandle(file);
+	::DeleteFileA(path);
+	::closesocket(client.Handle());
+}
+
+// ── PlainStream::SendRegistered — RIO 등록버퍼 송신 왕복 (fast path → 완료 demux 발화) ──
+TEST(SocketTest, PlainStreamSendRegisteredRioRoundTrip)
+{
+	TestEngine engine; // IocpEngine
+	ASSERT_TRUE(engine.IsValid());
+	ASSERT_TRUE(ne::io::HasCapability(engine.Capabilities(), ne::io::IoCapability::RegisteredIo));
+
+	// 리스너
+	auto serverResult = CreateTcp();
+	ASSERT_TRUE(serverResult.IsOk());
+	Socket server = std::move(serverResult.Value());
+	auto portResult = BindEphemeralListener(server);
+	ASSERT_TRUE(portResult.IsOk()) << portResult.Error().What();
+
+	// 클라이언트 — RIO 소켓(WSA_FLAG_REGISTERED_IO)으로 생성 후 blocking connect(reactor 미사용,
+	// RIO 데이터경로와 분리). RIO 는 소켓별 RIO_RQ 로 제출하므로 reactor watch 와 섞지 않는다.
+	auto clientResult = Socket::Create(AddressFamily::IPv4, SOCK_STREAM, IPPROTO_TCP, SocketCreateFlags::RegisteredIo);
+	ASSERT_TRUE(clientResult.IsOk()) << clientResult.Error().What();
+	Socket client = std::move(clientResult.Value());
+	auto connectResult = RunSync(client.Connect("127.0.0.1", portResult.Value()));
+	ASSERT_TRUE(connectResult.IsOk()) << connectResult.Error().What();
+
+	auto acceptRes = server.Accept();
+	ASSERT_TRUE(acceptRes.IsOk()) << acceptRes.Error().What();
+	Socket accepted = std::move(acceptRes.Value());
+
+	// 클라이언트를 PlainStream 으로 감싼다(블로킹 모드 변경 안 함 — SendRegistered 는 RIO 경로).
+	auto psRes = PlainStream::Create(std::move(client), engine);
+	ASSERT_TRUE(psRes.IsOk()) << psRes.Error().What();
+	PlainStream sender = std::move(psRes.Value());
+
+	// BufferBlock 등록 → RegisteredBuffer 구성 → payload 채우기
+	ne::memory::PoolAllocator pool(512, 4);
+	auto blockRes = ne::io::BufferBlock::Acquire(pool, 256);
+	ASSERT_TRUE(blockRes.IsOk());
+	ne::io::BufferBlock* block = blockRes.Value();
+
+	auto* provider = engine.AsRegisteredBufferProvider();
+	ASSERT_NE(provider, nullptr);
+	auto regRes = provider->RegisterBuffer(block->Data());
+	ASSERT_TRUE(regRes.IsOk()) << regRes.Error().What();
+
+	const char payload[] = "hello-rio-registered-send";
+	const std::size_t payloadLen = sizeof(payload) - 1;
+	std::memcpy(block->Data().data(), payload, payloadLen);
+
+	ne::io::RegisteredBuffer rb{ regRes.Value(), ne::io::BufferView{ block, block->Data().data(), payloadLen } };
+
+	// RIOSend 제출 → 엔진 구동 → RIO 완료가 IOCP(RioKey)로 통지 → DrainRioCompletions 가 resume.
+	auto sendRes = RunSyncWithEngine(engine, sender.SendRegistered(rb));
+	ASSERT_TRUE(sendRes.IsOk()) << sendRes.Error().What();
+	EXPECT_EQ(sendRes.Value(), payloadLen);
+
+	// 상대(accept)가 plain recv 로 정확히 payload 를 받는다.
+	char recvBuf[64]{};
+	const int got = ::recv(accepted.Handle(), recvBuf, static_cast<int>(payloadLen), 0);
+	EXPECT_EQ(got, static_cast<int>(payloadLen));
+	EXPECT_EQ(std::memcmp(recvBuf, payload, payloadLen), 0);
+
+	provider->UnregisterBuffer(regRes.Value());
+	block->Release();
+	(void)sender.Close();
+	::closesocket(accepted.Handle());
+}
+
+// ── PlainStream::Sendv — Proactor 벡터(scatter-gather) 단일 WSASend 왕복 ──
+TEST(SocketTest, PlainStreamSendvProactorVectored)
+{
+	TestEngine engine;
+	ASSERT_TRUE(engine.IsValid());
+
+	auto serverResult = CreateTcp();
+	ASSERT_TRUE(serverResult.IsOk());
+	Socket server = std::move(serverResult.Value());
+	auto portResult = BindEphemeralListener(server);
+	ASSERT_TRUE(portResult.IsOk()) << portResult.Error().What();
+
+	// blocking connect — reactor 등록을 피해 소켓을 Proactor(ProactorKey) 로만 쓴다.
+	auto clientResult = CreateTcp();
+	ASSERT_TRUE(clientResult.IsOk());
+	Socket client = std::move(clientResult.Value());
+	auto connectResult = RunSync(client.Connect("127.0.0.1", portResult.Value()));
+	ASSERT_TRUE(connectResult.IsOk()) << connectResult.Error().What();
+
+	auto acceptRes = server.Accept();
+	ASSERT_TRUE(acceptRes.IsOk()) << acceptRes.Error().What();
+	Socket accepted = std::move(acceptRes.Value());
+
+	auto psRes = PlainStream::Create(std::move(client), engine, nullptr, IoMode::Proactor);
+	ASSERT_TRUE(psRes.IsOk()) << psRes.Error().What();
+	PlainStream sender = std::move(psRes.Value());
+
+	// 2개 세그먼트 — 유저공간 concat 없이 단일 WSASend 로 순서대로 전송돼야 한다.
+	ne::memory::PoolAllocator pool(256, 4);
+	auto b1 = ne::io::BufferBlock::Acquire(pool, 64);
+	auto b2 = ne::io::BufferBlock::Acquire(pool, 64);
+	ASSERT_TRUE(b1.IsOk());
+	ASSERT_TRUE(b2.IsOk());
+	ne::io::BufferBlock* blk1 = b1.Value();
+	ne::io::BufferBlock* blk2 = b2.Value();
+
+	const char part1[] = "hello-";
+	const char part2[] = "vectored-world";
+	const std::size_t len1 = sizeof(part1) - 1;
+	const std::size_t len2 = sizeof(part2) - 1;
+	std::memcpy(blk1->Data().data(), part1, len1);
+	std::memcpy(blk2->Data().data(), part2, len2);
+
+	ne::io::BufferChain chain;
+	chain.Append(ne::io::BufferView{ blk1, blk1->Data().data(), len1 });
+	chain.Append(ne::io::BufferView{ blk2, blk2->Data().data(), len2 });
+
+	const std::size_t totalLen = len1 + len2;
+	auto sendRes = RunSyncWithEngine(engine, sender.Sendv(chain));
+	ASSERT_TRUE(sendRes.IsOk()) << sendRes.Error().What();
+	EXPECT_EQ(sendRes.Value(), totalLen);
+
+	char recvBuf[64]{};
+	std::size_t got = 0;
+	while (got < totalLen)
+	{
+		const int n = ::recv(accepted.Handle(), recvBuf + got, static_cast<int>(totalLen - got), 0);
+		ASSERT_GT(n, 0);
+		got += static_cast<std::size_t>(n);
+	}
+	EXPECT_EQ(std::memcmp(recvBuf, "hello-vectored-world", totalLen), 0);
+
+	blk1->Release();
+	blk2->Release();
+	(void)sender.Close();
+	::closesocket(accepted.Handle());
+}
+#endif

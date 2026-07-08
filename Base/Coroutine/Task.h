@@ -9,6 +9,15 @@
 #include "Type.h"
 
 BEGIN_NS(ne)
+	// 계약(중요): Task 는 완료(IsReady()) 되었거나 initial_suspend 이후 한 번도 재개되지
+	// 않은 상태에서만 소멸/이동-대입해도 안전하다. 소멸자는 무조건 handle.destroy() 로
+	// 코루틴 프레임을 파괴하므로, 코루틴이 "진행 중인 Proactor I/O"(SendSubmit/ReceiveSubmit/
+	// SubmitTransmitFile 등, IoContext 를 코루틴 프레임 안에 두고 그 주소를 커널에 넘긴 상태)
+	// 에서 suspend 된 채 소멸되면, 이후 엔진이 완료를 회수하며 이미 해제된 IoContext 를
+	// 참조/resume 해 UAF 가 된다. 취소/타임아웃 경로에서 Task 를 중도 폐기하려면 먼저
+	// 해당 I/O 의 완료를 회수(또는 취소-후-완료 대기)해야 한다.
+	//   ↔ Reactor 경로(WatchEntry)는 엔진 소유라 이 문제가 없다. Proactor 의 IoContext 도
+	//     엔진 소유로 옮기면(현재 프레임 소유) 대칭적으로 안전해진다 — 후속 과제.
 	template <typename T>
 	class Task
 	{

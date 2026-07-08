@@ -6,7 +6,9 @@
 #include "Coroutine/Awaitable.h"
 
 #include <cerrno>
+#include <memory>
 #include <utility>
+#include <vector>
 
 #if defined(_WIN32)
 #   include <winsock2.h>
@@ -21,6 +23,7 @@
 #   include <netinet/in.h>
 #   include <netinet/tcp.h>
 #   include <unistd.h>
+#   include <fcntl.h>
 #endif
 
 
@@ -130,7 +133,7 @@ BEGIN_NS(ne::network)
 
 		if (ioMode == IoMode::Proactor)
 		{
-			co_return co_await ne::io::SendSubmitAwaitable{*engine, socket.Handle(), _data.Span().data(), _data.Span().size() };
+			co_return co_await ne::io::SendSubmitAwaitable{*engine, socket.Handle(), _data.Span().data(), _data.Span().size(), _data.owner };
 		}
 
 		// Reactor 경로: poll + send
@@ -150,26 +153,32 @@ BEGIN_NS(ne::network)
 		if (!IsOpen()) co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "stream is closed" });
 
 	#if defined(_WIN32)
-		std::size_t total = 0;
+		// scatter-gather 를 단일 WSASend(WSABUF 배열)로 처리한다 — 세그먼트를 유저공간에서 합치지
+		// 않고(zero-copy) 한 번의 op 으로. 옛 세그먼트별 send 루프(partial 순서 위험)를 대체한다.
+		std::vector<WSABUF> wsaBuffers;
+		wsaBuffers.reserve(_chain.Segments().size());
 		for (const auto& segment : _chain.Segments())
+			wsaBuffers.push_back(WSABUF{ .len = static_cast<ne::ulong_t>(segment.length), .buf = reinterpret_cast<char*>(segment.ptr) });
+
+		if (wsaBuffers.empty()) co_return ne::Result<std::size_t, ne::OsError>::Ok(0);
+
+		if (ioMode == IoMode::Proactor)
 		{
-			if (auto ready = co_await ne::io::SendAwaitable{ socket.Handle(), *engine }; ready.IsError())
-				co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(ready.Error()));
-
-			const int bytes = ::send(socket.Handle(), reinterpret_cast<const char*>(segment.Span().data()), static_cast<int>(segment.Span().size()), 0);
-			if (bytes < 0)
-				co_return ne::Result<std::size_t, ne::OsError>::Error(
-					ne::OsError{ ne::LastOsError() }.Context("[PlainStream/Sendv]"));
-
-			total += static_cast<std::size_t>(bytes);
-
-			// 이 세그먼트가 partial 하게 전송됐으면 다음 세그먼트로 넘어가지 않고 즉시 멈춘다 —
-			// 그렇지 않으면 세그먼트 순서가 뒤섞여 수신측이 잘못된 바이트열을 보게 된다.
-			// 호출자가 total(=지금까지의 실제 전송량) 기준으로 BufferChain::Suffix() 재시도.
-			if (static_cast<std::size_t>(bytes) < segment.length) break;
+			// 단일 overlapped WSASend — io 계층에서 벡터 전송을 비동기로 처리.
+			co_return co_await ne::io::SendvSubmitAwaitable{ static_cast<ne::io::IocpEngine&>(*engine), socket.Handle(), std::move(wsaBuffers) };
 		}
 
-		co_return ne::Result<std::size_t, ne::OsError>::Ok(total);
+		// Reactor 경로: writable 대기 후 단일 벡터 WSASend(non-overlapped). partial 은 그대로 반환 —
+		// 호출자가 BufferChain::Suffix(total) 로 재시도(POSIX writev 경로와 동일 계약).
+		if (auto ready = co_await ne::io::SendAwaitable{ socket.Handle(), *engine }; ready.IsError())
+			co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(ready.Error()));
+
+		ulong_t sent = 0;
+		if (::WSASend(socket.Handle(), wsaBuffers.data(), static_cast<ne::ulong_t>(wsaBuffers.size()), &sent, 0, nullptr, nullptr) == SOCKET_ERROR)
+			co_return ne::Result<std::size_t, ne::OsError>::Error(
+				ne::OsError{ ne::LastOsError() }.Context("[PlainStream/Sendv]"));
+
+		co_return ne::Result<std::size_t, ne::OsError>::Ok(static_cast<std::size_t>(sent));
 	#elif defined(IS_POSIX)
 		if (auto ready = co_await ne::io::SendAwaitable{ socket.Handle(), *engine }; ready.IsError()) co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(ready.Error()));
 
@@ -191,7 +200,7 @@ BEGIN_NS(ne::network)
 
 		if (ioMode == IoMode::Proactor)
 		{
-			co_return co_await ne::io::ReceiveSubmitAwaitable{*engine, socket.Handle(), _data.ptr, _data.length };
+			co_return co_await ne::io::ReceiveSubmitAwaitable{*engine, socket.Handle(), _data.ptr, _data.length, _data.owner };
 		}
 
 		// Reactor 경로: poll + recv
@@ -204,6 +213,37 @@ BEGIN_NS(ne::network)
 				ne::OsError{ ne::LastOsError() }.Context("[PlainStream/Receive]"));
 
 		co_return ne::Result<std::size_t, ne::OsError>::Ok(static_cast<std::size_t>(bytes));
+	}
+
+
+
+	// ─── 등록 버퍼 경로 (Plain 전용) ─────────────────────────────────────────────
+
+	ne::Task<ne::Result<std::size_t, ne::OsError>> PlainStream::SendRegistered(const ne::io::RegisteredBuffer& _buffer)
+	{
+		using R = ne::Result<std::size_t, ne::OsError>;
+		if (!IsOpen()) co_return R::Error(ne::OsError{ 0, "stream is closed" });
+		if (!_buffer.view.IsValid()) co_return R::Error(ne::OsError{ 0, "invalid registered buffer view" });
+
+		// 등록 fast path: 엔진이 RegisteredIo provider 를 노출하고 버퍼가 등록돼 있으면(handle 유효 +
+		// owner(BufferBlock) 존재 → offset 계산 가능) RIOSend / IORING_OP_SEND_FIXED 로 분기.
+		// 그 외에는 view 를 그대로 일반 Send 로 투명 폴백 — 동작·에러 타입(OsError) 동일.
+		if (auto* provider = engine->AsRegisteredBufferProvider(); provider && _buffer.handle.IsValid() && _buffer.view.owner)
+			co_return co_await ne::io::SendRegisteredSubmitAwaitable{ *provider, socket.Handle(), _buffer };
+
+		co_return co_await Send(_buffer.view);
+	}
+
+	ne::Task<ne::Result<std::size_t, ne::OsError>> PlainStream::ReceiveRegistered(ne::io::RegisteredBuffer& _buffer)
+	{
+		using R = ne::Result<std::size_t, ne::OsError>;
+		if (!IsOpen()) co_return R::Error(ne::OsError{ 0, "stream is closed" });
+		if (!_buffer.view.IsValid()) co_return R::Error(ne::OsError{ 0, "invalid registered buffer view" });
+
+		if (auto* provider = engine->AsRegisteredBufferProvider(); provider && _buffer.handle.IsValid() && _buffer.view.owner)
+			co_return co_await ne::io::ReceiveRegisteredSubmitAwaitable{ *provider, socket.Handle(), _buffer };
+
+		co_return co_await Receive(_buffer.view);
 	}
 
 
@@ -221,6 +261,8 @@ BEGIN_NS(ne::network)
 		if (!IsOpen()) return ne::Result<void, ne::OsError>::Ok();
 
 		(void)engine->Unwatch(socket.Handle());
+		// 등록 IO provider 가 있으면 이 소켓에 묶인 상태(RIO_RQ)를 정리한다 — fd 재사용 시 stale RQ 방지.
+		if (auto* provider = engine->AsRegisteredBufferProvider()) provider->ReleaseSocket(socket.Handle());
 		[[maybe_unused]] auto closing = std::move(socket); // fd 는 소멸자에서 닫힘
 
 		return ne::Result<void, ne::OsError>::Ok();
@@ -368,6 +410,126 @@ BEGIN_NS(ne::network)
 	#else
 		(void)_fileFd; (void)_offset; (void)_size; (void)_head; (void)_tail;
 		co_return R::Error(ne::OsError{ 0, "SendFile not supported on this platform" });
+	#endif
+	}
+
+
+
+	// ─── zero-copy 소켓→파일 수신 ────────────────────────────────────────────────
+
+	ne::Task<ne::Result<std::size_t, ne::OsError>> PlainStream::ReceiveFile(
+		const ne::io::file_t _fileFd, const std::size_t _offset, const std::size_t _size)
+	{
+		using R = ne::Result<std::size_t, ne::OsError>;
+		if (!IsOpen()) co_return R::Error(ne::OsError{ 0, "stream is closed" });
+
+	#if defined(IS_POSIX)
+		const socket_t fd = socket.Handle();
+
+		// splice 는 최소 한쪽이 파이프여야 한다 — 소켓→파이프→파일 2단계로 유저공간을 안 거친다.
+		int pipeFd[2];
+		if (::pipe(pipeFd) != 0)
+			co_return R::Error(ne::OsError{ ne::LastOsError() }.Context("[PlainStream/ReceiveFile pipe]"));
+
+		// 파이프 정리를 모든 종료 경로에서 보장(co_await 중 프레임 소멸 포함).
+		struct PipeGuard { int r; int w; ~PipeGuard() noexcept { ::close(r); ::close(w); } } pipeGuard{ pipeFd[0], pipeFd[1] };
+
+		off_t fileOffset      = static_cast<off_t>(_offset);
+		std::size_t remaining = _size;
+		std::size_t total     = 0;
+
+		while (remaining > 0)
+		{
+			// 소켓 → 파이프 (유저공간 안 거침). 논블로킹.
+			const ssize_t inPipe = ::splice(fd, nullptr, pipeFd[1], nullptr, remaining, SPLICE_F_MOVE | SPLICE_F_NONBLOCK);
+			if (inPipe == 0) break; // 상대 종료(EOF)
+			if (inPipe < 0)
+			{
+				const ne::ulong_t error = ne::LastOsError();
+				if (errno == EAGAIN || errno == EWOULDBLOCK)
+				{
+					if (auto ready = co_await ne::io::ReceiveAwaitable{ fd, *engine }; ready.IsError())
+						co_return R::Error(std::move(ready.Error()));
+					continue;
+				}
+				co_return R::Error(ne::OsError{ error }.Context("[PlainStream/ReceiveFile splice-in]"));
+			}
+
+			// 파이프 → 파일 (파이프를 전부 뺄 때까지).
+			std::size_t toWrite = static_cast<std::size_t>(inPipe);
+			while (toWrite > 0)
+			{
+				const ssize_t written = ::splice(pipeFd[0], nullptr, _fileFd, &fileOffset, toWrite, SPLICE_F_MOVE);
+				if (written <= 0)
+					co_return R::Error(ne::OsError{ ne::LastOsError() }.Context("[PlainStream/ReceiveFile splice-out]"));
+				toWrite -= static_cast<std::size_t>(written);
+			}
+
+			total     += static_cast<std::size_t>(inPipe);
+			remaining -= static_cast<std::size_t>(inPipe);
+		}
+
+		co_return R::Ok(total);
+
+	#elif defined(_WIN32)
+		// 커널 소켓→파일 zero-copy 가 없어 recv+write 폴백(비 zero-copy). 동기 파일 핸들 전제.
+		const socket_t fd        = socket.Handle();
+		const HANDLE fileHandle  = _fileFd;
+
+		if (_offset != 0)
+		{
+			LARGE_INTEGER li{};
+			li.QuadPart = static_cast<LONGLONG>(_offset);
+			if (!::SetFilePointerEx(fileHandle, li, nullptr, FILE_BEGIN))
+				co_return R::Error(ne::OsError{ ne::LastOsError() }.Context("[PlainStream/ReceiveFile SetFilePointer]"));
+		}
+
+		constexpr std::size_t chunkSize = 64 * 1024;
+		auto chunk = std::make_unique<ne::byte_t[]>(chunkSize); // 폴백 청크 버퍼(프레임 밖 heap)
+
+		std::size_t remaining = _size;
+		std::size_t total     = 0;
+
+		while (remaining > 0)
+		{
+			const std::size_t want = remaining < chunkSize ? remaining : chunkSize;
+
+			std::size_t received = 0;
+			if (ioMode == IoMode::Proactor)
+			{
+				auto r = co_await ne::io::ReceiveSubmitAwaitable{ *engine, fd, chunk.get(), want };
+				if (r.IsError()) co_return R::Error(std::move(r.Error()).Context("[PlainStream/ReceiveFile recv]"));
+				received = r.Value();
+			}
+			else
+			{
+				if (auto ready = co_await ne::io::ReceiveAwaitable{ fd, *engine }; ready.IsError())
+					co_return R::Error(std::move(ready.Error()));
+
+				const int n = ::recv(fd, reinterpret_cast<char*>(chunk.get()), static_cast<int>(want), 0);
+				if (n < 0) co_return R::Error(ne::OsError{ ne::LastOsError() }.Context("[PlainStream/ReceiveFile recv]"));
+				received = static_cast<std::size_t>(n);
+			}
+
+			if (received == 0) break; // 상대 종료
+
+			std::size_t off = 0;
+			while (off < received)
+			{
+				DWORD written = 0;
+				if (!::WriteFile(fileHandle, chunk.get() + off, static_cast<DWORD>(received - off), &written, nullptr))
+					co_return R::Error(ne::OsError{ ne::LastOsError() }.Context("[PlainStream/ReceiveFile write]"));
+				off += written;
+			}
+
+			total     += received;
+			remaining -= received;
+		}
+
+		co_return R::Ok(total);
+	#else
+		(void)_fileFd; (void)_offset; (void)_size;
+		co_return R::Error(ne::OsError{ 0, "ReceiveFile not supported on this platform" });
 	#endif
 	}
 

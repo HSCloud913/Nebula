@@ -19,7 +19,7 @@ TEST(TimerEngineIntegrationTest, TimerFiresWithoutSocketEvents)
     engine.SetTimerWheel(&wheel);
 
     std::atomic<bool> fired{ false };
-    wheel.Schedule(Duration{ 50 }, [&] { fired.store(true, std::memory_order_release); });
+    wheel.Schedule(std::chrono::milliseconds{ 50 }, [&] { fired.store(true, std::memory_order_release); });
 
     const auto start = std::chrono::steady_clock::now();
 
@@ -51,13 +51,14 @@ TEST(TimerEngineIntegrationTest, NextExpiryMsReturnsNegativeWhenNoTimers)
 
 TEST(TimerEngineIntegrationTest, NextExpiryMsReturnsZeroForOverdueTimer)
 {
-    TimerWheel wheel;
-    wheel.Schedule(Duration{ 1 }, [] {});
+    // 페이크 클럭으로 Tick 없이 실제 시각만 만료 시점을 지나가게 해 overdue 상태를 만든다.
+    std::chrono::steady_clock::time_point now{};
+    TimerWheel wheel([&now] { return now; });
+    wheel.Schedule(std::chrono::milliseconds{ 1 }, [] {});
 
-    // 충분히 Tick을 돌려 타이머가 과거가 되도록.
-    for (int i = 0; i < 10; ++i) wheel.Tick();
+    now += std::chrono::milliseconds{ 5 };
 
-    // 이미 만료됐으므로 0 반환.
+    // 만료 시점이 이미 지났으므로 0 반환.
     EXPECT_EQ(wheel.NextExpiryMs(), 0);
 }
 
@@ -80,7 +81,7 @@ TEST(TimerEngineIntegrationTest, TimerFiresWithoutSocketEvents)
     engine.SetTimerWheel(&wheel);
 
     std::atomic<bool> fired{ false };
-    wheel.Schedule(Duration{ 50 }, [&] { fired.store(true, std::memory_order_release); });
+    wheel.Schedule(std::chrono::milliseconds{ 50 }, [&] { fired.store(true, std::memory_order_release); });
 
     const auto start = std::chrono::steady_clock::now();
 
@@ -112,10 +113,12 @@ TEST(TimerEngineIntegrationTest, NextExpiryMsReturnsNegativeWhenNoTimers)
 
 TEST(TimerEngineIntegrationTest, NextExpiryMsReturnsZeroForOverdueTimer)
 {
-    TimerWheel wheel;
-    wheel.Schedule(Duration{ 1 }, [] {});
+    // 페이크 클럭으로 Tick 없이 실제 시각만 만료 시점을 지나가게 해 overdue 상태를 만든다.
+    std::chrono::steady_clock::time_point now{};
+    TimerWheel wheel([&now] { return now; });
+    wheel.Schedule(std::chrono::milliseconds{ 1 }, [] {});
 
-    for (int i = 0; i < 10; ++i) wheel.Tick();
+    now += std::chrono::milliseconds{ 5 };
 
     EXPECT_EQ(wheel.NextExpiryMs(), 0);
 }

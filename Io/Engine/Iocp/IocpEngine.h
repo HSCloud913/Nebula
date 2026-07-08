@@ -1,103 +1,81 @@
 //
 // Created by hscloud on 26. 6. 30.
 //
+// Level 0 — Windows IOCP 백엔드. proactor(완료 기반) 그대로 매핑한다(스펙 2.1).
+//   Submit          : op 별 overlapped 요청 발행(WSARecv/WSASend/ReadFile/WriteFile ...)
+//   WaitCompletions : GetQueuedCompletionStatusEx 로 완료 batch 수확 → IoCompletion 으로 정규화
+//   Wake            : PostQueuedCompletionStatus(널 overlapped) 로 대기 해제
+//   Supports        : capability 매트릭스(스펙 2.2)
+//
+// 제출 op 당 IocpOperation 을 heap 에 두고 OVERLAPPED* 를 커널에 넘긴다 — 완료 시 그 포인터로
+// 복원해 userData 를 되돌린다(OVERLAPPED 가 첫 멤버여야 reinterpret_cast 성립).
+// 확장성: 이 완료 큐 모델은 추후 IoRing(Windows 11+) 백엔드도 같은 IIoEngine 계약으로 흡수 가능.
 
 #pragma once
 #if defined(_WIN32)
 
-#include "Type.h"
+#include "Engine/IIoEngine.h"
 #include <mutex>
 #include <unordered_map>
-#include <windows.h>
-#include "Engine/IIoEngine.h"
+#include <unordered_set>
 #include "Handle.h"
-#include "Result.h"
-#include "Error.h"
 
 BEGIN_NS(ne::io)
-	// Windows IOCP 기반 통합 I/O 엔진.
-	//
-	// Reactor (소켓 이벤트 감지):
-	//   Watch  → 소켓을 IOCP 에 ReactorKey 로 연결 + zero-byte WSARecv/WSASend (WatchEntry, watches 맵 값으로 직접 저장)
-	//   RunOnce → GQCS(key=ReactorKey) → 콜백 디스패치
-	//
-	// Proactor (소켓 I/O):
-	//   SubmitReceive/SubmitSend → 소켓을 ProactorKey 로 연결 + WSARecv/WSASend (IoContext 직접)
-	//   RunOnce → GQCS(key=ProactorKey) → handle.resume()
-	//
-	// Proactor (파일 I/O, IIoEngine 외부 — AsyncFile 전용):
-	//   RegisterFile → 파일 HANDLE 을 ProactorKey 로 연결
-	//   SubmitRead/Write → ReadFile/WriteFile (IoContext 직접)
-	//   RunOnce → GQCS(key=ProactorKey) → handle.resume()
-	//
-	// WatchEntry/IoContext 모두 OVERLAPPED 가 첫 멤버이므로 OVERLAPPED* 로부터 reinterpret_cast 복원 성립.
-	// 소켓은 Reactor(ReactorKey) 또는 Proactor(ProactorKey) 중 하나로만 등록된다 —
-	// 같은 소켓을 두 키로 동시에 등록할 수 없다(CreateIoCompletionPort 는 핸들당 최초 1회만 연결 가능).
-	// iocpSockets 가 fd 별로 등록된 key 를 기억해 두므로, 이미 다른 key 로 등록된 소켓에
-	// Watch 와 SubmitSend/SubmitReceive 를 섞어 쓰면(EnsureSocketInIocp) 조용히 무시되지 않고
-	// 에러로 거부된다 — 그렇지 않으면 완료가 엉뚱한 GQCS 분기로 들어가 OVERLAPPED* 를 잘못된
-	// 타입(WatchEntry* ↔ IoContext*)으로 reinterpret_cast 하게 되어 메모리가 오염된다.
-	//
-	// watches 는 fd 하나당 WatchSlots(read/write 슬롯 2개)를 보관해 Read 방향과 Write 방향을
-	// 서로 독립적으로 Watch/Unwatch 할 수 있다(예: 한 코루틴이 recv 대기 중에 다른 코루틴이
-	// 같은 fd 로 send 를 대기). 두 슬롯 모두 비활성이고 어느 쪽도 zero-byte I/O 가 커널에
-	// pending 상태가 아닐 때만 fd 전체(iocpSockets 포함)를 정리한다.
-	//
-	// _concurrentThreads(생성자)는 IOCP 의 표준 멀티스레드 워커 모델 그대로 여러 스레드가 같은
-	// IocpEngine 에서 동시에 RunOnce() 를 호출하는 것을 전제한다 — mutex 로 watches/iocpSockets
-	// 접근을 보호한다. GetQueuedCompletionStatus 의 블로킹 대기 자체와 콜백/handle.resume() 호출은
-	// 반드시 락 밖에서 수행한다 — 콜백이 동기적으로 Watch()/Unwatch() 를 재호출하는 경우가 실제로
-	// 있어(ReceiveAwaitable 등) 락을 쥔 채 호출하면 재진입 데드락이 된다.
 	class IocpEngine final :public IIoEngine
 	{
 	public:
+		NEBULA_NON_COPYABLE_MOVABLE(IocpEngine)
+
 		explicit IocpEngine(ulong_t _concurrentThreads = 0) noexcept;
 		virtual ~IocpEngine() override = default;
 
-		NEBULA_NON_COPYABLE_MOVABLE(IocpEngine)
-
-	private: // GetQueuedCompletionStatus 의 completionKey — Reactor 완료와 Proactor(소켓+파일) 완료를 구분.
-		static constexpr ULONG_PTR ReactorKey = 1;
-		static constexpr ULONG_PTR ProactorKey = 2;
-
 	private:
+		// PostQueuedCompletionStatus 웨이크업 식별 키(널 overlapped 와 함께). 실제 op 완료와 구분.
+		static constexpr ulonglong_t WakeKey = 1;
+		// WaitCompletions 한 번에 수확할 최대 완료 개수 상한(스택 버퍼).
+		static constexpr int_t MaxBatch = 128;
+
 		using IocpHandle = ne::Handle<HANDLE, decltype([](const HANDLE _handle) { ::CloseHandle(_handle); })>;
 
+		// AcceptEx 주소 출력 버퍼 크기 — 2 × (최대 sockaddr + 16). sockaddr_in6(28)+16=44, ×2=88 < 256.
+		static constexpr std::size_t AcceptAddressBufferSize = 256;
+
+		// 제출 op 당 컨텍스트. overlapped 는 반드시 첫 멤버.
+		struct IocpOperation
+		{
+			OVERLAPPED overlapped{};
+			void*      userData{ static_cast<void*>(nullptr) };
+			HANDLE     handle{ static_cast<HANDLE>(nullptr) }; // CancelIoEx 대상
+			OpCode     op{ OpCode::Read };                     // 완료 후처리 분기용(Accept/Connect)
+			socket_t   acceptSocket{ InvalidSocket };          // Accept: AcceptEx 로 채워질 새 소켓
+			socket_t   contextSocket{ InvalidSocket };         // Accept: listen 소켓 / Connect: 연결 소켓 (SO_UPDATE_*)
+			longlong_t syncResult{ 0 };       // 동기 제출 실패 시 미리 계산한 결과(-에러). hasSyncResult 일 때만 유효.
+			bool_t     hasSyncResult{ false };
+			char       acceptBuffer[AcceptAddressBufferSize]{}; // AcceptEx local/remote 주소 출력 버퍼
+		};
+
 		IocpHandle iocpHandle;
-		std::mutex mutex; // watches/iocpSockets 보호(멀티스레드 RunOnce) — 콜백 호출 중에는 절대 보유하지 않는다.
-		std::unordered_map<socket_t, ULONG_PTR> iocpSockets; // IOCP 등록 소켓 → 등록된 completion key
-		std::unordered_map<socket_t, WatchSlots> watches; // fd 별 Read/Write 방향 독립 감시
-		ne::time::TimerWheel* timerWheel{ nullptr };
+		std::mutex mutex;                                   // associated / inflight / 확장함수 보호(멀티스레드 Submit/WaitCompletions/Cancel)
+		std::unordered_set<ulonglong_t> associated;         // 이미 IOCP 에 연결된 handle 집합
+		std::unordered_map<void*, IocpOperation*> inflight; // userData → 진행 중 op (Cancel 조회용)
+		void*      acceptExPtr{ static_cast<void*>(nullptr) };  // LPFN_ACCEPTEX (lazy, WSAIoctl 로 획득)
+		void*      connectExPtr{ static_cast<void*>(nullptr) }; // LPFN_CONNECTEX
+		bool_t     extensionsLoaded{ false };
 
-	public: // Socket Reactor
-		[[nodiscard]] virtual ne::Result<void, ne::OsError> Watch(socket_t _fd, uint32_t _events, IoCallback _callback) override;
-		[[nodiscard]] virtual ne::Result<void, ne::OsError> Unwatch(socket_t _fd, uint32_t _events = IoEvent::Read | IoEvent::Write) override;
+	public:
+		void_t Submit(const IoRequest& _request) override;
+		[[nodiscard]] int_t WaitCompletions(IoCompletion* _out, int_t _max, std::chrono::milliseconds _timeout) override;
+		void_t Wake() override;
+		void_t Cancel(void* _userData) noexcept override;
+		[[nodiscard]] bool_t Supports(Capability _capability) const noexcept override;
 
-	public: // Socket Proactor
-		[[nodiscard]] virtual ne::Result<void, ne::OsError> SubmitSend(socket_t _fd, const void* _buffer, std::size_t _length, IoContext* _context) noexcept override;
-		[[nodiscard]] virtual ne::Result<void, ne::OsError> SubmitReceive(socket_t _fd, void* _buffer, std::size_t _length, IoContext* _context) noexcept override;
-
-	public: // Socket+File Proactor (zero-copy 파일 전송, IIoEngine 외부 — PlainStream::SendFile 전용)
-		// TransmitFile: 파일을 소켓으로 커널 안에서 직접 전송(zero-copy) + IOCP 완료 통지.
-		// _head/_tail 은 각각 연속된 버퍼 1개만 지원(TRANSMIT_FILE_BUFFERS 제약) — 없으면 nullptr/0.
-		[[nodiscard]] ne::Result<void, ne::OsError> SubmitTransmitFile(socket_t _socket, HANDLE _file, std::size_t _offset, std::size_t _size,
-			void* _headPtr, std::size_t _headLength, void* _tailPtr, std::size_t _tailLength, IoContext* _context) noexcept;
-
-	public: // Common
-		[[nodiscard]] virtual ne::Result<void, ne::OsError> RunOnce(ne::int_t _timeoutMs = -1) override;
-		virtual void SetTimerWheel(ne::time::TimerWheel* _wheel) noexcept override { timerWheel = _wheel; }
-
-	private: // Socket 전용 — 모두 mutex 를 이미 쥐고 있다고 가정한다(재진입 락을 걸지 않음).
-		[[nodiscard]] ne::Result<void, ne::OsError> EnsureSocketInIocp(socket_t _fd, ULONG_PTR _key) noexcept;
-		[[nodiscard]] ne::Result<void, ne::OsError> ArmWatch(WatchEntry& _entry) noexcept;
-		void ReleaseSlot(WatchEntry& _entry, socket_t _fd) noexcept;
-		void ReleaseSocketContextIfIdle(socket_t _fd) noexcept;
-		void ReleaseSocketContext(socket_t _fd);
-
-	public: // File 전용 (Proactor)
-		[[nodiscard]] ne::Result<void, ne::OsError> RegisterFileHandle(HANDLE _handle) noexcept;
-		[[nodiscard]] ne::Result<void, ne::OsError> SubmitRead(HANDLE _handle, void* _buffer, std::size_t _length, std::size_t _offset, IoContext* _context) noexcept;
-		[[nodiscard]] ne::Result<void, ne::OsError> SubmitWrite(HANDLE _handle, const void* _buffer, std::size_t _length, std::size_t _offset, IoContext* _context) noexcept;
+	private:
+		// handle 을 IOCP 에 최초 1회 연결한다(이미 연결됐으면 no-op). mutex 를 이미 쥔 상태로 호출.
+		[[nodiscard]] bool_t EnsureAssociated(HANDLE _handle) noexcept;
+		// AcceptEx/ConnectEx 함수 포인터를 lazy 로 획득한다(WSAIoctl). 자체 락.
+		[[nodiscard]] bool_t EnsureExtensions(socket_t _socket) noexcept;
+		// op 를 커널에 발행하고, 동기 실패면 -에러를 담은 완료를 IOCP 로 되돌린다.
+		void_t Dispatch(IocpOperation* _operation, const IoRequest& _request, HANDLE _handle) noexcept;
 
 	public:
 		[[nodiscard]] bool_t IsValid() const noexcept { return static_cast<bool_t>(iocpHandle); }
