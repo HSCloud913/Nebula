@@ -7,9 +7,7 @@
 #include "Exception.h"
 #include "StringFormat.h"
 
-#if defined(_WIN32)
-#	include <windows.h>
-#elif defined(IS_POSIX)
+#if defined(IS_POSIX)
 #	include <sys/mman.h>
 #	include <fcntl.h>
 #	include <unistd.h>

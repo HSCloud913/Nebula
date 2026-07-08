@@ -6,11 +6,6 @@
 #include "Type.h"
 
 #if defined(_WIN32)
-	// windows.h 를 먼저 포함해야 winnt.h 가 필요로 하는 아키텍처 매크로(_AMD64_ 등)가 winsock
-	// 계열 헤더보다 먼저 정의된다(그 반대 순서면 MSVC 에서 "No Target Architecture" C1189 로
-	// 빌드가 깨진다). Type.h 가 이미 WIN32_LEAN_AND_MEAN 을 정의해 두어 windows.h 가 구식
-	// winsock.h 를 끌어들이지 않으므로 winsock2.h 와 충돌하지 않는다.
-#   include <windows.h>
 #   include <winsock2.h>
 
 BEGIN_NS(ne::io)

@@ -33,3 +33,7 @@
 
 _bin/
 .idea/
+
+# CMake build directories
+build*/
+cmake-build-*/

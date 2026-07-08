@@ -9,9 +9,7 @@
 #include "Engine/IIoEngine.h"
 #include "Coroutine/Awaitable.h"
 
-#if defined(_WIN32)
-#	include <windows.h>
-#elif defined(IS_POSIX)
+#if defined(IS_POSIX)
 #	include <sys/socket.h>
 #	include <sys/un.h>
 #	include <unistd.h>

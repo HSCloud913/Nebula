@@ -14,7 +14,6 @@
 
 #if defined(_WIN32)
 #	include <winsock2.h>
-#	include <windows.h>
 #elif defined(IS_POSIX)
 // AF_UNIX SOCK_SEQPACKET 기반 — POSIX 메시지 큐(mqd_t)는 io_uring 이 아는 opcode가 없어
 // (mq_send/mq_receive 전용 syscall) Reactor(Watch + 동기 mq_send/mq_receive)로만 쓸 수 있었다.

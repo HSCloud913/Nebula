@@ -9,9 +9,7 @@
 #include "Coroutine/Awaitable.h"
 #include "Error.h"
 
-#if defined(_WIN32)
-#   include <windows.h>
-#elif defined(IS_POSIX)
+#if defined(IS_POSIX)
 #   include <fcntl.h>
 #   include <unistd.h>
 #endif
