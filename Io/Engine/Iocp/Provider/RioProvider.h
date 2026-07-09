@@ -59,8 +59,8 @@ BEGIN_NS(ne::io)
 		virtual void_t UnregisterBuffer(BufferHandle _handle) noexcept override;
 
 	public:
-		[[nodiscard]] virtual ne::Result<void_t, ne::OsError> SubmitSendRegistered(const socket_t _socket, const BufferHandle _handle, const void_t* _buffer, const std::size_t _length, void_t* _userData) noexcept override { return Submit(_socket, _handle, _buffer, _length, _userData, true); }
-		[[nodiscard]] virtual ne::Result<void_t, ne::OsError> SubmitReceiveRegistered(const socket_t _socket, const BufferHandle _handle, void_t* _buffer, const std::size_t _length, void_t* _userData) noexcept override { return Submit(_socket, _handle, _buffer, _length, _userData, false); }
+		[[nodiscard]] virtual ne::Result<void_t, IoError> SubmitSendRegistered(const socket_t _socket, const BufferHandle _handle, const void_t* _buffer, const std::size_t _length, void_t* _userData) noexcept override { return Submit(_socket, _handle, _buffer, _length, _userData, true); }
+		[[nodiscard]] virtual ne::Result<void_t, IoError> SubmitReceiveRegistered(const socket_t _socket, const BufferHandle _handle, void_t* _buffer, const std::size_t _length, void_t* _userData) noexcept override { return Submit(_socket, _handle, _buffer, _length, _userData, false); }
 
 	public:
 		virtual void_t ReleaseSocket(socket_t _socket) noexcept override; // 소켓별 RIO_RQ 맵 엔트리 제거
@@ -74,7 +74,7 @@ BEGIN_NS(ne::io)
 		// mutex 를 이미 쥔 상태로 호출.
 		[[nodiscard]] RIO_BUF MakeRioBufferLocked(BufferHandle _handle, const void_t* _buffer, std::size_t _length) const noexcept;
 		// 공통 제출 경로 — _isSend 로 RIOSend/RIOReceive 분기.
-		[[nodiscard]] ne::Result<void_t, ne::OsError> Submit(socket_t _socket, BufferHandle _handle, const void_t* _buffer, std::size_t _length, void_t* _userData, bool_t _isSend) noexcept;
+		[[nodiscard]] ne::Result<void_t, IoError> Submit(socket_t _socket, BufferHandle _handle, const void_t* _buffer, std::size_t _length, void_t* _userData, bool_t _isSend) noexcept;
 
 	public: // RIO_CQ 완료 통지 재무장(RIONotify 는 one-shot). 완료 드레인 직후 호출한다.
 		[[nodiscard]] ne::Result<void_t, IoError> ArmNotify() noexcept;

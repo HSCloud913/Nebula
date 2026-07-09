@@ -10,6 +10,8 @@
 #include "Base/Type.h"
 #include "Io/Buffer/BufferView.h"
 #include "Io/Buffer/BufferChain.h"
+#include "Io/IoError.h"
+#include "Io/IoResult.h"
 
 BEGIN_NS(ne::network)
 	// 바이트 스트림 추상 인터페이스 (async-only).
@@ -18,18 +20,18 @@ BEGIN_NS(ne::network)
 	class IStream
 	{
 	public:
-		IStream() = default;
 		virtual ~IStream() = default;
 
 		NEBULA_NON_COPYABLE_MOVABLE(IStream)
 
 	public:
-		virtual ne::Task<ne::Result<void, ne::OsError>> Handshake() = 0;
-		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Send(ne::io::BufferView _data) = 0;
-		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Sendv(const ne::io::BufferChain& _chain) = 0;
-		virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Receive(ne::io::BufferView _data) = 0;
-		virtual ne::Task<ne::Result<void, ne::OsError>> Shutdown() = 0;
-		virtual ne::Result<void, ne::OsError> Close() = 0;
+		virtual Task<ne::io::IoResult<void_t>> Handshake(std::stop_token = {}) = 0;
+		virtual Task<ne::io::IoResult<size_t>> Send(ne::io::BufferView, std::stop_token = {}) = 0;
+		virtual Task<ne::io::IoResult<size_t>> Sendv(const ne::io::BufferChain&, std::stop_token = {}) = 0;
+		virtual Task<ne::io::IoResult<size_t>> Receive(ne::io::BufferView, std::stop_token = {}) = 0;
+		virtual Task<ne::io::IoResult<size_t>> Receivev(const ne::io::BufferChain&, std::stop_token = {}) = 0;
+		virtual Task<ne::io::IoResult<void_t>> Shutdown() = 0;
+		virtual Result<void_t, ne::io::IoError> Close() = 0;
 
 	public:
 		[[nodiscard]] virtual bool_t IsOpen() const noexcept = 0;

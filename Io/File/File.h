@@ -8,6 +8,7 @@
 #pragma once
 #include <cstddef>
 #include <span>
+#include <stop_token>
 #include "Base/Type.h"
 #include "Io/IoType.h"
 #include "Base/Handle.h"
@@ -24,17 +25,6 @@ BEGIN_NS(ne::io)
 		Write,     // 생성·트렁케이트 후 쓰기 (CREATE_ALWAYS / O_WRONLY|O_CREAT|O_TRUNC)
 		ReadWrite, // 없으면 생성, 읽기+쓰기 (OPEN_ALWAYS / O_RDWR|O_CREAT)
 	};
-
-	namespace detail
-	{
-		// 플랫폼 close 를 .cpp 로 숨겨 헤더가 OS 헤더에 의존하지 않게 한다(파일 핸들 deleter).
-		void_t CloseFileHandle(file_t _handle) noexcept;
-
-		struct FileHandleDeleter
-		{
-			void_t operator()(const file_t _handle) const noexcept { CloseFileHandle(_handle); }
-		};
-	}
 
 	class File
 	{
@@ -61,15 +51,18 @@ BEGIN_NS(ne::io)
 	public:
 		[[nodiscard]] static IoResult<File> Open(Context& _context, string_view_t _path, OpenMode _mode);
 
-		[[nodiscard]] ne::Task<IoResult<std::size_t>> Read(std::span<ne::byte_t> _buffer, ulonglong_t _offset);
-		[[nodiscard]] ne::Task<IoResult<std::size_t>> Write(std::span<const ne::byte_t> _buffer, ulonglong_t _offset);
-
-		// scatter/gather — 여러 세그먼트를 한 요청으로 읽고/쓴다. _chain 은 완료까지 호출자가 살려둬야 한다.
-		[[nodiscard]] ne::Task<IoResult<std::size_t>> Readv(const BufferChain& _chain, ulonglong_t _offset);
-		[[nodiscard]] ne::Task<IoResult<std::size_t>> Writev(const BufferChain& _chain, ulonglong_t _offset);
-
 		// 명시적 해제(silently close 하는 소멸자와 별도, 규칙). 이후 IsValid()==false.
 		[[nodiscard]] ne::Result<void_t, IoError> Close();
+
+	public:
+		// _stopToken: stop 되면 진행 중인 op 를 커널 취소한다(Io::Awaitable 계약 그대로). 기본값(빈
+		// 토큰)은 취소 없음 — when_any/Timeout 콤비네이터가 타임아웃 경합에서 채워 넣는다.
+		[[nodiscard]] ne::Task<IoResult<std::size_t>> Read(std::span<ne::byte_t> _buffer, ulonglong_t _offset, std::stop_token _stopToken = {});
+		[[nodiscard]] ne::Task<IoResult<std::size_t>> Write(std::span<const ne::byte_t> _buffer, ulonglong_t _offset, std::stop_token _stopToken = {});
+
+		// scatter/gather — 여러 세그먼트를 한 요청으로 읽고/쓴다. _chain 은 완료까지 호출자가 살려둬야 한다.
+		[[nodiscard]] ne::Task<IoResult<std::size_t>> Readv(const BufferChain& _chain, ulonglong_t _offset, std::stop_token _stopToken = {});
+		[[nodiscard]] ne::Task<IoResult<std::size_t>> Writev(const BufferChain& _chain, ulonglong_t _offset, std::stop_token _stopToken = {});
 
 	public:
 		[[nodiscard]] file_t Handle() const noexcept { return handle.Get(); }

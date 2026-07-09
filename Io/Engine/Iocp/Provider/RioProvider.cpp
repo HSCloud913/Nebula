@@ -125,17 +125,17 @@ BEGIN_NS(ne::io)
 		return buffer;
 	}
 
-	ne::Result<void_t, ne::OsError> RioProvider::Submit(const socket_t _socket, const BufferHandle _handle, const void_t* _buffer, const std::size_t _length, void_t* _userData, const bool_t _isSend) noexcept
+	ne::Result<void_t, IoError> RioProvider::Submit(const socket_t _socket, const BufferHandle _handle, const void_t* _buffer, const std::size_t _length, void_t* _userData, const bool_t _isSend) noexcept
 	{
 		std::lock_guard lock(mutex); // EnsureInitialized/RQ 조회·생성/RIO 제출/regionBases 조회를 함께 보호(엔진은 MT RunOnce)
 
 		const RIO_BUF buf = MakeRioBufferLocked(_handle, _buffer, _length);
-		if (!buf.BufferId) return ne::Result<void_t, ne::OsError>::Error(ne::OsError{ 0, "unregistered buffer handle" });
+		if (!buf.BufferId) return ne::Result<void_t, IoError>::Error(IoError{ IoErrorKind::INVALID_BUFFER, "unregistered buffer handle" });
 
-		if (auto init = EnsureInitialized(); init.IsError()) return ne::Result<void_t, ne::OsError>::Error(ne::OsError{ init.Error().Code(), init.Error().Message() });
+		if (auto init = EnsureInitialized(); init.IsError()) return ne::Result<void_t, IoError>::Error(std::move(init.Error()));
 
 		auto rq = EnsureRequestQueueLocked(_socket);
-		if (rq.IsError()) return ne::Result<void_t, ne::OsError>::Error(ne::OsError{ rq.Error().Code(), rq.Error().Message() });
+		if (rq.IsError()) return ne::Result<void_t, IoError>::Error(std::move(rq.Error()));
 
 		// RequestContext = userData (완료 시 IocpEngine::DrainRioCompletions 가 Completion{userData,...}
 		// 로 그대로 정규화). 단일 RIO_BUF.
@@ -144,10 +144,10 @@ BEGIN_NS(ne::io)
 							? table.RIOSend(rq.Value(), &localBuf, 1, 0, reinterpret_cast<PVOID>(_userData))
 							: table.RIOReceive(rq.Value(), &localBuf, 1, 0, reinterpret_cast<PVOID>(_userData));
 		if (!ok)
-			return ne::Result<void_t, ne::OsError>::Error(
-				ne::OsError{ ne::LastOsError() }.Context(_isSend ? "[RioProvider/RIOSend]" : "[RioProvider/RIOReceive]"));
+			return ne::Result<void_t, IoError>::Error(
+				IoError{ ne::OsError{ ne::LastOsError() } }.Context(_isSend ? "[RioProvider/RIOSend]" : "[RioProvider/RIOReceive]"));
 
-		return ne::Result<void_t, ne::OsError>::Ok();
+		return ne::Result<void_t, IoError>::Ok();
 	}
 
 

@@ -62,15 +62,15 @@ BEGIN_NS(ne::io)
 		usedSlots[slot] = false;
 	}
 
-	ne::Result<void_t, ne::OsError> IoUringProvider::SubmitSendRegistered(socket_t, BufferHandle, const void_t*, std::size_t, void_t*) noexcept
+	ne::Result<void_t, IoError> IoUringProvider::SubmitSendRegistered(socket_t, BufferHandle, const void_t*, std::size_t, void_t*) noexcept
 	{
 		// io_uring 고정 버퍼는 Submit()의 SQE(ReadFixed/WriteFixed) 로만 소비된다 — 이 경로는 없음.
-		return ne::Result<void_t, ne::OsError>::Error(ne::OsError{ 0, "io_uring fixed buffers are consumed via ReadFixed/WriteFixed, not this method" });
+		return ne::Result<void_t, IoError>::Error(IoError{ IoErrorKind::UNSUPPORTED, "io_uring fixed buffers are consumed via ReadFixed/WriteFixed, not this method" });
 	}
 
-	ne::Result<void_t, ne::OsError> IoUringProvider::SubmitReceiveRegistered(socket_t, BufferHandle, void_t*, std::size_t, void_t*) noexcept
+	ne::Result<void_t, IoError> IoUringProvider::SubmitReceiveRegistered(socket_t, BufferHandle, void_t*, std::size_t, void_t*) noexcept
 	{
-		return ne::Result<void_t, ne::OsError>::Error(ne::OsError{ 0, "io_uring fixed buffers are consumed via ReadFixed/WriteFixed, not this method" });
+		return ne::Result<void_t, IoError>::Error(IoError{ IoErrorKind::UNSUPPORTED, "io_uring fixed buffers are consumed via ReadFixed/WriteFixed, not this method" });
 	}
 END_NS
 

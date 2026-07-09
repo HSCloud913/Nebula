@@ -47,10 +47,10 @@ BEGIN_NS(ne::io)
 		// 등록 버퍼 송수신 제출(fast path). _buffer 는 RegisterBuffer(_region) 에 넘겼던 그 영역
 		// 내부의 포인터여야 한다(sub-range 허용). _userData 는 다른 op 들과 동일한 Completion.userData
 		// 계약을 그대로 따른다 — 완료는 엔진의 WaitCompletions() 가 같은 Completion{userData, result}
-		// 형태로 돌려준다(RIO: 엔진이 RIO_CQ 를 자신의 IOCP 에 바인딩해 정규화). 에러 타입은 스트림
-		// 경로와 동일한 OsError 로 통일한다(등록/미지원 계열 에러만 IoError 로 RegisterBuffer 에서 다룬다).
-		[[nodiscard]] virtual ne::Result<void_t, ne::OsError> SubmitSendRegistered(socket_t _socket, BufferHandle _handle, const void_t* _buffer, std::size_t _length, void_t* _userData) noexcept = 0;
-		[[nodiscard]] virtual ne::Result<void_t, ne::OsError> SubmitReceiveRegistered(socket_t _socket, BufferHandle _handle, void_t* _buffer, std::size_t _length, void_t* _userData) noexcept = 0;
+		// 형태로 돌려준다(RIO: 엔진이 RIO_CQ 를 자신의 IOCP 에 바인딩해 정규화). 에러 타입은
+		// File/Socket 과 동일한 IoError 로 통일한다(OS 실패는 IoErrorKind::OS_FAILURE 로 감싼다).
+		[[nodiscard]] virtual ne::Result<void_t, IoError> SubmitSendRegistered(socket_t _socket, BufferHandle _handle, const void_t* _buffer, std::size_t _length, void_t* _userData) noexcept = 0;
+		[[nodiscard]] virtual ne::Result<void_t, IoError> SubmitReceiveRegistered(socket_t _socket, BufferHandle _handle, void_t* _buffer, std::size_t _length, void_t* _userData) noexcept = 0;
 
 	public:
 		// 소켓 close 시 그 소켓에 묶인 provider-내부 상태를 정리한다(RIO: 소켓별 RIO_RQ 맵 엔트리).

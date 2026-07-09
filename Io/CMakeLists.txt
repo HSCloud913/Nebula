@@ -13,11 +13,14 @@ set(HEADERS
         IoResult.h
         Context/Context.h
         Coroutine/Awaitable.h
+        Coroutine/Timeout.h
         File/File.h
         Socket/Socket.h
 
         Buffer/BufferView.h
         Buffer/BufferChain.h
+        Buffer/RegisteredBuffer.h
+        Buffer/BufferPool.h
 
         Context/Operation.h
         Engine/IEngine.h
@@ -35,6 +38,7 @@ set(SOURCES
         Context/Context.cpp
         File/File.cpp
         Socket/Socket.cpp
+        Buffer/BufferPool.cpp
 )
 
 if (WIN32)

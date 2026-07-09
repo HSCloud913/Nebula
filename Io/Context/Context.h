@@ -16,11 +16,7 @@
 #include <vector>
 #include "Base/Type.h"
 #include "Io/Engine/IEngine.h"
-
-namespace ne::time
-{
-	class TimerWheel;
-}
+#include "Time/Coroutine/Awaitable.h"
 
 BEGIN_NS(ne::io)
 	// 완료 디스패치 규약. 엔진에 제출하는 Request.userData 는 이 구조체를 가리킨다 —
@@ -70,6 +66,12 @@ BEGIN_NS(ne::io)
 		// Run() 루프를 종료시킨다(다음 iteration 에서 빠져나옴).
 		void_t Stop() noexcept;
 		void_t SetTimerWheel(ne::time::TimerWheel* _timerWheel) noexcept { timerWheel = _timerWheel; }
+
+		// time::Awaitable(SleepFor) 을 감싸 wheel 핸들 관리를 감춘다 — co_await context.SleepFor(500ms).
+		// 선결조건: SetTimerWheel() 로 wheel 이 먼저 물려 있어야 한다(안 그러면 assert — 결선을 잊은
+		// 프로그래머 실수이지 런타임에 값으로 복구할 상황이 아니다). RunOnce 가 이미 그 wheel 을 Tick 하고
+		// 있으므로(EffectiveTimeout), 이 래퍼는 Schedule/Cancel 만 새로 얹는다.
+		[[nodiscard]] ne::time::Awaitable SleepFor(std::chrono::milliseconds _duration) const noexcept;
 
 	private:
 		// timerWheel 이 있으면 다음 만료까지, 없으면 _timeout 을 그대로 유효 타임아웃으로 계산.

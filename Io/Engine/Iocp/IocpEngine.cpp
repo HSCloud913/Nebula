@@ -392,7 +392,9 @@ BEGIN_NS(ne::io)
 			int_t nameLength = static_cast<int_t>(sizeof(local));
 			(void_t)::getsockname(listenSocket, reinterpret_cast<sockaddr*>(&local), &nameLength);
 
-			const SOCKET accepted = ::WSASocketW(local.ss_family, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
+			// io::Socket::Create 와 동일하게 항상 WSA_FLAG_REGISTERED_IO 로 만든다 — RIO(SendZeroCopy)는
+			// 이 플래그로 만든 소켓에서만 동작하고 생성 시점에만 지정 가능하므로 옵트인 없이 항상 켠다.
+			const SOCKET accepted = ::WSASocketW(local.ss_family, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED | WSA_FLAG_REGISTERED_IO);
 			if (accepted == INVALID_SOCKET)
 			{
 				syncError = ::WSAGetLastError();

@@ -4,6 +4,7 @@
 
 #include "Io/Context/Context.h"
 
+#include <cassert>
 #include <limits>
 #include "Time/Timer/TimerWheel.h"
 
@@ -91,6 +92,12 @@ BEGIN_NS(ne::io)
 			return std::chrono::milliseconds{ nextExpiry };
 
 		return _timeout;
+	}
+
+	ne::time::Awaitable Context::SleepFor(const std::chrono::milliseconds _duration) const noexcept
+	{
+		assert(timerWheel != nullptr && "Context::SleepFor requires SetTimerWheel() before use");
+		return ne::time::SleepFor(*timerWheel, _duration);
 	}
 
 	void_t Context::DrainPosted()

@@ -48,8 +48,8 @@ BEGIN_NS(ne::io)
 	public:
 		// io_uring 고정 버퍼는 Submit()의 ReadFixed/WriteFixed(SQE, buf_index=bufferId)로만 쓰인다 —
 		// 이 두 메서드는 이 provider 에서 호출 경로가 없다(RIO 전용 모델). 항상 실패 반환.
-		[[nodiscard]] virtual ne::Result<void_t, ne::OsError> SubmitSendRegistered(socket_t _socket, BufferHandle _handle, const void_t* _buffer, std::size_t _length, void_t* _userData) noexcept override;
-		[[nodiscard]] virtual ne::Result<void_t, ne::OsError> SubmitReceiveRegistered(socket_t _socket, BufferHandle _handle, void_t* _buffer, std::size_t _length, void_t* _userData) noexcept override;
+		[[nodiscard]] virtual ne::Result<void_t, IoError> SubmitSendRegistered(socket_t _socket, BufferHandle _handle, const void_t* _buffer, std::size_t _length, void_t* _userData) noexcept override;
+		[[nodiscard]] virtual ne::Result<void_t, IoError> SubmitReceiveRegistered(socket_t _socket, BufferHandle _handle, void_t* _buffer, std::size_t _length, void_t* _userData) noexcept override;
 
 	private:
 		// lazy: 최초 RegisterBuffer 호출 때 sparse 테이블 예약. mutex 를 이미 쥔 상태로 호출.

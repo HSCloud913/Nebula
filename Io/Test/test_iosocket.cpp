@@ -186,9 +186,13 @@ TEST(SocketLevel3Test, AcceptConnectRoundTrip)
 	ASSERT_TRUE(listenAdopt.IsOk());
 	Socket listenSocket = std::move(listenAdopt.Value());
 
+	auto clientCreate = Socket::Create(context, AF_INET);
+	ASSERT_TRUE(clientCreate.IsOk()) << clientCreate.Error().What();
+	Socket client = std::move(clientCreate.Value());
+
 	// Accept 와 Connect 는 서로 의존 — 둘 다 제출한 뒤 함께 구동한다.
 	auto acceptTask = listenSocket.Accept();
-	auto connectTask = Socket::Connect(context, "127.0.0.1", port);
+	auto connectTask = client.Connect("127.0.0.1", port);
 	acceptTask.Resume();
 	connectTask.Resume();
 
@@ -205,7 +209,6 @@ TEST(SocketLevel3Test, AcceptConnectRoundTrip)
 	ASSERT_TRUE(connectResult.IsOk()) << connectResult.Error().What();
 
 	Socket server = std::move(acceptResult.Value());
-	Socket client = std::move(connectResult.Value());
 
 	// 연결된 소켓으로 데이터 왕복 검증.
 	const char payload[] = "accept-connect-roundtrip";

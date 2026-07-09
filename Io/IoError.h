@@ -9,7 +9,7 @@
 BEGIN_NS(ne::io)
 	// 등록 버퍼/capability 경로 전용 에러 분류. 기존 ne::Error 체계를 상속해
 	// Context()/What() 및 Result<T, IoError> 와 그대로 맞물린다(OsError/HttpError 와 동형).
-	enum class IoErrorKind : uint8_t
+	enum class IoErrorKind : byte_t
 	{
 		UNSUPPORTED,               // 엔진이 해당 capability 미지원 (예: epoll 에 RegisteredIo)
 		REGISTRATION_LIMIT_EXCEEDED, // RIO / io_uring 버퍼 등록 한도 초과
