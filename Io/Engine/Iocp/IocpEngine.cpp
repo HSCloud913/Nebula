@@ -2,14 +2,13 @@
 // Created by hscloud on 26. 6. 30.
 //
 
-#include "IocpEngine.h"
+#include "Io/Engine/Iocp/IocpEngine.h"
 
 #if defined(_WIN32)
-
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <mswsock.h>
-#include <cstdint>
+#	include <winsock2.h>
+#	include <ws2tcpip.h>
+#	include <mswsock.h>
+#	include <cstdint>
 
 
 
@@ -29,11 +28,11 @@ BEGIN_NS(ne::io)
 
 
 
-	void_t IocpEngine::Submit(const IoRequest& _request)
+	void_t IocpEngine::Submit(const Request& _request)
 	{
 		// RIO(SendZeroCopy) 는 자체 완료 큐(RIO_CQ→IOCP 바인딩, RioKey)를 쓴다 — IocpOperation/
 		// OVERLAPPED 를 전혀 만들지 않고 곧장 RioProvider 로 제출한다. userData 는 RequestContext 로
-		// 그대로 실려 WaitCompletions()→DrainRioCompletions() 가 IoCompletion 으로 되돌려준다.
+		// 그대로 실려 WaitCompletions()→DrainRioCompletions() 가 Completion 으로 되돌려준다.
 		// (Cancel() 은 이 경로를 추적하지 않는다 — RIO 제출 취소는 이번 범위 밖.)
 		if (_request.op == OpCode::SendZeroCopy)
 		{
@@ -78,7 +77,7 @@ BEGIN_NS(ne::io)
 		Dispatch(operation, _request, handle);
 	}
 
-	int_t IocpEngine::WaitCompletions(IoCompletion* _out, const int_t _max, const std::chrono::milliseconds _timeout)
+	int_t IocpEngine::WaitCompletions(Completion* _out, const int_t _max, const std::chrono::milliseconds _timeout)
 	{
 		if (_max <= 0) return 0;
 
@@ -123,7 +122,7 @@ BEGIN_NS(ne::io)
 				if (result >= 0)
 				{
 					const SOCKET listenSocket = static_cast<SOCKET>(operation->contextSocket);
-					(void)::setsockopt(static_cast<SOCKET>(operation->acceptSocket), SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT,
+					(void_t)::setsockopt(static_cast<SOCKET>(operation->acceptSocket), SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT,
 										reinterpret_cast<const char*>(&listenSocket), static_cast<int_t>(sizeof(listenSocket)));
 					result = static_cast<longlong_t>(operation->acceptSocket); // 성공: accept 소켓 핸들 반환
 				}
@@ -134,7 +133,7 @@ BEGIN_NS(ne::io)
 			}
 			else if (operation->op == OpCode::Connect && result >= 0)
 			{
-				(void)::setsockopt(static_cast<SOCKET>(operation->contextSocket), SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, nullptr, 0);
+				(void_t)::setsockopt(static_cast<SOCKET>(operation->contextSocket), SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, nullptr, 0);
 				result = 0;
 			}
 
@@ -153,7 +152,7 @@ BEGIN_NS(ne::io)
 		::PostQueuedCompletionStatus(iocpHandle.Get(), 0, WakeKey, nullptr);
 	}
 
-	void_t IocpEngine::Cancel(void* _userData) noexcept
+	void_t IocpEngine::Cancel(void_t* _userData) noexcept
 	{
 		if (_userData == nullptr) return;
 
@@ -230,7 +229,7 @@ BEGIN_NS(ne::io)
 		return true;
 	}
 
-	void_t IocpEngine::Dispatch(IocpOperation* _operation, const IoRequest& _request, const HANDLE _handle) noexcept
+	void_t IocpEngine::Dispatch(IocpOperation* _operation, const Request& _request, const HANDLE _handle) noexcept
 	{
 		// 파일 scatter/gather(Readv/Writev) — Windows 는 ReadFileScatter/WriteFileGather 가 페이지 정렬을
 		// 요구해 임의 크기 세그먼트에 못 쓴다. 세그먼트별로 순차 ReadFile/WriteFile+GetOverlappedResult(대기)
@@ -256,7 +255,7 @@ BEGIN_NS(ne::io)
 
 			longlong_t total = 0;
 			ulonglong_t currentOffset = _request.offset;
-			bool_t failed = false;
+			bool_t hasFailed = false;
 			ulong_t lastError = 0;
 
 			const auto taggedEvent = reinterpret_cast<HANDLE>(reinterpret_cast<std::uintptr_t>(waitEvent) | 1);
@@ -279,7 +278,7 @@ BEGIN_NS(ne::io)
 
 				if (!isOk)
 				{
-					failed = true;
+					hasFailed = true;
 					lastError = ::GetLastError();
 					break;
 				}
@@ -292,7 +291,7 @@ BEGIN_NS(ne::io)
 			::CloseHandle(waitEvent);
 
 			_operation->hasSyncResult = true;
-			_operation->syncResult = failed ? -static_cast<longlong_t>(lastError) : total;
+			_operation->syncResult = hasFailed ? -static_cast<longlong_t>(lastError) : total;
 
 			::PostQueuedCompletionStatus(iocpHandle.Get(), 0, 0, &_operation->overlapped);
 
@@ -391,7 +390,7 @@ BEGIN_NS(ne::io)
 			// accept 소켓은 listen 소켓과 같은 주소 체계로 만든다(TCP 전제).
 			sockaddr_storage local{};
 			int_t nameLength = static_cast<int_t>(sizeof(local));
-			(void)::getsockname(listenSocket, reinterpret_cast<sockaddr*>(&local), &nameLength);
+			(void_t)::getsockname(listenSocket, reinterpret_cast<sockaddr*>(&local), &nameLength);
 
 			const SOCKET accepted = ::WSASocketW(local.ss_family, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
 			if (accepted == INVALID_SOCKET)
@@ -432,7 +431,7 @@ BEGIN_NS(ne::io)
 			local.ss_family = target->sa_family;
 
 			const int_t bindLength = (target->sa_family == AF_INET6) ? static_cast<int_t>(sizeof(sockaddr_in6)) : static_cast<int_t>(sizeof(sockaddr_in));
-			(void)::bind(socket, reinterpret_cast<sockaddr*>(&local), bindLength);
+			(void_t)::bind(socket, reinterpret_cast<sockaddr*>(&local), bindLength);
 
 			_operation->contextSocket = static_cast<socket_t>(socket);
 
@@ -475,7 +474,7 @@ BEGIN_NS(ne::io)
 		// else: 성공/IO_PENDING — 완료는 WaitCompletions 에서 회수하며 operation 을 해제한다.
 	}
 
-	int_t IocpEngine::DrainRioCompletions(IoCompletion* _out, const int_t _max) noexcept
+	int_t IocpEngine::DrainRioCompletions(Completion* _out, const int_t _max) noexcept
 	{
 		if (rioProvider == nullptr || !rioProvider->IsInitialized() || _max <= 0) return 0;
 
@@ -492,13 +491,13 @@ BEGIN_NS(ne::io)
 											? static_cast<longlong_t>(results[i].BytesTransferred)
 											: -static_cast<longlong_t>(::RtlNtStatusToDosError(static_cast<long_t>(results[i].Status)));
 
-				_out[count].userData = reinterpret_cast<void*>(static_cast<std::uintptr_t>(results[i].RequestContext));
+				_out[count].userData = reinterpret_cast<void_t*>(static_cast<std::uintptr_t>(results[i].RequestContext));
 				_out[count].result = result;
 				++count;
 			}
 		}
 
-		(void)rioProvider->ArmNotify(); // RIONotify 는 one-shot — 다음 완료를 받으려면 매번 재무장
+		(void_t)rioProvider->ArmNotify(); // RIONotify 는 one-shot — 다음 완료를 받으려면 매번 재무장
 
 		return count;
 	}

@@ -2,7 +2,7 @@
 // Created by hscloud on 25. 6. 29.
 //
 
-#include "Socket.h"
+#include "Network/Socket/Socket.h"
 
 #include <cstring>
 #include <cerrno>
@@ -10,8 +10,8 @@
 #include <optional>
 #include <type_traits>
 #include <utility>
-#include "ThreadPool.h"
-#include "Coroutine/Awaitable.h"
+#include "Concurrency/ThreadPool.h"
+#include "Io/Coroutine/Awaitable.h"
 #if defined(_WIN32)
 #   include <winsock2.h>
 #   include <ws2tcpip.h>

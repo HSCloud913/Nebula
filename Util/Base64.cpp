@@ -1,15 +1,15 @@
-#include "Base64.h"
+#include "Util/Base64.h"
 
 #include <cstring>
 
 
 
-const ne::string_t Base64String = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+constexpr ne::string_view_t Base64String = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 
 
 BEGIN_NS(ne)
-	void Base64::Encode(lpcstr_t _string, char_t* _buffer, size_t _bufferSize)
+	void_t Base64::Encode(lpcstr_t _string, char_t* _buffer, size_t _bufferSize)
 	{
 		byte_t arrayInput[3], arrayOutput[4];
 
@@ -70,7 +70,7 @@ BEGIN_NS(ne)
 		}
 	}
 
-	void Base64::Decode(lpcstr_t _string, char_t* _buffer, size_t _bufferSize)
+	void_t Base64::Decode(lpcstr_t _string, char_t* _buffer, size_t _bufferSize)
 	{
 		byte_t arrayInput[4], arrayOutput[3];
 

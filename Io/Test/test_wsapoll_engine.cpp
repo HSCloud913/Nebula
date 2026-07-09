@@ -3,7 +3,7 @@
 // 직접 검증한다(Windows 전용 — Reactor 는 여기서만 인스턴스화, 공개 API 로는 노출되지 않는다).
 
 #include <gtest/gtest.h>
-#include "Type.h"
+#include "Base/Type.h"
 
 #if defined(_WIN32)
 
@@ -12,19 +12,19 @@
 #include <windows.h>
 #include <chrono>
 #include <cstring>
-#include "Engine/WsaPoll/WsaPollEngine.h"
+#include "Io/Engine/WsaPoll/WsaPollEngine.h"
 
 using namespace ne;
 using namespace ne::io;
 
 namespace
 {
-	longlong_t WaitFor(WsaPollEngine& _engine, void* _tag, const std::chrono::milliseconds _timeout = std::chrono::seconds(5))
+	longlong_t WaitFor(WsaPollEngine& _engine, void_t* _tag, const std::chrono::milliseconds _timeout = std::chrono::seconds(5))
 	{
 		const auto deadline = std::chrono::steady_clock::now() + _timeout;
 		while (std::chrono::steady_clock::now() < deadline)
 		{
-			IoCompletion completions[8];
+			Completion completions[8];
 			const int_t count = _engine.WaitCompletions(completions, 8, std::chrono::milliseconds(50));
 			for (int_t i = 0; i < count; ++i)
 				if (completions[i].userData == _tag) return completions[i].result;
@@ -89,14 +89,14 @@ TEST(WsaPollEngineTest, FileWriteThenReadRoundTrip)
 	const std::size_t length = sizeof(payload) - 1;
 
 	int_t writeTag = 0;
-	IoRequest write{ .op = OpCode::Write, .userData = &writeTag, .handle = reinterpret_cast<ulonglong_t>(file),
+	Request write{ .op = OpCode::Write, .userData = &writeTag, .handle = reinterpret_cast<ulonglong_t>(file),
 	                 .buffer = const_cast<lpstr_t>(payload), .length = length, .offset = 0 };
 	engine.Submit(write);
 	EXPECT_EQ(WaitFor(engine, &writeTag), static_cast<longlong_t>(length));
 
 	char readBuffer[64]{};
 	int_t readTag = 0;
-	IoRequest read{ .op = OpCode::Read, .userData = &readTag, .handle = reinterpret_cast<ulonglong_t>(file),
+	Request read{ .op = OpCode::Read, .userData = &readTag, .handle = reinterpret_cast<ulonglong_t>(file),
 	                .buffer = readBuffer, .length = length, .offset = 0 };
 	engine.Submit(read);
 	EXPECT_EQ(WaitFor(engine, &readTag), static_cast<longlong_t>(length));
@@ -121,14 +121,14 @@ TEST(WsaPollEngineTest, SocketSendThenReceiveRoundTrip)
 	const std::size_t length = sizeof(payload) - 1;
 
 	int_t sendTag = 0;
-	IoRequest send{ .op = OpCode::Send, .userData = &sendTag, .handle = static_cast<ulonglong_t>(a),
+	Request send{ .op = OpCode::Send, .userData = &sendTag, .handle = static_cast<ulonglong_t>(a),
 	                .buffer = const_cast<lpstr_t>(payload), .length = length };
 	engine.Submit(send);
 	EXPECT_EQ(WaitFor(engine, &sendTag), static_cast<longlong_t>(length));
 
 	char receiveBuffer[64]{};
 	int_t receiveTag = 0;
-	IoRequest receive{ .op = OpCode::Receive, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b),
+	Request receive{ .op = OpCode::Receive, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b),
 	                   .buffer = receiveBuffer, .length = length };
 	engine.Submit(receive);
 	EXPECT_EQ(WaitFor(engine, &receiveTag), static_cast<longlong_t>(length));
@@ -164,14 +164,14 @@ TEST(WsaPollEngineTest, SendFileZeroCopyRoundTrip)
 	ASSERT_TRUE(MakeConnectedPair(a, b));
 
 	int_t sendFileTag = 0;
-	IoRequest sendFile{ .op = OpCode::SendFile, .userData = &sendFileTag, .handle = static_cast<ulonglong_t>(a),
+	Request sendFile{ .op = OpCode::SendFile, .userData = &sendFileTag, .handle = static_cast<ulonglong_t>(a),
 	                    .length = length, .offset = 0, .auxHandle = reinterpret_cast<ulonglong_t>(sourceFile) };
 	engine.Submit(sendFile);
 	EXPECT_EQ(WaitFor(engine, &sendFileTag), static_cast<longlong_t>(length));
 
 	char receiveBuffer[64]{};
 	int_t receiveTag = 0;
-	IoRequest receive{ .op = OpCode::Receive, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b),
+	Request receive{ .op = OpCode::Receive, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b),
 	                   .buffer = receiveBuffer, .length = length };
 	engine.Submit(receive);
 	EXPECT_EQ(WaitFor(engine, &receiveTag), static_cast<longlong_t>(length));
@@ -214,11 +214,11 @@ TEST(WsaPollEngineTest, AcceptConnectRoundTrip)
 	::ioctlsocket(client, FIONBIO, &nonBlocking);
 
 	int_t acceptTag = 0;
-	IoRequest accept{ .op = OpCode::Accept, .userData = &acceptTag, .handle = static_cast<ulonglong_t>(listener) };
+	Request accept{ .op = OpCode::Accept, .userData = &acceptTag, .handle = static_cast<ulonglong_t>(listener) };
 	engine.Submit(accept);
 
 	int_t connectTag = 0;
-	IoRequest connect{ .op = OpCode::Connect, .userData = &connectTag, .handle = static_cast<ulonglong_t>(client),
+	Request connect{ .op = OpCode::Connect, .userData = &connectTag, .handle = static_cast<ulonglong_t>(client),
 	                   .address = &address, .addressLength = addressLength };
 	engine.Submit(connect);
 
@@ -227,17 +227,17 @@ TEST(WsaPollEngineTest, AcceptConnectRoundTrip)
 	// 두 번째 호출이 그 결과를 영영 못 보게 된다. 두 태그를 한 루프에서 같이 기다린다.
 	longlong_t acceptResult = -1;
 	longlong_t connectResult = -1;
-	bool_t haveAccept = false;
-	bool_t haveConnect = false;
+	bool_t hasAccept = false;
+	bool_t hasConnect = false;
 	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-	while ((!haveAccept || !haveConnect) && std::chrono::steady_clock::now() < deadline)
+	while ((!hasAccept || !hasConnect) && std::chrono::steady_clock::now() < deadline)
 	{
-		IoCompletion completions[8];
+		Completion completions[8];
 		const int_t count = engine.WaitCompletions(completions, 8, std::chrono::milliseconds(50));
 		for (int_t i = 0; i < count; ++i)
 		{
-			if (completions[i].userData == &acceptTag) { acceptResult = completions[i].result; haveAccept = true; }
-			else if (completions[i].userData == &connectTag) { connectResult = completions[i].result; haveConnect = true; }
+			if (completions[i].userData == &acceptTag) { acceptResult = completions[i].result; hasAccept = true; }
+			else if (completions[i].userData == &connectTag) { connectResult = completions[i].result; hasConnect = true; }
 		}
 	}
 	EXPECT_GE(acceptResult, 0);
@@ -270,7 +270,7 @@ TEST(WsaPollEngineTest, WakeUnblocksWait)
 	engine.Wake();
 
 	const auto start = std::chrono::steady_clock::now();
-	IoCompletion completions[4];
+	Completion completions[4];
 	const int_t count = engine.WaitCompletions(completions, 4, std::chrono::seconds(5));
 	const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
 

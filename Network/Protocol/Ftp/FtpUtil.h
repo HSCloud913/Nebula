@@ -7,7 +7,7 @@
 #include <charconv>
 #include <optional>
 #include <string_view>
-#include "FtpBase.h"
+#include "Network/Protocol/Ftp/FtpBase.h"
 
 BEGIN_NS(ne::network::ftp)
 

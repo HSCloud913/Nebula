@@ -3,7 +3,7 @@
 //
 
 #pragma once
-#include "Type.h"
+#include "Base/Type.h"
 
 #if defined(_WIN32)
 #   include <winsock2.h>

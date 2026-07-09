@@ -1,5 +1,5 @@
 #pragma once
-#include "Type.h"
+#include "Base/Type.h"
 
 BEGIN_NS(ne::crypto)
 	struct RSAPublicKey
@@ -7,7 +7,7 @@ BEGIN_NS(ne::crypto)
 		ne::string_t n;
 		ne::string_t e;
 
-		[[nodiscard]] ne::string_t Encrypt(ne::string_t&& _plaintext) const;
+		[[nodiscard]] ne::string_t Encrypt(ne::string_t&& _plainText) const;
 	};
 
 	struct RSAPrivateKey
@@ -15,7 +15,7 @@ BEGIN_NS(ne::crypto)
 		ne::string_t n;
 		ne::string_t d;
 
-		[[nodiscard]] ne::string_t Decrypt(ne::string_t&& _ciphertext) const;
+		[[nodiscard]] ne::string_t Decrypt(ne::string_t&& _cipherText) const;
 	};
 
 	struct RSAKeyPair

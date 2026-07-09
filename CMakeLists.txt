@@ -29,6 +29,11 @@ FetchContent_MakeAvailable(libssh2)
 
 enable_testing()
 
+# include 정리(모듈 접두 경로): 모든 내부 헤더는 리포 루트 기준 "Module/..." 로 포함한다.
+# 예: #include "Io/Coroutine/Awaitable.h", "Base/Type.h". 이렇게 하면 Io/Coroutine/Awaitable.h 와
+# Time/Coroutine/Awaitable.h 같은 동명(同名) 헤더가 모듈 접두로 유일하게 구분된다.
+include_directories(${CMAKE_SOURCE_DIR})
+
 # 의존 순서대로 추가
 add_subdirectory(Base)
 add_subdirectory(Memory)

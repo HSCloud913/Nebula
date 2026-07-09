@@ -1,6 +1,6 @@
 #pragma once
-#include "Type.h"
-#include "Hash/Hash.h"
+#include "Base/Type.h"
+#include "Cryptography/Hash/Hash.h"
 
 BEGIN_NS(ne::crypto)
 	class HMACKey final

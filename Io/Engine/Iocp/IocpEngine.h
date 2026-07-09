@@ -3,28 +3,28 @@
 //
 // Level 0 — Windows IOCP 백엔드. proactor(완료 기반) 그대로 매핑한다(스펙 2.1).
 //   Submit          : op 별 overlapped 요청 발행(WSARecv/WSASend/ReadFile/WriteFile ...)
-//   WaitCompletions : GetQueuedCompletionStatusEx 로 완료 batch 수확 → IoCompletion 으로 정규화
+//   WaitCompletions : GetQueuedCompletionStatusEx 로 완료 batch 수확 → Completion 으로 정규화
 //   Wake            : PostQueuedCompletionStatus(널 overlapped) 로 대기 해제
 //   Supports        : capability 매트릭스(스펙 2.2)
 //
 // 제출 op 당 IocpOperation 을 heap 에 두고 OVERLAPPED* 를 커널에 넘긴다 — 완료 시 그 포인터로
 // 복원해 userData 를 되돌린다(OVERLAPPED 가 첫 멤버여야 reinterpret_cast 성립).
-// 확장성: 이 완료 큐 모델은 추후 IoRing(Windows 11+) 백엔드도 같은 IIoEngine 계약으로 흡수 가능.
+// 확장성: 이 완료 큐 모델은 추후 IoRing(Windows 11+) 백엔드도 같은 IEngine 계약으로 흡수 가능.
 
 #pragma once
-#if defined(_WIN32)
 
-#include "Engine/IIoEngine.h"
-#include "Engine/Iocp/Provider/RioProvider.h"
-#include <memory>
-#include <mutex>
-#include <unordered_map>
-#include <unordered_set>
-#include <vector>
-#include "Handle.h"
+#if defined(_WIN32)
+#	include <memory>
+#	include <mutex>
+#	include <unordered_map>
+#	include <unordered_set>
+#	include <vector>
+#	include "Base/Handle.h"
+#	include "Io/Engine/IEngine.h"
+#	include "Io/Engine/Iocp/Provider/RioProvider.h"
 
 BEGIN_NS(ne::io)
-	class IocpEngine final :public IIoEngine
+	class IocpEngine final :public IEngine
 	{
 	public:
 		explicit IocpEngine(ulong_t _concurrentThreads = 0) noexcept;
@@ -41,7 +41,7 @@ BEGIN_NS(ne::io)
 		struct IocpOperation
 		{ // 제출 op 당 컨텍스트. overlapped 는 반드시 첫 멤버.
 			OVERLAPPED overlapped{};
-			void* userData{ nullptr };
+			void_t* userData{ nullptr };
 			HANDLE handle{ nullptr }; // CancelIoEx 대상
 			OpCode op{ OpCode::Read };                     // 완료 후처리 분기용(Accept/Connect)
 			socket_t acceptSocket{ InvalidSocket };          // Accept: AcceptEx 로 채워질 새 소켓
@@ -58,17 +58,17 @@ BEGIN_NS(ne::io)
 		IocpHandle iocpHandle;
 		std::mutex mutex;                                   // associated / inflight / 확장함수 보호(멀티스레드 Submit/WaitCompletions/Cancel)
 		std::unordered_set<ulonglong_t> associated;         // 이미 IOCP 에 연결된 handle 집합
-		std::unordered_map<void*, IocpOperation*> inflight; // userData → 진행 중 op (Cancel 조회용)
-		void* acceptExPtr{ nullptr };  // LPFN_ACCEPTEX (lazy, WSAIoctl 로 획득)
-		void* connectExPtr{ nullptr }; // LPFN_CONNECTEX
+		std::unordered_map<void_t*, IocpOperation*> inflight; // userData → 진행 중 op (Cancel 조회용)
+		void_t* acceptExPtr{ nullptr };  // LPFN_ACCEPTEX (lazy, WSAIoctl 로 획득)
+		void_t* connectExPtr{ nullptr }; // LPFN_CONNECTEX
 		bool_t isExtensionsLoaded{ false };
 		std::unique_ptr<RioProvider> rioProvider; // SendZeroCopy(RIOSend) 전용 — lazy 초기화, IsValid() 와 무관하게 항상 생성
 
 	public:
-		virtual void_t Submit(const IoRequest& _request) override;
-		[[nodiscard]] virtual int_t WaitCompletions(IoCompletion* _out, int_t _max, std::chrono::milliseconds _timeout) override;
+		virtual void_t Submit(const Request& _request) override;
+		[[nodiscard]] virtual int_t WaitCompletions(Completion* _out, int_t _max, std::chrono::milliseconds _timeout) override;
 		virtual void_t Wake() override;
-		virtual void_t Cancel(void* _userData) noexcept override;
+		virtual void_t Cancel(void_t* _userData) noexcept override;
 		[[nodiscard]] virtual bool_t Supports(Capability _capability) const noexcept override;
 		[[nodiscard]] virtual bool_t IsValid() const noexcept override { return static_cast<bool_t>(iocpHandle); }
 		[[nodiscard]] virtual IRegisteredBufferProvider* AsRegisteredBufferProvider() noexcept override { return rioProvider.get(); }
@@ -79,9 +79,9 @@ BEGIN_NS(ne::io)
 		// AcceptEx/ConnectEx 함수 포인터를 lazy 로 획득한다(WSAIoctl). 자체 락.
 		[[nodiscard]] bool_t EnsureExtensions(socket_t _socket) noexcept;
 		// op 를 커널에 발행하고, 동기 실패면 -에러를 담은 완료를 IOCP 로 되돌린다.
-		void_t Dispatch(IocpOperation* _operation, const IoRequest& _request, HANDLE _handle) noexcept;
+		void_t Dispatch(IocpOperation* _operation, const Request& _request, HANDLE _handle) noexcept;
 		// RioKey 로 식별된 IOCP 엔트리 하나를 RIODequeueCompletion 으로 풀어 _out 에 채운다(최대 _max 개).
-		[[nodiscard]] int_t DrainRioCompletions(IoCompletion* _out, int_t _max) noexcept;
+		[[nodiscard]] int_t DrainRioCompletions(Completion* _out, int_t _max) noexcept;
 
 	public:
 		[[nodiscard]] HANDLE NativeHandle() const noexcept { return iocpHandle.Get(); }

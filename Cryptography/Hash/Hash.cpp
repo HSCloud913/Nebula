@@ -1,5 +1,5 @@
-#include "Hash.h"
-#include "Factory/HashFactory.h"
+#include "Cryptography/Hash/Hash.h"
+#include "Cryptography/Hash/Factory/HashFactory.h"
 
 
 

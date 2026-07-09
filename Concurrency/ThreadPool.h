@@ -9,7 +9,7 @@
 #include <memory>
 #include <queue>
 #include <thread>
-#include "Type.h"
+#include "Base/Type.h"
 
 BEGIN_NS(ne)
 	class ThreadPool
@@ -31,11 +31,13 @@ BEGIN_NS(ne)
 		std::future<std::invoke_result_t<F>> Enqueue(F&& _job)
 		{
 			using R = std::invoke_result_t<F>;
+
 			auto task = std::make_shared<std::packaged_task<R()>>(std::forward<F>(_job));
 			std::future<R> future = task->get_future();
 
 			{
 				std::unique_lock<std::mutex> lock(mutex);
+
 				if (isShutdown) return {};
 				jobs.push([task]() { (*task)(); });
 			}

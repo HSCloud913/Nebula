@@ -6,8 +6,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
-#include "Type.h"
-#include "../HttpCommon.h"
+#include "Base/Type.h"
+#include "Network/Protocol/Http/HttpCommon.h"
 
 BEGIN_NS(ne::network::http_2)
 

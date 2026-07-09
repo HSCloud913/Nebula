@@ -2,7 +2,7 @@
 // Created by nebula on 24. 5. 17.
 //
 
-#include "Logger.h"
+#include "Log/Logger.h"
 
 #include <filesystem>
 #include <format>
@@ -34,19 +34,30 @@ BEGIN_NS(ne)
 
 	Logger::~Logger()
 	{
-		running.store(false, std::memory_order_relaxed);
+		// running 변경은 wakeMutex(백엔드 wait 술어가 읽는 락) 하에서 하고 깨운다 — lost-wakeup 방지.
+		{
+			std::lock_guard<std::mutex> lock(wakeMutex);
+			running.store(false, std::memory_order_relaxed);
+		}
+		wake.notify_one();
+
 		if (backendThread.joinable()) backendThread.join();
-		FlushPending();
+
+		FlushPending(); // 백엔드 종료 후 남은 레코드 최종 드레인(파괴 중 동시 로깅은 계약 위반)
 		Close();
+	}
+
+	bool_t Logger::IsOpen() const
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		return os.is_open();
 	}
 
 
 
 	bool_t Logger::Open(const string_t& _fileName)
 	{
-		if (os.is_open()) return true;
-
-		std::lock_guard<std::mutex> lockGuard(mutex);
+		std::lock_guard<std::mutex> lockGuard(mutex); // os 는 항상 락 하에서만 접근(비스레드안전 ofstream)
 
 		if (os.is_open()) return true;
 
@@ -68,9 +79,7 @@ BEGIN_NS(ne)
 
 	bool_t Logger::Open(const string_t& _filePath, const string_t& _fileName)
 	{
-		if (os.is_open()) return true;
-
-		std::lock_guard<std::mutex> lockGuard(mutex);
+		std::lock_guard<std::mutex> lockGuard(mutex); // os 는 항상 락 하에서만 접근(비스레드안전 ofstream)
 
 		if (os.is_open()) return true;
 
@@ -105,11 +114,10 @@ BEGIN_NS(ne)
 	{
 		if (_logLevel < logLevel.load(std::memory_order_relaxed)) return;
 
-		queue.Enqueue(LogRecord{
-			_logLevel,
-			_message,
-			std::chrono::system_clock::now()
-		});
+		queue.Enqueue(LogRecord{_logLevel, _message, std::chrono::system_clock::now()});
+		// Enqueue 완료 후 pending 세팅 → 백엔드가 놓쳐도(false-empty) 다음 wait 술어에서 재드레인.
+		pending.store(true, std::memory_order_release);
+		wake.notify_one();
 	}
 
 	void_t Logger::WriteToFile(const LogRecord& _record)
@@ -118,10 +126,7 @@ BEGIN_NS(ne)
 
 		if (!os.is_open()) return;
 
-		os << std::format("{} {} {}",
-						GetDateTime(_record.timestamp),
-						LogLevelToString(_record.level),
-						_record.message)
+		os << std::format("{} {} {}", GetDateTime(_record.timestamp), LogLevelToString(_record.level), _record.message)
 		<< '\n';
 
 		if (_record.level >= LogLevel::NE_FATAL) os.flush();
@@ -131,9 +136,17 @@ BEGIN_NS(ne)
 	{
 		while (running.load(std::memory_order_relaxed))
 		{
+			// 유휴 시 스핀(1ms 폴링) 대신 condvar 로 블록. pending.exchange 로 lost-wakeup 을 흡수한다.
+			{
+				std::unique_lock<std::mutex> lock(wakeMutex);
+				wake.wait(lock, [this]
+				{
+					return !running.load(std::memory_order_relaxed) || pending.exchange(false, std::memory_order_acq_rel);
+				});
+			}
+
 			LogRecord record;
-			if (queue.Dequeue(record)) WriteToFile(record);
-			else std::this_thread::sleep_for(1ms);
+			while (queue.Dequeue(record)) WriteToFile(record);
 		}
 	}
 

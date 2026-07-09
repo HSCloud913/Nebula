@@ -1,5 +1,5 @@
 #pragma once
-#include "Type.h"
+#include "Base/Type.h"
 
 BEGIN_NS(ne::crypto)
 	class CRC32 final
@@ -12,8 +12,8 @@ BEGIN_NS(ne::crypto)
 		uint_t hash = 0;
 
 	public:
-		void Init() { hash = 0; }
-		void AddBuffer(const void_t* _data, size_t _dataLength);
+		void_t Init() { hash = 0; }
+		void_t AddBuffer(const void_t* _data, size_t _dataLength);
 		[[nodiscard]] string_t Get() const;
 	};
 

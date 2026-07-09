@@ -1,4 +1,4 @@
-#include "Json.h"
+#include "Json/Json.h"
 
 
 
@@ -13,23 +13,6 @@ BEGIN_NS(ne)
 		if (SkipWhitespace(&_data)) return {};
 
 		return value;
-	}
-
-	string_t Json::Stringify(const JsonValue& _value)
-	{
-		if (!_value.IsInvalid()) return _value.Stringify();
-
-		return "";
-	}
-
-	string_t Json::Stringify(const JsonObject& _value)
-	{
-		return JsonValue(_value).Stringify();
-	}
-
-	string_t Json::Stringify(const JsonArray& _value)
-	{
-		return JsonValue(_value).Stringify();
 	}
 
 

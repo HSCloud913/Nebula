@@ -1,7 +1,8 @@
-#include "BigInt.h"
+#include "Cryptography/Math/BigInt.h"
 
 #include <algorithm>
 #include <stdexcept>
+#include "Cryptography/Random/SecureRandom.h"
 
 
 
@@ -19,7 +20,7 @@ BEGIN_NS(ne::crypto)
 
 
 
-	bool BigInt::operator<(const BigInt& _other) const
+	bool_t BigInt::operator<(const BigInt& _other) const
 	{
 		if (d.size() != _other.d.size()) return d.size() < _other.d.size();
 
@@ -174,7 +175,7 @@ BEGIN_NS(ne::crypto)
 
 
 
-	void BigInt::Trim()
+	void_t BigInt::Trim()
 	{
 		while (d.size() > 1 && d.back() == 0) d.pop_back();
 	}
@@ -187,7 +188,7 @@ BEGIN_NS(ne::crypto)
 
 		for (int_t i = static_cast<int_t>(d.size()) - 1; i >= 0; --i)
 		{
-			uint_t w = d[i];
+			const uint_t w = d[i];
 			for (int_t shift = 28; shift >= 0; shift -= 4) result += hexChars[(w >> shift) & 0xFu];
 		}
 
@@ -201,7 +202,7 @@ BEGIN_NS(ne::crypto)
 		string_t result;
 		for (int_t i = static_cast<int_t>(d.size()) - 1; i >= 0; --i)
 		{
-			uint_t w = d[i];
+			const uint_t w = d[i];
 			result += static_cast<char_t>((w >> 24) & 0xFFu);
 			result += static_cast<char_t>((w >> 16) & 0xFFu);
 			result += static_cast<char_t>((w >> 8) & 0xFFu);
@@ -218,13 +219,14 @@ BEGIN_NS(ne::crypto)
 	}
 
 
-	bool BigInt::IsProbablyPrime(int_t rounds) const
+	bool_t BigInt::IsProbablyPrime(int_t _rounds) const
 	{
 		if (*this <= BigInt(1u)) return false;
 		if (*this == BigInt(2u) || *this == BigInt(3u)) return true;
 		if (IsEven()) return false;
 
-		BigInt n1 = *this - BigInt(1u);
+		const BigInt n1 = *this - BigInt(1u);
+
 		size_t r = 0;
 		BigInt dd = n1;
 		while (dd.IsEven())
@@ -233,9 +235,10 @@ BEGIN_NS(ne::crypto)
 			++r;
 		}
 
-		std::mt19937_64 rng(12345678901234567ULL);
+		// Miller-Rabin 증인은 CSPRNG 로 뽑는다 — 고정 시드는 적대적 합성수가 통과하는 취약점.
+		SecureRandom rng;
 
-		for (int_t i = 0; i < rounds; ++i)
+		for (int_t i = 0; i < _rounds; ++i)
 		{
 			BigInt a = Random(BitLength(), rng);
 			a = a % (*this - BigInt(3u)) + BigInt(2u);
@@ -243,18 +246,20 @@ BEGIN_NS(ne::crypto)
 			BigInt x = ModPow(a, dd, *this);
 			if (x.IsOne() || x == n1) continue;
 
-			bool composite = true;
+			bool_t isComposite = true;
 			for (size_t j = 0; j < r - 1; ++j)
 			{
 				x = x * x % *this;
 				if (x == n1)
 				{
-					composite = false;
+					isComposite = false;
 					break;
 				}
 			}
-			if (composite) return false;
+
+			if (isComposite) return false;
 		}
+
 		return true;
 	}
 
@@ -262,6 +267,7 @@ BEGIN_NS(ne::crypto)
 	size_t BigInt::BitLength() const
 	{
 		if (IsZero()) return 0;
+
 		size_t bits = (d.size() - 1) * 32;
 		uint_t top = d.back();
 		while (top)
@@ -269,13 +275,15 @@ BEGIN_NS(ne::crypto)
 			++bits;
 			top >>= 1;
 		}
+
 		return bits;
 	}
 
-	bool BigInt::TestBit(const size_t _number) const
+	bool_t BigInt::TestBit(const size_t _number) const
 	{
 		const size_t word = _number / 32;
 		const size_t bit = _number % 32;
+
 		return word < d.size() && ((d[word] >> bit) & 1u);
 	}
 
@@ -308,6 +316,7 @@ BEGIN_NS(ne::crypto)
 
 		q.Trim();
 		r.Trim();
+
 		return std::make_pair(std::move(q), std::move(r));
 	}
 
@@ -330,7 +339,7 @@ BEGIN_NS(ne::crypto)
 	{
 		BigInt old_r = _lhs, r = _rhs;
 		BigInt old_s(1u), s;
-		bool old_s_neg = false, s_neg = true;
+		bool_t isOldSNegative = false, isSNegative = true;
 
 		while (!r.IsZero())
 		{
@@ -342,33 +351,33 @@ BEGIN_NS(ne::crypto)
 
 			BigInt qs = q * s;
 			BigInt new_s;
-			bool new_s_neg;
-			if (old_s_neg == s_neg)
+			bool_t isNewSNegative;
+			if (isOldSNegative == isSNegative)
 			{
 				if (old_s >= qs)
 				{
 					new_s = old_s - qs;
-					new_s_neg = old_s_neg;
+					isNewSNegative = isOldSNegative;
 				}
 				else
 				{
 					new_s = qs - old_s;
-					new_s_neg = !old_s_neg;
+					isNewSNegative = !isOldSNegative;
 				}
 			}
 			else
 			{
 				new_s = old_s + qs;
-				new_s_neg = old_s_neg;
+				isNewSNegative = isOldSNegative;
 			}
 
 			old_s = std::move(s);
-			old_s_neg = s_neg;
+			isOldSNegative = isSNegative;
 			s = std::move(new_s);
-			s_neg = new_s_neg;
+			isSNegative = isNewSNegative;
 		}
 
-		return old_s_neg ? _rhs - old_s % _rhs : old_s % _rhs;
+		return isOldSNegative ? _rhs - old_s % _rhs : old_s % _rhs;
 	}
 
 	BigInt BigInt::Gcd(BigInt _lhs, BigInt _rhs)
@@ -433,7 +442,7 @@ BEGIN_NS(ne::crypto)
 
 
 
-	BigInt BigInt::Random(const size_t _bits, std::mt19937_64& _rng)
+	BigInt BigInt::Random(const size_t _bits, SecureRandom& _rng)
 	{
 		const size_t words = (_bits + 31) / 32;
 
@@ -450,7 +459,7 @@ BEGIN_NS(ne::crypto)
 		return result;
 	}
 
-	BigInt BigInt::RandomPrime(const size_t _bits, std::mt19937_64& _rng)
+	BigInt BigInt::RandomPrime(const size_t _bits, SecureRandom& _rng)
 	{
 		while (true)
 		{

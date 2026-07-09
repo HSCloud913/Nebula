@@ -1,6 +1,6 @@
-#include "CRC32Wrapper.h"
+#include "Cryptography/Hash/Algorithm/Wrapper/CRC32Wrapper.h"
 
-#include "StringFormat.h"
+#include "Util/StringFormat.h"
 
 
 

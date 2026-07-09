@@ -5,8 +5,7 @@
 #pragma once
 #include <cstddef>
 #include <vector>
-#include "BufferView.h"
-#include "Type.h"
+#include "Io/Buffer/BufferView.h"
 
 #if defined(IS_POSIX)
 #   include <sys/uio.h>
@@ -25,8 +24,8 @@ BEGIN_NS(ne::io)
 		std::vector<BufferView> segments;
 
 	public:
-		void Append(BufferView _view) { segments.push_back(_view); } // 경량 객체이므로 매개변수를 const 참조할 필요가 없음
-		void Clear() { segments.clear(); }
+		void_t Append(BufferView _view) { segments.push_back(_view); } // 경량 객체이므로 매개변수를 const 참조할 필요가 없음
+		void_t Clear() { segments.clear(); }
 
 		// 앞에서 _skipBytes 만큼 건너뛴 나머지를 새 체인으로 반환 (세그먼트 재슬라이스, 소유권 없음 —
 		// BufferView 와 동일 원칙). Sendv() 가 partial write 를 반환했을 때 남은 부분만 재시도하는 용도.

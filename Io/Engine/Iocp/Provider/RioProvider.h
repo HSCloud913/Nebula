@@ -10,12 +10,12 @@
 #if defined(_WIN32)
 #	include <mutex>
 #	include <unordered_map>
-#	include "../../IRegisteredBufferProvider.h"
-#	include "RioExtension.h"
-#	include "IoError.h"
-#	include "IoType.h"
-#	include "Result.h"
-#	include "Type.h"
+#	include "Io/Engine/IRegisteredBufferProvider.h"
+#	include "Io/Engine/Iocp/Provider/RioExtension.h"
+#	include "Io/IoError.h"
+#	include "Io/IoType.h"
+#	include "Base/Result.h"
+#	include "Base/Type.h"
 
 BEGIN_NS(ne::io)
 	class RioProvider final :public IRegisteredBufferProvider
@@ -56,28 +56,28 @@ BEGIN_NS(ne::io)
 
 	public: // IRegisteredBufferProvider
 		[[nodiscard]] virtual ne::Result<BufferHandle, IoError> RegisterBuffer(std::span<ne::byte_t> _region) noexcept override;
-		virtual void UnregisterBuffer(BufferHandle _handle) noexcept override;
+		virtual void_t UnregisterBuffer(BufferHandle _handle) noexcept override;
 
 	public:
-		[[nodiscard]] virtual ne::Result<void, ne::OsError> SubmitSendRegistered(const socket_t _socket, const BufferHandle _handle, const void* _buffer, const std::size_t _length, void* _userData) noexcept override { return Submit(_socket, _handle, _buffer, _length, _userData, true); }
-		[[nodiscard]] virtual ne::Result<void, ne::OsError> SubmitReceiveRegistered(const socket_t _socket, const BufferHandle _handle, void* _buffer, const std::size_t _length, void* _userData) noexcept override { return Submit(_socket, _handle, _buffer, _length, _userData, false); }
+		[[nodiscard]] virtual ne::Result<void_t, ne::OsError> SubmitSendRegistered(const socket_t _socket, const BufferHandle _handle, const void_t* _buffer, const std::size_t _length, void_t* _userData) noexcept override { return Submit(_socket, _handle, _buffer, _length, _userData, true); }
+		[[nodiscard]] virtual ne::Result<void_t, ne::OsError> SubmitReceiveRegistered(const socket_t _socket, const BufferHandle _handle, void_t* _buffer, const std::size_t _length, void_t* _userData) noexcept override { return Submit(_socket, _handle, _buffer, _length, _userData, false); }
 
 	public:
-		virtual void ReleaseSocket(socket_t _socket) noexcept override; // 소켓별 RIO_RQ 맵 엔트리 제거
+		virtual void_t ReleaseSocket(socket_t _socket) noexcept override; // 소켓별 RIO_RQ 맵 엔트리 제거
 
 	private:
 		// lazy: RIO 확장 테이블 획득 + 공유 RIO_CQ 생성(IOCP 바인딩) + 최초 통지 무장. mutex 를 이미 쥔 상태로 호출.
-		[[nodiscard]] ne::Result<void, IoError> EnsureInitialized() noexcept;
+		[[nodiscard]] ne::Result<void_t, IoError> EnsureInitialized() noexcept;
 		// 소켓별 RIO_RQ 를 lazy 생성해 반환한다(공유 CQ 에 recv/send 모두 연결). mutex 를 이미 쥔 상태로 호출.
 		[[nodiscard]] ne::Result<RIO_RQ, IoError> EnsureRequestQueueLocked(socket_t _socket) noexcept;
 		// (handle, buffer, length) → RIO_BUF. Offset 은 regionBases[handle] 기준 — 등록 안 된 handle 이면 BufferId 0(무효).
 		// mutex 를 이미 쥔 상태로 호출.
-		[[nodiscard]] RIO_BUF MakeRioBufferLocked(BufferHandle _handle, const void* _buffer, std::size_t _length) const noexcept;
+		[[nodiscard]] RIO_BUF MakeRioBufferLocked(BufferHandle _handle, const void_t* _buffer, std::size_t _length) const noexcept;
 		// 공통 제출 경로 — _isSend 로 RIOSend/RIOReceive 분기.
-		[[nodiscard]] ne::Result<void, ne::OsError> Submit(socket_t _socket, BufferHandle _handle, const void* _buffer, std::size_t _length, void* _userData, bool_t _isSend) noexcept;
+		[[nodiscard]] ne::Result<void_t, ne::OsError> Submit(socket_t _socket, BufferHandle _handle, const void_t* _buffer, std::size_t _length, void_t* _userData, bool_t _isSend) noexcept;
 
 	public: // RIO_CQ 완료 통지 재무장(RIONotify 는 one-shot). 완료 드레인 직후 호출한다.
-		[[nodiscard]] ne::Result<void, IoError> ArmNotify() noexcept;
+		[[nodiscard]] ne::Result<void_t, IoError> ArmNotify() noexcept;
 
 	public: // 완료 루프에서 쓰는 접근자 — 초기화 후에는 읽기 전용이라 mutex 밖 사용 가능.
 		[[nodiscard]] bool_t IsInitialized() const noexcept { return isInitialized; }

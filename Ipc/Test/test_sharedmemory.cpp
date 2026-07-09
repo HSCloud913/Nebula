@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <string>
 
-#include "../../Ipc/SharedMemory.h"
+#include "Ipc/SharedMemory.h"
 
 using ne::ipc::SharedMemory;
 

@@ -14,26 +14,26 @@
 
 #pragma once
 #include <chrono>
-#include "Type.h"
-#include "IoType.h"
-#include "Context/IoOperation.h"
+#include "Base/Type.h"
+#include "Io/IoType.h"
+#include "Io/Context/Operation.h"
 
 BEGIN_NS(ne::io)
-	class IIoEngine
+	class IEngine
 	{
 	public:
-		NEBULA_NON_COPYABLE_MOVABLE(IIoEngine)
+		NEBULA_NON_COPYABLE_MOVABLE(IEngine)
 
-		IIoEngine() = default;
-		virtual ~IIoEngine() = default;
+		IEngine() = default;
+		virtual ~IEngine() = default;
 
 	public:
 		// 요청을 엔진에 제출한다(비동기). 완료는 WaitCompletions 로 회수된다.
-		virtual void_t Submit(const IoRequest& _request) = 0;
+		virtual void_t Submit(const Request& _request) = 0;
 
 		// 완료를 최대 _max 개까지 _out 에 채우고 채운 개수를 반환한다. _timeout 동안 블록하며,
 		// 완료가 없으면 0 을 반환한다(타임아웃). Reactor 계열은 readiness→completion 합성 결과를 함께 채운다.
-		[[nodiscard]] virtual int_t WaitCompletions(IoCompletion* _out, int_t _max, std::chrono::milliseconds _timeout) = 0;
+		[[nodiscard]] virtual int_t WaitCompletions(Completion* _out, int_t _max, std::chrono::milliseconds _timeout) = 0;
 
 		// 다른 스레드에서 WaitCompletions 블록을 깨운다(post 로 넘어온 작업 처리 등).
 		virtual void_t Wake() = 0;
@@ -41,7 +41,7 @@ BEGIN_NS(ne::io)
 		// _userData 로 식별되는 진행 중 op 의 커널 레벨 취소를 요청한다(CancelIoEx / IORING_OP_ASYNC_CANCEL).
 		// 취소는 요청일 뿐 — op 는 여전히 완료 통지(취소면 ERROR_OPERATION_ABORTED)되어 정상 경로로 회수된다.
 		// 이미 완료됐거나 알 수 없는 userData 면 no-op. (스펙 4: 취소는 stop_token → 실제 커널 취소로 연결)
-		virtual void_t Cancel(void* _userData) noexcept = 0;
+		virtual void_t Cancel(void_t* _userData) noexcept = 0;
 
 		// 런타임 기능 질의 — 상위 API 가 *_fixed/*_zc 경로 사용 여부를 이걸로만 판단한다.
 		[[nodiscard]] virtual bool_t Supports(Capability _capability) const = 0;

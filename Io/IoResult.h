@@ -6,8 +6,8 @@
 
 #pragma once
 #include <utility>
-#include "Result.h"
-#include "IoError.h"
+#include "Base/Result.h"
+#include "Io/IoError.h"
 
 BEGIN_NS(ne::io)
 	// 스펙의 IoResult<T> = ne::Result<T, IoError>. std::variant 대신 기존 Result 를 그대로 쓴다.
@@ -24,6 +24,7 @@ BEGIN_NS(ne::io)
 		template <typename T>
 		operator ne::Result<T, IoError>() && { return ne::Result<T, IoError>::Error(std::move(error)); }
 	};
+
 END_NS
 
 // 값 결과 전파: 성공값을 _var 에 바인딩하고, 에러면 코루틴에서 즉시 co_return 으로 전파한다.

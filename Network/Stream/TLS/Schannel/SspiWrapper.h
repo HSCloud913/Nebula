@@ -15,7 +15,7 @@
 #include <security.h>
 #include <schannel.h>
 
-#include "Type.h"
+#include "Base/Type.h"
 
 BEGIN_NS(ne::network)
 	struct SspiWrapper

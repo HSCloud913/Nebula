@@ -4,9 +4,9 @@
 
 #include <gtest/gtest.h>
 #include <cstring>
-#include "Hash/Hash.h"
-#include "Hash/Factory/HashFactory.h"
-#include "HMAC/HMAC.h"
+#include "Cryptography/Hash/Hash.h"
+#include "Cryptography/Hash/Factory/HashFactory.h"
+#include "Cryptography/HMAC/HMAC.h"
 
 
 

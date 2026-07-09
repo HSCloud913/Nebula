@@ -24,6 +24,8 @@ set(HEADERS
 
         Math/BigInt.h
 
+        Random/SecureRandom.h
+
         HMAC/HMAC.h
         AES/AES.h
         RSA/RSA.h
@@ -46,6 +48,8 @@ set(SOURCES
 
         Math/BigInt.cpp
 
+        Random/SecureRandom.cpp
+
         HMAC/HMAC.cpp
         AES/AES.cpp
         RSA/RSA.cpp
@@ -57,6 +61,11 @@ target_include_directories(${PROJECT_NAME} PUBLIC
         ${CMAKE_SOURCE_DIR}/Base
         ${CMAKE_SOURCE_DIR}/Util)
 target_link_libraries(${PROJECT_NAME} PUBLIC NebulaBase NebulaUtil)
+
+# SecureRandom: Windows 는 BCryptGenRandom(bcrypt) 사용. POSIX 는 getrandom(2)(libc 내장).
+if (WIN32)
+    target_link_libraries(${PROJECT_NAME} PUBLIC bcrypt)
+endif ()
 
 
 if (TARGET GTest::gtest_main AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Test)

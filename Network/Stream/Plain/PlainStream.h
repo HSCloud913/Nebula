@@ -4,10 +4,10 @@
 
 #pragma once
 #include <cstddef>
-#include "../IStream.h"
-#include "Socket/Socket.h"
-#include "Engine/IIoEngine.h"
-#include "IoType.h"
+#include "Network/Stream/IStream.h"
+#include "Network/Socket/Socket.h"
+#include "Io/Engine/IEngine.h"
+#include "Io/IoType.h"
 
 BEGIN_NS(ne::network)
 	// 소켓 I/O 모드 선택.

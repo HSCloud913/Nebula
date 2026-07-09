@@ -2,17 +2,17 @@
 // Created by hscloud on 25. 6. 29.
 //
 
-#include "TlsStream.h"
-#include "Coroutine/Awaitable.h"
+#include "Network/Stream/TLS/TlsStream.h"
+#include "Io/Coroutine/Awaitable.h"
 #include <utility>
 #include <cstring>
 #include <vector>
 #include <fstream>
 
 #if defined(_WIN32)
-#	include "Schannel/SspiWrapper.h"
-#	include "Schannel/TlsMessageBuffer.h"
-#	include "StringFormat.h"
+#	include "Network/Stream/TLS/Schannel/SspiWrapper.h"
+#	include "Network/Stream/TLS/Schannel/TlsMessageBuffer.h"
+#	include "Util/StringFormat.h"
 #	include <winsock2.h>
 #elif defined(NEBULA_WITH_OPENSSL)
 #	include <openssl/ssl.h>

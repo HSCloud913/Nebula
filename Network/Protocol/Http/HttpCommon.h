@@ -5,7 +5,7 @@
 #pragma once
 #include <cstdint>
 #include <vector>
-#include "Type.h"
+#include "Base/Type.h"
 
 BEGIN_NS(ne::network)
 	enum class HttpMethod : uint8_t

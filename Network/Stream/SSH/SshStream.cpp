@@ -2,8 +2,8 @@
 // Created by hscloud on 25. 6. 30.
 //
 
-#include "SshStream.h"
-#include "Coroutine/Awaitable.h"
+#include "Network/Stream/SSH/SshStream.h"
+#include "Io/Coroutine/Awaitable.h"
 #include <utility>
 
 #ifdef NEBULA_WITH_LIBSSH2

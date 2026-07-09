@@ -1,15 +1,16 @@
 #pragma once
 #include <memory>
-#include "Type.h"
-#include "HashWrapper.h"
-#include "Hash/Algorithm/MD5.h"
+#include "Base/Type.h"
+#include "Cryptography/Hash/Algorithm/Wrapper/HashWrapper.h"
+#include "Cryptography/Hash/Algorithm/MD5.h"
 
 BEGIN_NS(ne::crypto)
 	class MD5Wrapper :public HashWrapper
 	{
 	public:
-		explicit MD5Wrapper() : md5(std::make_unique<MD5>()) {}
-		virtual ~MD5Wrapper() = default;
+		explicit MD5Wrapper()
+			: md5(std::make_unique<MD5>()) {}
+		virtual ~MD5Wrapper() override = default;
 
 	private:
 		std::unique_ptr<MD5> md5;

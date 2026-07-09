@@ -3,35 +3,35 @@
 //
 
 #include <gtest/gtest.h>
-#include "AES/AES.h"
+#include "Cryptography/AES/AES.h"
 
 
 
 namespace crypto = ne::crypto;
 
-static ne::string_t fromHex(const ne::string_t& hex)
+static ne::string_t fromHex(const ne::string_t& _hex)
 {
-	ne::string_t bytes;
-	for (size_t i = 0; i + 1 < hex.size(); i += 2)
+	ne::string_t _bytes;
+	for (size_t i = 0; i + 1 < _hex.size(); i += 2)
 	{
 		auto h = [](ne::char_t c) -> ne::byte_t {
 			if (c >= '0' && c <= '9') return static_cast<ne::byte_t>(c - '0');
 			if (c >= 'a' && c <= 'f') return static_cast<ne::byte_t>(c - 'a' + 10);
 			return static_cast<ne::byte_t>(c - 'A' + 10);
 		};
-		bytes += static_cast<ne::char_t>((h(hex[i]) << 4) | h(hex[i + 1]));
+		_bytes += static_cast<ne::char_t>((h(_hex[i]) << 4) | h(_hex[i + 1]));
 	}
-	return bytes;
+	return _bytes;
 }
 
-static ne::string_t toHex(const ne::string_t& bytes)
+static ne::string_t toHex(const ne::string_t& _bytes)
 {
-	static constexpr ne::char_t hex[] = "0123456789abcdef";
+	static constexpr ne::char_t _hex[] = "0123456789abcdef";
 	ne::string_t result;
-	for (ne::byte_t b : bytes)
+	for (ne::byte_t b : _bytes)
 	{
-		result += hex[b >> 4];
-		result += hex[b & 0xF];
+		result += _hex[b >> 4];
+		result += _hex[b & 0xF];
 	}
 	return result;
 }

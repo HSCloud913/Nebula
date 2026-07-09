@@ -7,8 +7,8 @@
 #include <optional>
 #include <variant>
 #include <type_traits>
-#include "Type.h"
-#include "Error.h"
+#include "Base/Type.h"
+#include "Base/Error.h"
 
 BEGIN_NS(ne)
 	// ─── Result<T, E> ────────────────────────────────────────────────────────────
@@ -18,7 +18,7 @@ BEGIN_NS(ne)
 	template <typename T, typename E = ne::Error>
 	class Result
 	{
-		static_assert(!std::is_same_v<T, void>, "void result must use Result<void, E> specialization");
+		static_assert(!std::is_same_v<T, void_t>, "void result must use Result<void, E> specialization");
 		static_assert(!std::is_same_v<T, E>, "value type and error type must differ");
 
 	private:
@@ -26,8 +26,7 @@ BEGIN_NS(ne)
 		explicit Result(E _error) : storage(std::move(_error)) {}
 
 	public:
-		NEBULA_DEFAULT_COPY(Result)
-		NEBULA_DEFAULT_MOVE(Result)
+		NEBULA_DEFAULT_COPY_MOVE(Result)
 
 	private:
 		std::variant<T, E> storage;
@@ -45,6 +44,7 @@ BEGIN_NS(ne)
 			assert(IsOk() && "Result::Value() called in error state");
 			return *std::get_if<T>(&storage);
 		}
+
 		[[nodiscard]] const T& Value() const noexcept
 		{
 			assert(IsOk() && "Result::Value() called in error state");
@@ -56,6 +56,7 @@ BEGIN_NS(ne)
 			assert(IsError() && "Result::Error() called in ok state");
 			return *std::get_if<E>(&storage);
 		}
+
 		[[nodiscard]] const E& Error() const noexcept
 		{
 			assert(IsError() && "Result::Error() called in ok state");
@@ -64,15 +65,14 @@ BEGIN_NS(ne)
 	};
 
 	template <typename E>
-	class Result<void, E>
+	class Result<void_t, E>
 	{
 	private:
 		Result() = default;
 		explicit Result(E _error) : errorStorage(std::move(_error)) {}
 
 	public:
-		NEBULA_DEFAULT_COPY(Result)
-		NEBULA_DEFAULT_MOVE(Result)
+		NEBULA_DEFAULT_COPY_MOVE(Result)
 
 	private:
 		std::optional<E> errorStorage;
@@ -90,6 +90,7 @@ BEGIN_NS(ne)
 			assert(IsError() && "Result::Error() called in ok state");
 			return *errorStorage;
 		}
+
 		[[nodiscard]] const E& Error() const noexcept
 		{
 			assert(IsError() && "Result::Error() called in ok state");

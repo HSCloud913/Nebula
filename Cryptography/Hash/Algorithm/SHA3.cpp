@@ -1,4 +1,4 @@
-#include "SHA3.h"
+#include "Cryptography/Hash/Algorithm/SHA3.h"
 
 #include <cstring>
 
@@ -16,19 +16,19 @@ constexpr ne::ulonglong_t XorMasks[24] =
 	0x8000000000008080ULL, 0x0000000080000001ULL, 0x8000000080008008ULL
 };
 
-inline ne::ulonglong_t RotateLeft(ne::ulonglong_t x, ne::byte_t _numBits)
+inline ne::ulonglong_t RotateLeft(const ne::ulonglong_t _x, const ne::byte_t _numBits)
 {
-	return (x << _numBits) | (x >> (64 - _numBits));
+	return (_x << _numBits) | (_x >> (64 - _numBits));
 }
-inline ne::uint_t Mod5(ne::uint_t x)
+inline ne::uint_t Mod5(const ne::uint_t _x)
 {
-	return (x < 5) ? x : x - 5;
+	return (_x < 5) ? _x : _x - 5;
 }
 
 
 
 BEGIN_NS(ne::crypto)
-	void SHA3::Init()
+	void_t SHA3::Init()
 	{
 		memset(buffer, 0, sizeof(byte_t) * MaxBlockSize);
 		bufferSize = 0;
@@ -36,7 +36,7 @@ BEGIN_NS(ne::crypto)
 		length = 0;
 	}
 
-	void SHA3::AddBuffer(const void_t* _data, size_t _dataLength)
+	void_t SHA3::AddBuffer(const void_t* _data, size_t _dataLength)
 	{
 		const auto* data = static_cast<const byte_t*>(_data);
 
@@ -110,7 +110,7 @@ BEGIN_NS(ne::crypto)
 
 
 
-	void SHA3::ProcessBuffer()
+	void_t SHA3::ProcessBuffer()
 	{
 		size_t offset = bufferSize;
 		buffer[offset++] = 0x06;
@@ -125,7 +125,7 @@ BEGIN_NS(ne::crypto)
 		ProcessBlock(buffer);
 	}
 
-	void SHA3::ProcessBlock(const void_t* _data)
+	void_t SHA3::ProcessBlock(const void_t* _data)
 	{
 		const auto data = static_cast<const ulonglong_t*>(_data);
 		for (uint_t i = 0; i < blockSize / 8; i++)

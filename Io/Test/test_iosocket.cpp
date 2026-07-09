@@ -8,10 +8,10 @@
 #include <chrono>
 #include <cstring>
 #include <span>
-#include "Context/IoContext.h"
-#include "Socket/Socket.h"
-#include "Coroutine/Task.h"
-#include "Engine/Iocp/IocpEngine.h"
+#include "Io/Context/Context.h"
+#include "Io/Socket/Socket.h"
+#include "Base/Coroutine/Task.h"
+#include "Io/Engine/Iocp/IocpEngine.h"
 
 using namespace ne;
 using namespace ne::io;
@@ -57,12 +57,12 @@ namespace
 	};
 
 	template <typename T>
-	T Drive(IoContext& _context, ne::Task<T>& _task)
+	T Drive(Context& _context, ne::Task<T>& _task)
 	{
 		_task.Resume();
 		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
 		while (!_task.IsReady() && std::chrono::steady_clock::now() < deadline)
-			(void)_context.RunOnce(std::chrono::milliseconds{ 50 });
+			(void_t)_context.RunOnce(std::chrono::milliseconds{ 50 });
 		return _task.await_resume();
 	}
 }
@@ -73,14 +73,14 @@ TEST(SocketLevel3Test, SendThenReceive)
 	const WsaScope wsa;
 	IocpEngine engine;
 	ASSERT_TRUE(engine.IsValid());
-	IoContext context{ engine };
+	Context context{ engine };
 
 	SOCKET rawA = INVALID_SOCKET;
 	SOCKET rawB = INVALID_SOCKET;
 	ASSERT_TRUE(MakeConnectedPair(rawA, rawB));
 
-	auto adoptedA = Socket::Adopt(context, static_cast<socket_t>(rawA));
-	auto adoptedB = Socket::Adopt(context, static_cast<socket_t>(rawB));
+	auto adoptedA = Socket::Attach(static_cast<socket_t>(rawA), context);
+	auto adoptedB = Socket::Attach(static_cast<socket_t>(rawB), context);
 	ASSERT_TRUE(adoptedA.IsOk());
 	ASSERT_TRUE(adoptedB.IsOk());
 	Socket sender = std::move(adoptedA.Value());
@@ -110,14 +110,14 @@ TEST(SocketLevel3Test, SendVThenReceiveVRoundTrip)
 	const WsaScope wsa;
 	IocpEngine engine;
 	ASSERT_TRUE(engine.IsValid());
-	IoContext context{ engine };
+	Context context{ engine };
 
 	SOCKET rawA = INVALID_SOCKET;
 	SOCKET rawB = INVALID_SOCKET;
 	ASSERT_TRUE(MakeConnectedPair(rawA, rawB));
 
-	auto adoptedA = Socket::Adopt(context, static_cast<socket_t>(rawA));
-	auto adoptedB = Socket::Adopt(context, static_cast<socket_t>(rawB));
+	auto adoptedA = Socket::Attach(static_cast<socket_t>(rawA), context);
+	auto adoptedB = Socket::Attach(static_cast<socket_t>(rawB), context);
 	ASSERT_TRUE(adoptedA.IsOk());
 	ASSERT_TRUE(adoptedB.IsOk());
 	Socket sender = std::move(adoptedA.Value());
@@ -157,8 +157,8 @@ TEST(SocketLevel3Test, SendVThenReceiveVRoundTrip)
 TEST(SocketLevel3Test, AdoptInvalidFails)
 {
 	IocpEngine engine;
-	IoContext context{ engine };
-	auto adopted = Socket::Adopt(context, InvalidSocket);
+	Context context{ engine };
+	auto adopted = Socket::Attach(InvalidSocket, context);
 	EXPECT_TRUE(adopted.IsError());
 }
 
@@ -167,7 +167,7 @@ TEST(SocketLevel3Test, AcceptConnectRoundTrip)
 {
 	const WsaScope wsa;
 	IocpEngine engine;
-	IoContext context{ engine };
+	Context context{ engine };
 
 	// 저수준 listen 소켓 준비 후 Adopt.
 	const SOCKET rawListener = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -182,19 +182,19 @@ TEST(SocketLevel3Test, AcceptConnectRoundTrip)
 	ASSERT_EQ(::listen(rawListener, 1), 0);
 	const uint16_t port = ::ntohs(address.sin_port);
 
-	auto listenAdopt = Socket::Adopt(context, static_cast<socket_t>(rawListener));
+	auto listenAdopt = Socket::Attach(static_cast<socket_t>(rawListener), context);
 	ASSERT_TRUE(listenAdopt.IsOk());
 	Socket listenSocket = std::move(listenAdopt.Value());
 
 	// Accept 와 Connect 는 서로 의존 — 둘 다 제출한 뒤 함께 구동한다.
 	auto acceptTask = listenSocket.Accept();
-	auto connectTask = Socket::Connect(context, Endpoint{ "127.0.0.1", port });
+	auto connectTask = Socket::Connect(context, "127.0.0.1", port);
 	acceptTask.Resume();
 	connectTask.Resume();
 
 	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
 	while ((!acceptTask.IsReady() || !connectTask.IsReady()) && std::chrono::steady_clock::now() < deadline)
-		(void)context.RunOnce(std::chrono::milliseconds{ 50 });
+		(void_t)context.RunOnce(std::chrono::milliseconds{ 50 });
 
 	ASSERT_TRUE(acceptTask.IsReady());
 	ASSERT_TRUE(connectTask.IsReady());
@@ -230,7 +230,7 @@ TEST(SocketLevel3Test, SendToReceiveFromRoundTrip)
 	const WsaScope wsa;
 	IocpEngine engine;
 	ASSERT_TRUE(engine.IsValid());
-	IoContext context{ engine };
+	Context context{ engine };
 
 	// 두 UDP 소켓을 loopback 에 바인딩(포트는 OS 가 골라줌) — connect 없이 SendTo/ReceiveFrom 만 사용.
 	const SOCKET rawA = ::WSASocketW(AF_INET, SOCK_DGRAM, IPPROTO_UDP, nullptr, 0, WSA_FLAG_OVERLAPPED);
@@ -254,8 +254,8 @@ TEST(SocketLevel3Test, SendToReceiveFromRoundTrip)
 	ASSERT_EQ(::getsockname(rawB, reinterpret_cast<sockaddr*>(&addressB), &addressBLength), 0);
 	const uint16_t portB = ::ntohs(addressB.sin_port);
 
-	auto adoptedA = Socket::Adopt(context, static_cast<socket_t>(rawA));
-	auto adoptedB = Socket::Adopt(context, static_cast<socket_t>(rawB));
+	auto adoptedA = Socket::Attach(static_cast<socket_t>(rawA), context);
+	auto adoptedB = Socket::Attach(static_cast<socket_t>(rawB), context);
 	ASSERT_TRUE(adoptedA.IsOk());
 	ASSERT_TRUE(adoptedB.IsOk());
 	Socket socketA = std::move(adoptedA.Value());
@@ -265,19 +265,21 @@ TEST(SocketLevel3Test, SendToReceiveFromRoundTrip)
 	const std::size_t length = sizeof(payload) - 1;
 
 	auto sendTask = socketA.SendTo(std::span<const ne::byte_t>{ reinterpret_cast<const ne::byte_t*>(payload), length },
-	                                Endpoint{ "127.0.0.1", portB });
+	                                "127.0.0.1", portB);
 	auto sendResult = Drive(context, sendTask);
 	ASSERT_TRUE(sendResult.IsOk()) << sendResult.Error().What();
 	EXPECT_EQ(sendResult.Value(), length);
 
 	ne::byte_t buffer[64]{};
-	auto receiveTask = socketB.ReceiveFrom(std::span<ne::byte_t>{ buffer, sizeof(buffer) });
+	ne::string_t ip;
+	ne::uint16_t port;
+	auto receiveTask = socketB.ReceiveFrom(std::span<ne::byte_t>{ buffer, sizeof(buffer) }, ip, port);
 	auto receiveResult = Drive(context, receiveTask);
 	ASSERT_TRUE(receiveResult.IsOk()) << receiveResult.Error().What();
-	EXPECT_EQ(receiveResult.Value().length, length);
+	EXPECT_EQ(receiveResult.Value(), length);
 	EXPECT_EQ(std::memcmp(buffer, payload, length), 0);
-	EXPECT_EQ(receiveResult.Value().from.ip, "127.0.0.1");
-	EXPECT_EQ(receiveResult.Value().from.port, portA);
+	EXPECT_EQ(ip, "127.0.0.1");
+	EXPECT_EQ(port, portA);
 }
 
 #endif // _WIN32

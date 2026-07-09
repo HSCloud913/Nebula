@@ -1,8 +1,8 @@
 #pragma once
 #include <memory>
-#include "Type.h"
-#include "HashWrapper.h"
-#include "Hash/Algorithm/CRC32.h"
+#include "Base/Type.h"
+#include "Cryptography/Hash/Algorithm/Wrapper/HashWrapper.h"
+#include "Cryptography/Hash/Algorithm/CRC32.h"
 
 BEGIN_NS(ne::crypto)
 	class CRC32Wrapper :public HashWrapper
@@ -10,7 +10,7 @@ BEGIN_NS(ne::crypto)
 	public:
 		explicit CRC32Wrapper()
 			: crc32(std::make_unique<CRC32>()) {}
-		virtual ~CRC32Wrapper() = default;
+		virtual ~CRC32Wrapper() override = default;
 
 	private:
 		std::unique_ptr<CRC32> crc32;

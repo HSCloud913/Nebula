@@ -5,7 +5,7 @@
 #pragma once
 #include <atomic>
 #include <cstddef>
-#include "Type.h"
+#include "Base/Type.h"
 
 BEGIN_NS(ne::concurrency)
 	// Michael-Scott 큐 기반 MPSC lock-free 큐.
@@ -16,19 +16,19 @@ BEGIN_NS(ne::concurrency)
 	private:
 		struct Node
 		{
-			std::atomic<Node*> next{ nullptr };
-			T value{};
-
 			Node() = default;
 			explicit Node(T _val) : value(std::move(_val)) {}
+
+			std::atomic<Node*> next{ nullptr };
+			T value{};
 		};
 
 	public:
 		MpscQueue()
 		{
-			Node* dummy = new Node{};
-			head.store(dummy, std::memory_order_relaxed);
-			tail.store(dummy, std::memory_order_relaxed);
+			Node* dummyNode = new Node{};
+			head.store(dummyNode, std::memory_order_relaxed);
+			tail.store(dummyNode, std::memory_order_relaxed);
 		}
 
 		~MpscQueue()
@@ -45,29 +45,31 @@ BEGIN_NS(ne::concurrency)
 		alignas(64) std::atomic<Node*> tail;
 
 	public:
-		void Enqueue(T _value)
+		void_t Enqueue(T _value)
 		{
 			Node* node = new Node(std::move(_value));
-			Node* prev = tail.exchange(node, std::memory_order_acq_rel);
-			prev->next.store(node, std::memory_order_release);
+			Node* previousNode = tail.exchange(node, std::memory_order_acq_rel);
+			previousNode->next.store(node, std::memory_order_release);
 		}
 
 		[[nodiscard]] bool_t Dequeue(T& _out) noexcept
 		{
-			Node* h = head.load(std::memory_order_relaxed);
-			Node* next = h->next.load(std::memory_order_acquire);
-			if (!next) return false;
+			Node* headNode = head.load(std::memory_order_relaxed);
+			Node* nextNode = headNode->next.load(std::memory_order_acquire);
+			if (!nextNode) return false;
 
-			_out = std::move(next->value);
-			head.store(next, std::memory_order_relaxed);
-			delete h;
+			_out = std::move(nextNode->value);
+			head.store(nextNode, std::memory_order_relaxed);
+			delete headNode;
+
 			return true;
 		}
 
 		[[nodiscard]] bool_t IsEmpty() const noexcept
 		{
-			Node* h = head.load(std::memory_order_relaxed);
-			return h->next.load(std::memory_order_acquire) == nullptr;
+			Node* headNode = head.load(std::memory_order_relaxed);
+
+			return headNode->next.load(std::memory_order_acquire) == nullptr;
 		}
 	};
 END_NS

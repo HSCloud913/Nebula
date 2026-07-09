@@ -3,7 +3,7 @@
 //
 // Level 2 — 완료 기반 op 한 건을 co_await 로 감싸는 기본 awaitable. co_await → IoResult<size_t>.
 //
-// 완료 컨텍스트(IoCompletionHandler)를 heap 에 두고 소유권을 IoContext 루프와 교대한다:
+// 완료 컨텍스트(CompletionHandler)를 heap 에 두고 소유권을 Context 루프와 교대한다:
 //   정상 완료 : 루프가 completed 세팅 후 resume → await_resume 이 소비 → holder 소멸자가 delete.
 //   중도 폐기 : 완료 전 코루틴 프레임 파괴 → holder 소멸자가 abandoned 세팅(소유권을 루프에 넘김)
 //               → 루프가 완료 회수 시 resume 없이 delete. (mid-flight use-after-free 방지, 스펙 4)
@@ -14,11 +14,11 @@
 #include <optional>
 #include <stop_token>
 #include <utility>
-#include "Type.h"
-#include "Error.h"
-#include "Context/IoContext.h"
-#include "IoResult.h"
-#include "Context/IoOperation.h"
+#include "Base/Type.h"
+#include "Base/Error.h"
+#include "Io/Context/Context.h"
+#include "Io/IoResult.h"
+#include "Io/Context/Operation.h"
 
 BEGIN_NS(ne::io)
 	class Awaitable
@@ -26,7 +26,7 @@ BEGIN_NS(ne::io)
 	public:
 		// _stopToken 이 stop 을 받으면 진행 중 op 를 커널 취소(CancelIoEx)한다 — op 는 aborted 로 완료돼
 		// 코루틴이 에러(ERROR_OPERATION_ABORTED)로 재개된다. 기본값(빈 토큰)은 취소 없음.
-		Awaitable(IoContext& _context, const IoRequest& _request, std::stop_token _stopToken = {}) noexcept
+		Awaitable(Context& _context, const Request& _request, std::stop_token _stopToken = {}) noexcept
 			: context(_context)
 			, request(_request)
 			, stopToken(std::move(_stopToken)) {}
@@ -46,17 +46,17 @@ BEGIN_NS(ne::io)
 		// stop_callback 이 부를 취소 함수자 — userData(handler) 로 엔진에 커널 취소를 요청한다.
 		struct CancelInvoker
 		{
-			IIoEngine* engine;
-			void* userData;
+			IEngine* engine;
+			void_t* userData;
 
 			void_t operator()() const noexcept { engine->Cancel(userData); }
 		};
 
 	private:
-		IoContext& context;
-		IoRequest request;
+		Context& context;
+		Request request;
 		std::stop_token stopToken;
-		IoCompletionHandler* handler{ static_cast<IoCompletionHandler*>(nullptr) };
+		CompletionHandler* handler{ static_cast<CompletionHandler*>(nullptr) };
 		std::optional<std::stop_callback<CancelInvoker>> cancelGuard;
 
 	public:
@@ -64,7 +64,7 @@ BEGIN_NS(ne::io)
 
 		void_t await_suspend(const std::coroutine_handle<> _handle)
 		{
-			handler = new IoCompletionHandler{};
+			handler = new CompletionHandler{};
 			handler->handle = _handle;
 			request.userData = handler;
 			context.Engine().Submit(request);

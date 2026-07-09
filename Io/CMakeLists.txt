@@ -11,7 +11,7 @@ set(HEADERS
         IoType.h
         IoError.h
         IoResult.h
-        Context/IoContext.h
+        Context/Context.h
         Coroutine/Awaitable.h
         File/File.h
         Socket/Socket.h
@@ -19,8 +19,8 @@ set(HEADERS
         Buffer/BufferView.h
         Buffer/BufferChain.h
 
-        Context/IoOperation.h
-        Engine/IIoEngine.h
+        Context/Operation.h
+        Engine/IEngine.h
         Engine/IRegisteredBufferProvider.h
         Engine/IoUring/IoUringEngine.h
         Engine/IoUring/Provider/IoUringProvider.h
@@ -32,7 +32,7 @@ set(HEADERS
 )
 
 set(SOURCES
-        Context/IoContext.cpp
+        Context/Context.cpp
         File/File.cpp
         Socket/Socket.cpp
 )

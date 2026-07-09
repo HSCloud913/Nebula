@@ -6,7 +6,7 @@
 #include <coroutine>
 #include <optional>
 #include <utility>
-#include "Type.h"
+#include "Base/Type.h"
 
 BEGIN_NS(ne)
 	// 계약(중요): Task 는 완료(IsReady()) 되었거나 initial_suspend 이후 한 번도 재개되지
@@ -64,7 +64,7 @@ BEGIN_NS(ne)
 					return promise.continuation ? promise.continuation : std::noop_coroutine();
 				}
 
-				void await_resume() const noexcept {}
+				void_t await_resume() const noexcept {}
 			};
 
 			std::optional<T> result;
@@ -79,11 +79,11 @@ BEGIN_NS(ne)
 			std::suspend_always initial_suspend() noexcept { return {}; }
 			FinalAwaiter final_suspend() noexcept { return {}; }
 
-			void return_value(T _value) noexcept { result.emplace(std::move(_value)); }
-			void unhandled_exception() noexcept { std::terminate(); }
+			void_t return_value(T _value) noexcept { result.emplace(std::move(_value)); }
+			void_t unhandled_exception() noexcept { std::terminate(); }
 
 			T TakeResult() noexcept { return std::move(*result); }
-			void SetContinuation(std::coroutine_handle<> _continuation) noexcept { continuation = _continuation; }
+			void_t SetContinuation(std::coroutine_handle<> _continuation) noexcept { continuation = _continuation; }
 		};
 
 	private:
@@ -100,7 +100,7 @@ BEGIN_NS(ne)
 
 		[[nodiscard]] T await_resume() noexcept { return handle.promise().TakeResult(); }
 
-		void Resume() noexcept
+		void_t Resume() noexcept
 		{
 			if (handle && !handle.done()) handle.resume();
 		}
@@ -112,7 +112,7 @@ BEGIN_NS(ne)
 
 
 	template <>
-	class Task<void>
+	class Task<void_t>
 	{
 	public:
 		struct promise_type;
@@ -156,7 +156,7 @@ BEGIN_NS(ne)
 					return promise.continuation ? promise.continuation : std::noop_coroutine();
 				}
 
-				void await_resume() const noexcept {}
+				void_t await_resume() const noexcept {}
 			};
 
 			std::coroutine_handle<> continuation;
@@ -170,10 +170,10 @@ BEGIN_NS(ne)
 			std::suspend_always initial_suspend() noexcept { return {}; }
 			FinalAwaiter final_suspend() noexcept { return {}; }
 
-			void return_void() noexcept {}
-			void unhandled_exception() noexcept { std::terminate(); }
+			void_t return_void() noexcept {}
+			void_t unhandled_exception() noexcept { std::terminate(); }
 
-			void SetContinuation(const std::coroutine_handle<> _continuation) noexcept { continuation = _continuation; }
+			void_t SetContinuation(const std::coroutine_handle<> _continuation) noexcept { continuation = _continuation; }
 		};
 
 	private:
@@ -188,9 +188,9 @@ BEGIN_NS(ne)
 			return handle;
 		}
 
-		void await_resume() const noexcept {}
+		void_t await_resume() const noexcept {}
 
-		void Resume() noexcept
+		void_t Resume() noexcept
 		{
 			if (handle && !handle.done()) handle.resume();
 		}

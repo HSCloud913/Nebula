@@ -6,10 +6,7 @@
 #include <cstring>
 #include <vector>
 #include <memory>
-#if defined(_WIN32)
-#	include <Windows.h>
-#endif
-#include "Ascii.h"
+#include "Util/Ascii.h"
 
 BEGIN_NS(ne)
 	enum class TokenizeOption

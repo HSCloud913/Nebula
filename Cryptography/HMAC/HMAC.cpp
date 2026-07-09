@@ -1,6 +1,6 @@
-#include "HMAC.h"
+#include "Cryptography/HMAC/HMAC.h"
 
-#include "Hash/Factory/HashFactory.h"
+#include "Cryptography/Hash/Factory/HashFactory.h"
 
 
 

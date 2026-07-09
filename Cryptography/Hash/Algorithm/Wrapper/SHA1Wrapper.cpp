@@ -1,4 +1,4 @@
-#include "SHA1Wrapper.h"
+#include "Cryptography/Hash/Algorithm/Wrapper/SHA1Wrapper.h"
 
 
 

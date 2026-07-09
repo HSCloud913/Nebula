@@ -1,11 +1,12 @@
-#include "SHA2.h"
+#include "Cryptography/Hash/Algorithm/SHA2.h"
 
 #include <cstring>
 #include <iomanip>
 #include <sstream>
 
 
-constexpr ne::uint_t K32[64] =
+
+constexpr ne::uint_t Sha256RoundConstants[64] =
 {
 	0x428a2f98UL, 0x71374491UL, 0xb5c0fbcfUL, 0xe9b5dba5UL,
 	0x3956c25bUL, 0x59f111f1UL, 0x923f82a4UL, 0xab1c5ed5UL,
@@ -25,7 +26,7 @@ constexpr ne::uint_t K32[64] =
 	0x90befffaUL, 0xa4506cebUL, 0xbef9a3f7UL, 0xc67178f2UL
 };
 
-constexpr ne::ulonglong_t K64[80] =
+constexpr ne::ulonglong_t Sha512RoundConstants[80] =
 {
 	0x428a2f98d728ae22ULL, 0x7137449123ef65cdULL, 0xb5c0fbcfec4d3b2fULL, 0xe9b5dba58189dbbcULL, 0x3956c25bf348b538ULL,
 	0x59f111f1b605d019ULL, 0x923f82a4af194f9bULL, 0xab1c5ed5da6d8118ULL, 0xd807aa98a3030242ULL, 0x12835b0145706fbeULL,
@@ -45,112 +46,112 @@ constexpr ne::ulonglong_t K64[80] =
 	0x431d67c49c100d4cULL, 0x4cc5d4becb3e42b6ULL, 0x597f299cfc657e2aULL, 0x5fcb6fab3ad6faecULL, 0x6c44198c4a475817ULL
 };
 
-inline ne::uint_t Min(ne::uint_t x, ne::uint_t y)
+inline ne::uint_t Min(const ne::uint_t _x, const ne::uint_t _y)
 {
-	return x < y ? x : y;
+	return _x < _y ? _x : _y;
 }
 
-inline ne::uint_t Load32(const ne::byte_t* y)
+inline ne::uint_t Load32(const ne::byte_t* _y)
 {
-	return (static_cast<ne::uint_t>(y[0]) << 24) | (static_cast<ne::uint_t>(y[1]) << 16) | (static_cast<ne::uint_t>(y[2]) << 8) | (static_cast<ne::uint_t>(y[3]) << 0);
+	return (static_cast<ne::uint_t>(_y[0]) << 24) | (static_cast<ne::uint_t>(_y[1]) << 16) | (static_cast<ne::uint_t>(_y[2]) << 8) | (static_cast<ne::uint_t>(_y[3]) << 0);
 }
 
-inline ne::ulonglong_t Load64(const ne::byte_t* y)
+inline ne::ulonglong_t Load64(const ne::byte_t* _y)
 {
 	ne::ulonglong_t result = 0;
-	for (int i = 0; i != 8; ++i) result |= static_cast<ne::ulonglong_t>(y[i]) << ((7 - i) * 8);
+	for (int i = 0; i != 8; ++i) result |= static_cast<ne::ulonglong_t>(_y[i]) << ((7 - i) * 8);
 
 	return result;
 }
 
-inline void Store32(ne::uint_t x, ne::byte_t* y)
+inline void Store32(const ne::uint_t _x, ne::byte_t* _y)
 {
-	for (int i = 0; i != 4; ++i) y[i] = (x >> ((3 - i) * 8)) & 255;
+	for (int i = 0; i != 4; ++i) _y[i] = (_x >> ((3 - i) * 8)) & 255;
 }
 
-inline void Store64(ne::ulonglong_t x, ne::byte_t* y)
+inline void Store64(const ne::ulonglong_t _x, ne::byte_t* _y)
 {
-	for (int i = 0; i != 8; ++i) y[i] = (x >> ((7 - i) * 8)) & 255;
+	for (int i = 0; i != 8; ++i) _y[i] = (_x >> ((7 - i) * 8)) & 255;
 }
 
-inline ne::uint_t Ch(ne::uint_t x, ne::uint_t y, ne::uint_t z)
+inline ne::uint_t Ch(const ne::uint_t _x, const ne::uint_t _y, const ne::uint_t _z)
 {
-	return z ^ (x & (y ^ z));
+	return _z ^ (_x & (_y ^ _z));
 }
 
-inline ne::ulonglong_t Ch(ne::ulonglong_t x, ne::ulonglong_t y, ne::ulonglong_t z)
+inline ne::ulonglong_t Ch(const ne::ulonglong_t _x, const ne::ulonglong_t _y, const ne::ulonglong_t _z)
 {
-	return z ^ (x & (y ^ z));
+	return _z ^ (_x & (_y ^ _z));
 }
 
-inline ne::uint_t Maj(ne::uint_t x, ne::uint_t y, ne::uint_t z)
+inline ne::uint_t Maj(const ne::uint_t _x, const ne::uint_t _y, const ne::uint_t _z)
 {
-	return ((x | y) & z) | (x & y);
+	return ((_x | _y) & _z) | (_x & _y);
 }
 
-inline ne::ulonglong_t Maj(ne::ulonglong_t x, ne::ulonglong_t y, ne::ulonglong_t z)
+inline ne::ulonglong_t Maj(const ne::ulonglong_t _x, const ne::ulonglong_t _y, const ne::ulonglong_t _z)
 {
-	return ((x | y) & z) | (x & y);
+	return ((_x | _y) & _z) | (_x & _y);
 }
 
-inline ne::uint_t Rot(ne::uint_t x, ne::uint_t n)
+inline ne::uint_t Rot(const ne::uint_t _x, const ne::uint_t _n)
 {
-	return (x >> (n & 31)) | (x << (32 - (n & 31)));
+	return (_x >> (_n & 31)) | (_x << (32 - (_n & 31)));
 }
 
-inline ne::ulonglong_t Rot(ne::ulonglong_t x, ne::ulonglong_t n)
+inline ne::ulonglong_t Rot(const ne::ulonglong_t _x, const ne::ulonglong_t _n)
 {
-	return (x >> (n & 63)) | (x << (64 - (n & 63)));
+	return (_x >> (_n & 63)) | (_x << (64 - (_n & 63)));
 }
 
-inline ne::uint_t Sh(ne::uint_t x, ne::uint_t n)
+inline ne::uint_t Sh(const ne::uint_t _x, const ne::uint_t _n)
 {
-	return x >> n;
+	return _x >> _n;
 }
 
-inline ne::ulonglong_t Sh(ne::ulonglong_t x, ne::ulonglong_t n)
+inline ne::ulonglong_t Sh(const ne::ulonglong_t _x, const ne::ulonglong_t _n)
 {
-	return x >> n;
+	return _x >> _n;
 }
 
-inline ne::uint_t Sigma0(ne::uint_t x)
+inline ne::uint_t Sigma0(const ne::uint_t _x)
 {
-	return Rot(x, 2) ^ Rot(x, 13) ^ Rot(x, 22);
+	return Rot(_x, 2) ^ Rot(_x, 13) ^ Rot(_x, 22);
 }
 
-inline ne::ulonglong_t Sigma0(ne::ulonglong_t x)
+inline ne::ulonglong_t Sigma0(const ne::ulonglong_t _x)
 {
-	return Rot(x, 28) ^ Rot(x, 34) ^ Rot(x, 39);
+	return Rot(_x, 28) ^ Rot(_x, 34) ^ Rot(_x, 39);
 }
 
-inline ne::uint_t Sigma1(ne::uint_t x)
+inline ne::uint_t Sigma1(const ne::uint_t _x)
 {
-	return Rot(x, 6) ^ Rot(x, 11) ^ Rot(x, 25);
+	return Rot(_x, 6) ^ Rot(_x, 11) ^ Rot(_x, 25);
 }
 
-inline ne::ulonglong_t Sigma1(ne::ulonglong_t x)
+inline ne::ulonglong_t Sigma1(const ne::ulonglong_t _x)
 {
-	return Rot(x, 14) ^ Rot(x, 18) ^ Rot(x, 41);
+	return Rot(_x, 14) ^ Rot(_x, 18) ^ Rot(_x, 41);
 }
 
-inline ne::uint_t Gamma0(ne::uint_t x)
+inline ne::uint_t Gamma0(const ne::uint_t _x)
 {
-	return Rot(x, 7) ^ Rot(x, 18) ^ Sh(x, 3);
+	return Rot(_x, 7) ^ Rot(_x, 18) ^ Sh(_x, 3);
 }
 
-inline ne::ulonglong_t Gamma0(ne::ulonglong_t x)
+inline ne::ulonglong_t Gamma0(const ne::ulonglong_t _x)
 {
-	return Rot(x, 1) ^ Rot(x, 8) ^ Sh(x, 7);
+	return Rot(_x, 1) ^ Rot(_x, 8) ^ Sh(_x, 7);
 }
 
-inline ne::uint_t Gamma1(ne::uint_t x)
+inline ne::uint_t Gamma1(const ne::uint_t _x)
 {
-	return Rot(x, 17) ^ Rot(x, 19) ^ Sh(x, 10);
+	return Rot(_x, 17) ^ Rot(_x, 19) ^ Sh(_x, 10);
 }
 
-inline ne::ulonglong_t Gamma1(ne::ulonglong_t x)
+inline ne::ulonglong_t Gamma1(const ne::ulonglong_t _x)
 {
-	return Rot(x, 19) ^ Rot(x, 61) ^ Sh(x, 6);
+	return Rot(_x, 19) ^ Rot(_x, 61) ^ Sh(_x, 6);
 }
 
 inline void ShaCompress(ne::uint_t* _state, const ne::byte_t* _buffer)
@@ -167,12 +168,12 @@ inline void ShaCompress(ne::uint_t* _state, const ne::byte_t* _buffer)
 	for (int i = 16; i < 64; i++) W[i] = Gamma1(W[i - 2]) + W[i - 7] + Gamma0(W[i - 15]) + W[i - 16];
 
 	// Compress
-	auto RND = [&](ne::uint_t a, ne::uint_t b, ne::uint_t c, ne::uint_t& d, ne::uint_t e, ne::uint_t f, ne::uint_t g, ne::uint_t& h, ne::uint_t i)
+	auto RND = [&](ne::uint_t _a, ne::uint_t _b, ne::uint_t _c, ne::uint_t& _d, ne::uint_t _e, ne::uint_t _f, ne::uint_t _g, ne::uint_t& _h, ne::uint_t _i)
 	{
-		t0 = h + Sigma1(e) + Ch(e, f, g) + K32[i] + W[i];
-		t1 = Sigma0(a) + Maj(a, b, c);
-		d += t0;
-		h = t0 + t1;
+		t0 = _h + Sigma1(_e) + Ch(_e, _f, _g) + Sha256RoundConstants[_i] + W[_i];
+		t1 = Sigma0(_a) + Maj(_a, _b, _c);
+		_d += t0;
+		_h = t0 + t1;
 	};
 
 	for (auto i = 0; i < 64; ++i)
@@ -207,12 +208,12 @@ inline void ShaCompress(ne::ulonglong_t* _state, const ne::byte_t* _buffer)
 	for (int i = 16; i < 80; i++) W[i] = Gamma1(W[i - 2]) + W[i - 7] + Gamma0(W[i - 15]) + W[i - 16];
 
 	// Compress
-	auto RND = [&](ne::ulonglong_t a, ne::ulonglong_t b, ne::ulonglong_t c, ne::ulonglong_t& d, ne::ulonglong_t e, ne::ulonglong_t f, ne::ulonglong_t g, ne::ulonglong_t& h, ne::ulonglong_t i)
+	auto RND = [&](ne::ulonglong_t _a, ne::ulonglong_t _b, ne::ulonglong_t _c, ne::ulonglong_t& _d, ne::ulonglong_t _e, ne::ulonglong_t _f, ne::ulonglong_t _g, ne::ulonglong_t& _h, ne::ulonglong_t _i)
 	{
-		t0 = h + Sigma1(e) + Ch(e, f, g) + K64[i] + W[i];
-		t1 = Sigma0(a) + Maj(a, b, c);
-		d += t0;
-		h = t0 + t1;
+		t0 = _h + Sigma1(_e) + Ch(_e, _f, _g) + Sha512RoundConstants[_i] + W[_i];
+		t1 = Sigma0(_a) + Maj(_a, _b, _c);
+		_d += t0;
+		_h = t0 + t1;
 	};
 
 	for (int i = 0; i < 80; i += 8)
@@ -234,7 +235,7 @@ inline void ShaCompress(ne::ulonglong_t* _state, const ne::byte_t* _buffer)
 
 
 BEGIN_NS(ne::crypto)
-	void SHA2::Init()
+	void_t SHA2::Init()
 	{
 		length = 0;
 		currentLength = 0;
@@ -285,7 +286,7 @@ BEGIN_NS(ne::crypto)
 		}
 	}
 
-	void SHA2::AddBuffer(const void_t* _data, size_t _dataLength)
+	void_t SHA2::AddBuffer(const void_t* _data, size_t _dataLength)
 	{
 		if (type == Type::SHA2_224 || type == Type::SHA2_256)
 		{
@@ -332,7 +333,7 @@ BEGIN_NS(ne::crypto)
 				}
 				else
 				{
-					uint_t n = Min(_dataLength, (BlockSize - currentLength));
+					const uint_t n = Min(_dataLength, (BlockSize - currentLength));
 					std::memcpy(buffer + currentLength, data, n);
 					currentLength += n;
 					data += n;

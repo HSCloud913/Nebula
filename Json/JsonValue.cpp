@@ -1,4 +1,5 @@
-#include "JsonValue.h"
+#include "Json/JsonValue.h"
+#include "Json/Json.h"
 
 #include <cstring>
 #include <sstream>
@@ -36,8 +37,11 @@ BEGIN_NS(ne)
 
 
 
-	JsonValue JsonValue::Parse(lpcstr_t* _data)
+	JsonValue JsonValue::Parse(lpcstr_t* _data, const int_t _depth)
 	{
+		// 중첩 깊이 초과 — 무효로 실패시켜 스택 오버플로를 방지한다.
+		if (_depth > MaxParseDepth) return {};
+
 #if defined(_WIN32)
 		// NULL
 		if (strchk(*_data, 4) && _strnicmp(*_data, "null", 4) == 0)
@@ -49,10 +53,10 @@ BEGIN_NS(ne)
 		// BOOLEAN
 		if ((strchk(*_data, 4) && _strnicmp(*_data, "true", 4) == 0) || (strchk(*_data, 5) && _strnicmp(*_data, "false", 5) == 0))
 		{
-			bool_t value = _strnicmp(*_data, "true", 4) == 0;
-			(*_data) += value ? 4 : 5;
+			bool_t isTrue = _strnicmp(*_data, "true", 4) == 0;
+			(*_data) += isTrue ? 4 : 5;
 
-			return JsonValue(value);
+			return JsonValue(isTrue);
 		}
 #elif defined(IS_POSIX)
 		if (strchk(*_data, 4) && strncasecmp(*_data, "null", 4) == 0)
@@ -63,10 +67,10 @@ BEGIN_NS(ne)
 
 		if ((strchk(*_data, 4) && strncasecmp(*_data, "true", 4) == 0) || (strchk(*_data, 5) && strncasecmp(*_data, "false", 5) == 0))
 		{
-			bool_t value = strncasecmp(*_data, "true", 4) == 0;
-			(*_data) += value ? 4 : 5;
+			bool_t isTrue = strncasecmp(*_data, "true", 4) == 0;
+			(*_data) += isTrue ? 4 : 5;
 
-			return JsonValue(value);
+			return JsonValue(isTrue);
 		}
 #endif
 
@@ -158,7 +162,7 @@ BEGIN_NS(ne)
 					return JsonValue(array);
 				}
 
-				auto data = Parse(_data);
+				auto data = Parse(_data, _depth + 1);
 				if (!data.IsInvalid()) array.push_back(data);
 
 				if (!Json::SkipWhitespace(_data)) return {};
@@ -199,7 +203,7 @@ BEGIN_NS(ne)
 				if (*((*_data)++) != ':') return {};
 				if (!Json::SkipWhitespace(_data)) return {};
 
-				auto data = Parse(_data);
+				auto data = Parse(_data, _depth + 1);
 				if (!data.IsInvalid()) object[name] = data;
 
 				if (!Json::SkipWhitespace(_data)) return {};

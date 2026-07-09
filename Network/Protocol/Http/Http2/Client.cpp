@@ -2,8 +2,8 @@
 // Created by hscloud on 26. 6. 30.
 //
 
-#include "Client.h"
-#include "Stream.h"
+#include "Network/Protocol/Http/Http2/Client.h"
+#include "Network/Protocol/Http/Http2/Stream.h"
 #include <array>
 #include <vector>
 #include <cstring>

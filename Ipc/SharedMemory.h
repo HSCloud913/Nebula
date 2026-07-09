@@ -8,7 +8,7 @@
 #include <memory>
 #include <span>
 
-#include "Type.h"
+#include "Base/Type.h"
 
 BEGIN_NS(ne::ipc)
 	class SharedMemory final

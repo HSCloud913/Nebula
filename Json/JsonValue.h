@@ -1,12 +1,17 @@
-#ifndef NEBULA_JSONVALUE_H
-#define NEBULA_JSONVALUE_H
-
+#pragma once
+#include <map>
 #include <memory>
 #include <variant>
-
-#include "Json.h"
+#include <vector>
+#include "Base/Type.h"
 
 BEGIN_NS(ne)
+	// JsonObject/JsonArray 는 JsonValue 를 원소로 갖는다(불완전형 허용). Json.h 의 인라인 Stringify 가
+	// 완전한 JsonValue 를 필요로 하므로, 순환 include 를 피하려 공용 typedef 를 여기에 둔다(Json.h 는 이 헤더를 include).
+	class JsonValue;
+	typedef std::map<string_t, JsonValue> JsonObject;
+	typedef std::vector<JsonValue> JsonArray;
+
 	enum class JsonType
 	{
 		INVALID,
@@ -92,7 +97,11 @@ BEGIN_NS(ne)
 		[[nodiscard]] std::vector<string_t> ObjectKeys() const;
 
 	protected:
-		static JsonValue Parse(lpcstr_t* _data);
+		// 신뢰할 수 없는 입력의 깊은 중첩(예: "[[[[…]]]]")이 무한 재귀→스택 오버플로를 내지 않도록
+		// 중첩 깊이를 제한한다. 초과 시 무효(INVALID) JsonValue 로 실패시킨다.
+		static constexpr int_t MaxParseDepth = 256;
+
+		static JsonValue Parse(lpcstr_t* _data, int_t _depth = 0);
 		static ulonglong_t ParseNumber(lpcstr_t* _data, bool_t& _isOverflow);
 		static double_t ParseReal(lpcstr_t* _data);
 		static bool_t ParseString(lpcstr_t* _data, string_t& _str);
@@ -107,5 +116,3 @@ BEGIN_NS(ne)
 	};
 
 END_NS
-
-#endif //NEBULA_JSONVALUE_H

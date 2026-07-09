@@ -2,22 +2,22 @@
 // Created by nebula on 24. 5. 29.
 //
 
-#include "MessageQueue.h"
+#include "Ipc/MessageQueue.h"
 
-#include "Exception.h"
-#include "StringFormat.h"
-#include "Engine/IIoEngine.h"
+#include "Base/Exception.h"
+#include "Util/StringFormat.h"
+#include "Io/Engine/IEngine.h"
 // SendSubmitAwaitable/ReceiveSubmitAwaitable(소켓 Proactor, POSIX) +
 // ReadSubmitAwaitable/WriteSubmitAwaitable(파일 Proactor, Windows/IocpEngine) 전부
 // Io 모듈 공용 — Ipc 는 더 이상 자체 Awaitable.h 를 두지 않는다.
-#include "Coroutine/Awaitable.h"
+#include "Io/Coroutine/Awaitable.h"
 
 #if defined(_WIN32)
 #	include <winsock2.h>
 #elif defined(IS_POSIX)
 // AF_UNIX SOCK_SEQPACKET 기반 — POSIX 메시지 큐(mqd_t)는 io_uring 이 아는 opcode가 없어
 // (mq_send/mq_receive 전용 syscall) Reactor(Watch + 동기 mq_send/mq_receive)로만 쓸 수 있었다.
-// 소켓으로 바꾸면 SOCK_SEQPACKET 이 메시지 경계를 그대로 보존하면서 IIoEngine::SubmitSend/
+// 소켓으로 바꾸면 SOCK_SEQPACKET 이 메시지 경계를 그대로 보존하면서 IEngine::SubmitSend/
 // SubmitReceive(IORING_OP_SEND/RECV)로 진짜 Proactor 제출이 가능해진다 — PlainStream 이
 // TCP 소켓에 쓰는 것과 동일한 경로. priority/큐 용량 제한(mq_maxmsg 등)은 기존에 아무
 // 호출자도 쓰지 않던 기능이라 잃을 게 없다(대신 MaxMessage 고정 버퍼 크기로 대체).
@@ -45,7 +45,7 @@ BEGIN_NS(ne::ipc)
 	private:
 		wstring_t pipeName;
 		HANDLE handle = INVALID_HANDLE_VALUE;
-		bool_t registered{ false }; // IocpEngine 등록 여부 — 최초 SendAsync/ReceiveAsync 에서 1회만 등록(RegisterFileHandle 은 멱등하지 않음)
+		bool_t isRegistered{ false }; // IocpEngine 등록 여부 — 최초 SendAsync/ReceiveAsync 에서 1회만 등록(RegisterFileHandle 은 멱등하지 않음)
 
 	public:
 		[[nodiscard]] HANDLE Handle() const noexcept { return handle; }
@@ -116,7 +116,7 @@ BEGIN_NS(ne::ipc)
 	public:
 		void_t Send(const std::span<const std::byte> _message) const
 		{
-			if (registered)
+			if (isRegistered)
 				throw ne::Exception("[MessageQueue/Send]", "cannot call Send() after SendAsync/ReceiveAsync registered this handle with an IocpEngine — use SendAsync instead");
 
 			OVERLAPPED overlapped{};
@@ -140,7 +140,7 @@ BEGIN_NS(ne::ipc)
 
 		[[nodiscard]] std::vector<std::byte> Receive() const
 		{
-			if (registered)
+			if (isRegistered)
 				throw ne::Exception("[MessageQueue/Receive]", "cannot call Receive() after SendAsync/ReceiveAsync registered this handle with an IocpEngine — use ReceiveAsync instead");
 
 			auto buffer = std::vector<std::byte>(MaxMessage);
@@ -171,16 +171,16 @@ BEGIN_NS(ne::ipc)
 
 	public:
 		// SendAsync/ReceiveAsync 에서 호출 — 핸들을 IocpEngine 에 최초 1회만 등록한다.
-		[[nodiscard]] ne::Result<void, ne::OsError> EnsureRegistered(ne::io::IocpEngine& _engine) noexcept
+		[[nodiscard]] ne::Result<void_t, ne::OsError> EnsureRegistered(ne::io::IocpEngine& _engine) noexcept
 		{
-			if (registered) return ne::Result<void, ne::OsError>::Ok();
+			if (isRegistered) return ne::Result<void_t, ne::OsError>::Ok();
 
 			if (auto result = _engine.RegisterFileHandle(handle); result.IsError())
 				return result;
 
-			registered = true;
+			isRegistered = true;
 
-			return ne::Result<void, ne::OsError>::Ok();
+			return ne::Result<void_t, ne::OsError>::Ok();
 		}
 
 	private:
@@ -350,16 +350,16 @@ BEGIN_NS(ne::ipc)
 	// ne::io::WriteSubmitAwaitable/ReadSubmitAwaitable(파일 Proactor)로 진짜 완료 기반
 	// 비동기 I/O 를 수행한다. 파이프는 byte offset 개념이 없으므로 offset 은 항상 0 —
 	// OVERLAPPED.Offset/OffsetHigh 는 named pipe 에 대해 OS 가 무시한다.
-	ne::Task<ne::Result<void, ne::OsError>> MessageQueue::SendAsync(const std::span<const std::byte> _message, ne::io::IocpEngine& _engine)
+	ne::Task<ne::Result<void_t, ne::OsError>> MessageQueue::SendAsync(const std::span<const std::byte> _message, ne::io::IocpEngine& _engine)
 	{
 		if (auto registerResult = impl->EnsureRegistered(_engine); registerResult.IsError())
-			co_return ne::Result<void, ne::OsError>::Error(std::move(registerResult.Error()));
+			co_return ne::Result<void_t, ne::OsError>::Error(std::move(registerResult.Error()));
 
 		auto result = co_await ne::io::WriteSubmitAwaitable{_engine, impl->Handle(), std::span<const ne::byte_t>(reinterpret_cast<const ne::byte_t*>(_message.data()), _message.size()), 0};
 		if (result.IsError())
-			co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
+			co_return ne::Result<void_t, ne::OsError>::Error(std::move(result.Error()));
 
-		co_return ne::Result<void, ne::OsError>::Ok();
+		co_return ne::Result<void_t, ne::OsError>::Ok();
 	}
 
 	ne::Task<ne::Result<std::vector<std::byte>, ne::OsError>> MessageQueue::ReceiveAsync(ne::io::IocpEngine& _engine)
@@ -379,10 +379,10 @@ BEGIN_NS(ne::ipc)
 	}
 
 #elif defined(IS_POSIX)
-	// POSIX: AF_UNIX SOCK_SEQPACKET → IIoEngine::SubmitSend/SubmitReceive 로 진짜 Proactor
+	// POSIX: AF_UNIX SOCK_SEQPACKET → IEngine::SubmitSend/SubmitReceive 로 진짜 Proactor
 	// 제출(IORING_OP_SEND/RECV, epoll 은 Watch+send/recv 로 에뮬레이션) — Reactor 로 준비완료를
 	// 기다렸다가 별도로 mq_send/mq_receive 를 부르던 이전 2단계 구조가 필요 없다.
-	ne::Task<ne::Result<void, ne::OsError>> MessageQueue::SendAsync(const std::span<const std::byte> _message, ne::io::IIoEngine& _engine)
+	ne::Task<ne::Result<void_t, ne::OsError>> MessageQueue::SendAsync(const std::span<const std::byte> _message, ne::io::IEngine& _engine)
 	{
 		auto result = co_await ne::io::SendSubmitAwaitable{
 			_engine,
@@ -391,12 +391,12 @@ BEGIN_NS(ne::ipc)
 			_message.size() };
 
 		if (result.IsError())
-			co_return ne::Result<void, ne::OsError>::Error(std::move(result.Error()));
+			co_return ne::Result<void_t, ne::OsError>::Error(std::move(result.Error()));
 
-		co_return ne::Result<void, ne::OsError>::Ok();
+		co_return ne::Result<void_t, ne::OsError>::Ok();
 	}
 
-	ne::Task<ne::Result<std::vector<std::byte>, ne::OsError>> MessageQueue::ReceiveAsync(ne::io::IIoEngine& _engine)
+	ne::Task<ne::Result<std::vector<std::byte>, ne::OsError>> MessageQueue::ReceiveAsync(ne::io::IEngine& _engine)
 	{
 		auto buffer = std::vector<std::byte>(Impl::MaxMessage);
 		auto result = co_await ne::io::ReceiveSubmitAwaitable{
@@ -413,13 +413,13 @@ BEGIN_NS(ne::ipc)
 	}
 
 #else
-	ne::Task<ne::Result<void, ne::OsError>> MessageQueue::SendAsync(const std::span<const std::byte>, ne::io::IIoEngine&)
+	ne::Task<ne::Result<void_t, ne::OsError>> MessageQueue::SendAsync(const std::span<const std::byte>, ne::io::IEngine&)
 	{
-		co_return ne::Result<void, ne::OsError>::Error(
+		co_return ne::Result<void_t, ne::OsError>::Error(
 			ne::OsError{ 0, "[MessageQueue/SendAsync] not supported on this platform" });
 	}
 
-	ne::Task<ne::Result<std::vector<std::byte>, ne::OsError>> MessageQueue::ReceiveAsync(ne::io::IIoEngine&)
+	ne::Task<ne::Result<std::vector<std::byte>, ne::OsError>> MessageQueue::ReceiveAsync(ne::io::IEngine&)
 	{
 		co_return ne::Result<std::vector<std::byte>, ne::OsError>::Error(
 			ne::OsError{ 0, "[MessageQueue/ReceiveAsync] not supported on this platform" });

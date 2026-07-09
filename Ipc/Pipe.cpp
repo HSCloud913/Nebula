@@ -2,12 +2,12 @@
 // Created by nebula on 24. 5. 29.
 //
 
-#include "Pipe.h"
+#include "Ipc/Pipe.h"
 
-#include "Exception.h"
-#include "StringFormat.h"
-#include "Engine/IIoEngine.h"
-#include "Coroutine/Awaitable.h"
+#include "Base/Exception.h"
+#include "Util/StringFormat.h"
+#include "Io/Engine/IEngine.h"
+#include "Io/Coroutine/Awaitable.h"
 
 #if defined(IS_POSIX)
 #	include <sys/socket.h>
@@ -34,7 +34,7 @@ BEGIN_NS(ne::ipc)
 	private:
 		wstring_t pipeName;
 		HANDLE handle = INVALID_HANDLE_VALUE;
-		bool_t registered{ false }; // IocpEngine 등록 여부 — 최초 ReadAsync/WriteAsync 에서 1회만 등록(RegisterFileHandle 은 멱등하지 않음)
+		bool_t isRegistered{ false }; // IocpEngine 등록 여부 — 최초 ReadAsync/WriteAsync 에서 1회만 등록(RegisterFileHandle 은 멱등하지 않음)
 
 
 
@@ -106,7 +106,7 @@ BEGIN_NS(ne::ipc)
 	public:
 		[[nodiscard]] longlong_t Read(const std::span<std::byte> _buffer) const
 		{
-			if (registered)
+			if (isRegistered)
 				throw ne::Exception("[Pipe/Read]", "cannot call Read() after ReadAsync/WriteAsync registered this handle with an IocpEngine — use ReadAsync instead");
 
 			OVERLAPPED overlapped{};
@@ -144,7 +144,7 @@ BEGIN_NS(ne::ipc)
 
 		bool_t Write(const std::span<const std::byte> _data) const
 		{
-			if (registered)
+			if (isRegistered)
 				throw ne::Exception("[Pipe/Write]", "cannot call Write() after ReadAsync/WriteAsync registered this handle with an IocpEngine — use WriteAsync instead");
 
 			OVERLAPPED overlapped{};
@@ -178,16 +178,16 @@ BEGIN_NS(ne::ipc)
 
 	public:
 		// ReadAsync/WriteAsync 에서 호출 — 핸들을 IocpEngine 에 최초 1회만 등록한다.
-		[[nodiscard]] ne::Result<void, ne::OsError> EnsureRegistered(ne::io::IocpEngine& _engine) noexcept
+		[[nodiscard]] ne::Result<void_t, ne::OsError> EnsureRegistered(ne::io::IocpEngine& _engine) noexcept
 		{
-			if (registered) return ne::Result<void, ne::OsError>::Ok();
+			if (isRegistered) return ne::Result<void_t, ne::OsError>::Ok();
 
 			if (auto result = _engine.RegisterFileHandle(handle); result.IsError())
 				return result;
 
-			registered = true;
+			isRegistered = true;
 
-			return ne::Result<void, ne::OsError>::Ok();
+			return ne::Result<void_t, ne::OsError>::Ok();
 		}
 
 	public:
@@ -360,26 +360,26 @@ BEGIN_NS(ne::ipc)
 	}
 
 #elif defined(IS_POSIX)
-	// POSIX: AF_UNIX SOCK_STREAM → IIoEngine::SubmitReceive/SubmitSend 로 진짜 Proactor 제출
+	// POSIX: AF_UNIX SOCK_STREAM → IEngine::SubmitReceive/SubmitSend 로 진짜 Proactor 제출
 	// (IORING_OP_RECV/SEND, epoll 은 Watch+recv/send 로 에뮬레이션).
-	ne::Task<ne::Result<std::size_t, ne::OsError>> Pipe::ReadAsync(const std::span<std::byte> _buffer, ne::io::IIoEngine& _engine)
+	ne::Task<ne::Result<std::size_t, ne::OsError>> Pipe::ReadAsync(const std::span<std::byte> _buffer, ne::io::IEngine& _engine)
 	{
 		co_return co_await ne::io::ReceiveSubmitAwaitable{_engine, static_cast<ne::io::socket_t>(impl->Handle()), _buffer.data(), _buffer.size()};
 	}
 
-	ne::Task<ne::Result<std::size_t, ne::OsError>> Pipe::WriteAsync(const std::span<const std::byte> _data, ne::io::IIoEngine& _engine)
+	ne::Task<ne::Result<std::size_t, ne::OsError>> Pipe::WriteAsync(const std::span<const std::byte> _data, ne::io::IEngine& _engine)
 	{
 		co_return co_await ne::io::SendSubmitAwaitable{_engine, static_cast<ne::io::socket_t>(impl->Handle()), _data.data(), _data.size()};
 	}
 
 #else
-	ne::Task<ne::Result<std::size_t, ne::OsError>> Pipe::ReadAsync(const std::span<std::byte>, ne::io::IIoEngine&)
+	ne::Task<ne::Result<std::size_t, ne::OsError>> Pipe::ReadAsync(const std::span<std::byte>, ne::io::IEngine&)
 	{
 		co_return ne::Result<std::size_t, ne::OsError>::Error(
 			ne::OsError{ 0, "[Pipe/ReadAsync] not supported on this platform" });
 	}
 
-	ne::Task<ne::Result<std::size_t, ne::OsError>> Pipe::WriteAsync(const std::span<const std::byte>, ne::io::IIoEngine&)
+	ne::Task<ne::Result<std::size_t, ne::OsError>> Pipe::WriteAsync(const std::span<const std::byte>, ne::io::IEngine&)
 	{
 		co_return ne::Result<std::size_t, ne::OsError>::Error(
 			ne::OsError{ 0, "[Pipe/WriteAsync] not supported on this platform" });

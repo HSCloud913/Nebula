@@ -1,7 +1,7 @@
 #pragma once
 #include <memory>
-#include "Hash/Hash.h"
-#include "Hash/Algorithm/Wrapper/HashWrapper.h"
+#include "Cryptography/Hash/Hash.h"
+#include "Cryptography/Hash/Algorithm/Wrapper/HashWrapper.h"
 
 BEGIN_NS(ne::crypto)
 	class HashFactory final

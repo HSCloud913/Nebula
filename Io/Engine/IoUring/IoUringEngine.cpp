@@ -2,7 +2,7 @@
 // Created by hscloud on 26. 6. 30.
 //
 
-#include "IoUringEngine.h"
+#include "Io/Engine/IoUring/IoUringEngine.h"
 
 #if defined(IS_POSIX)
 #	include <cerrno>
@@ -41,7 +41,7 @@ BEGIN_NS(ne::io)
 
 
 
-	void_t IoUringEngine::Submit(const IoRequest& _request)
+	void_t IoUringEngine::Submit(const Request& _request)
 	{
 		// SendFile — io_uring SQE 를 쓰지 않고 동기 sendfile(2) 로 즉시 처리한다(단순화: splice
 		// 체인 기반 진짜 비동기 구현은 후속 과제). handle=목적지 소켓(Send 계열과 동일), auxHandle=원본 파일.
@@ -51,7 +51,7 @@ BEGIN_NS(ne::io)
 			const ssize_t bytes = ::sendfile(static_cast<int_t>(_request.handle), static_cast<int_t>(_request.auxHandle), &offset, _request.length);
 
 			std::lock_guard lock(mutex);
-			readyCompletions.push_back(IoCompletion{ _request.userData, bytes >= 0 ? static_cast<longlong_t>(bytes) : -static_cast<longlong_t>(errno) });
+			readyCompletions.push_back(Completion{ _request.userData, bytes >= 0 ? static_cast<longlong_t>(bytes) : -static_cast<longlong_t>(errno) });
 			return;
 		}
 
@@ -63,7 +63,7 @@ BEGIN_NS(ne::io)
 			// SQ 를 비울 수 없음 — 합성 완료로 즉시 오류 반환(ENOBUFS).
 			{
 				std::lock_guard lock(mutex);
-				readyCompletions.push_back(IoCompletion{ _request.userData, -static_cast<longlong_t>(ENOBUFS) });
+				readyCompletions.push_back(Completion{ _request.userData, -static_cast<longlong_t>(ENOBUFS) });
 			}
 
 			delete operation;
@@ -127,7 +127,7 @@ BEGIN_NS(ne::io)
 			operation->iovecs = { iovec{ _request.buffer, _request.length } };
 			operation->message.msg_iov = operation->iovecs.data();
 			operation->message.msg_iovlen = 1;
-			operation->message.msg_name = const_cast<void*>(_request.address);
+			operation->message.msg_name = const_cast<void_t*>(_request.address);
 			operation->message.msg_namelen = static_cast<socklen_t>(_request.addressLength);
 			::io_uring_prep_sendmsg(sqe, fd, &operation->message, 0);
 			break;
@@ -173,10 +173,10 @@ BEGIN_NS(ne::io)
 			if (_request.userData != nullptr) inflight[_request.userData] = operation;
 		}
 
-		(void)::io_uring_submit(&ring);
+		(void_t)::io_uring_submit(&ring);
 	}
 
-	int_t IoUringEngine::WaitCompletions(IoCompletion* _out, const int_t _max, const std::chrono::milliseconds _timeout)
+	int_t IoUringEngine::WaitCompletions(Completion* _out, const int_t _max, const std::chrono::milliseconds _timeout)
 	{
 		if (_max <= 0) return 0;
 
@@ -200,7 +200,7 @@ BEGIN_NS(ne::io)
 		io_uring_cqe* firstCqe = nullptr;
 		if (_timeout.count() < 0)
 		{
-			(void)::io_uring_wait_cqe(&ring, &firstCqe);
+			(void_t)::io_uring_wait_cqe(&ring, &firstCqe);
 		}
 		else
 		{
@@ -212,7 +212,7 @@ BEGIN_NS(ne::io)
 		io_uring_cqe* cqes[MaxBatch];
 		const uint_t peeked = ::io_uring_peek_batch_cqe(&ring, cqes, static_cast<uint_t>(_max < MaxBatch ? _max : MaxBatch));
 
-		bool_t sawWake = false;
+		bool_t hasSeenWake = false;
 		for (uint_t i = 0; i < peeked; ++i)
 		{
 			io_uring_cqe* cqe = cqes[i];
@@ -220,7 +220,7 @@ BEGIN_NS(ne::io)
 
 			if (userData == WakeUserData)
 			{
-				sawWake = true; // wake / 취소 SQE 완료 — 완료로 배출하지 않는다
+				hasSeenWake = true; // wake / 취소 SQE 완료 — 완료로 배출하지 않는다
 				continue;
 			}
 
@@ -247,10 +247,10 @@ BEGIN_NS(ne::io)
 
 		::io_uring_cq_advance(&ring, peeked);
 
-		if (sawWake)
+		if (hasSeenWake)
 		{
 			uint64_t drained = 0;
-			(void)::read(wakeEventFd, &drained, sizeof(drained)); // eventfd 비우기
+			(void_t)::read(wakeEventFd, &drained, sizeof(drained)); // eventfd 비우기
 			ArmWakePoll();                                        // 재무장
 		}
 
@@ -260,10 +260,10 @@ BEGIN_NS(ne::io)
 	void_t IoUringEngine::Wake()
 	{
 		const uint64_t one = 1;
-		(void)::write(wakeEventFd, &one, sizeof(one));
+		(void_t)::write(wakeEventFd, &one, sizeof(one));
 	}
 
-	void_t IoUringEngine::Cancel(void* _userData) noexcept
+	void_t IoUringEngine::Cancel(void_t* _userData) noexcept
 	{
 		if (_userData == nullptr) return;
 
@@ -297,7 +297,7 @@ BEGIN_NS(ne::io)
 		if (sqe != nullptr) return sqe;
 
 		// SQ 가 가득 참 — 제출해 비우고 재시도.
-		(void)::io_uring_submit(&ring);
+		(void_t)::io_uring_submit(&ring);
 
 		return ::io_uring_get_sqe(&ring);
 	}
@@ -309,18 +309,18 @@ BEGIN_NS(ne::io)
 
 		::io_uring_prep_poll_add(sqe, wakeEventFd, POLLIN);
 		::io_uring_sqe_set_data64(sqe, WakeUserData);
-		(void)::io_uring_submit(&ring);
+		(void_t)::io_uring_submit(&ring);
 	}
 
 	void_t IoUringEngine::SubmitPendingCancels() noexcept
 	{
-		std::vector<void*> cancels;
+		std::vector<void_t*> cancels;
 		{
 			std::lock_guard lock(mutex);
 			cancels.swap(pendingCancels);
 		}
 
-		for (void* userData : cancels)
+		for (void_t* userData : cancels)
 		{
 			UringOperation* operation = nullptr;
 			{
@@ -334,7 +334,7 @@ BEGIN_NS(ne::io)
 			{
 				::io_uring_prep_cancel(sqe, operation, 0);
 				::io_uring_sqe_set_data64(sqe, WakeUserData); // 취소 자체의 완료는 무시(wake 와 동일 취급)
-				(void)::io_uring_submit(&ring);
+				(void_t)::io_uring_submit(&ring);
 			}
 		}
 	}

@@ -4,7 +4,7 @@
 
 #include <gtest/gtest.h>
 #include <cstring>
-#include "Buffer/BufferChain.h"
+#include "Io/Buffer/BufferChain.h"
 
 using namespace ne::io;
 

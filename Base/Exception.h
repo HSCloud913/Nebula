@@ -4,7 +4,7 @@
 
 #pragma once
 #include <format>
-#include "Type.h"
+#include "Base/Type.h"
 
 BEGIN_NS(ne)
 	class Exception :public std::exception

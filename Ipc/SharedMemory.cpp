@@ -2,10 +2,10 @@
 // Created by nebula on 24. 5. 29.
 //
 
-#include "SharedMemory.h"
+#include "Ipc/SharedMemory.h"
 
-#include "Exception.h"
-#include "StringFormat.h"
+#include "Base/Exception.h"
+#include "Util/StringFormat.h"
 
 #if defined(IS_POSIX)
 #	include <sys/mman.h>

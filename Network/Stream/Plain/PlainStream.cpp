@@ -2,8 +2,8 @@
 // Created by hscloud on 25. 6. 29.
 //
 
-#include "PlainStream.h"
-#include "Coroutine/Awaitable.h"
+#include "Network/Stream/Plain/PlainStream.h"
+#include "Io/Coroutine/Awaitable.h"
 
 #include <cerrno>
 #include <memory>
@@ -15,7 +15,7 @@
 #   include <windows.h>
 #   include <mswsock.h>
 #   include <ws2tcpip.h>
-#   include "Engine/Iocp/IocpEngine.h"
+#   include "Io/Engine/Iocp/IocpEngine.h"
 #elif defined(IS_POSIX)
 #   include <sys/socket.h>
 #   include <sys/uio.h>

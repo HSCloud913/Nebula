@@ -1,30 +1,30 @@
-#include "SHA1.h"
+#include "Cryptography/Hash/Algorithm/SHA1.h"
 
 #include <cstring>
 
 
 
-inline ne::uint_t SHA1_F1(ne::uint_t b, ne::uint_t c, ne::uint_t d)
+inline ne::uint_t SHA1_F1(const ne::uint_t _b, const ne::uint_t _c, const ne::uint_t _d)
 {
-	return d ^ (b & (c ^ d)); // original: f = (b & c) | ((~b) & d);
+	return _d ^ (_b & (_c ^ _d)); // original: f = (b & c) | ((~b) & d);
 }
-inline ne::uint_t SHA1_F2(ne::uint_t b, ne::uint_t c, ne::uint_t d)
+inline ne::uint_t SHA1_F2(const ne::uint_t _b, const ne::uint_t _c, const ne::uint_t _d)
 {
-	return b ^ c ^ d;
+	return _b ^ _c ^ _d;
 }
-inline ne::uint_t SHA1_F3(ne::uint_t b, ne::uint_t c, ne::uint_t d)
+inline ne::uint_t SHA1_F3(const ne::uint_t _b, const ne::uint_t _c, const ne::uint_t _d)
 {
-	return (b & c) | (b & d) | (c & d);
+	return (_b & _c) | (_b & _d) | (_c & _d);
 }
-inline ne::uint_t SHA1_Rotate(ne::uint_t a, ne::uint_t c)
+inline ne::uint_t SHA1_Rotate(const ne::uint_t _a, const ne::uint_t _c)
 {
-	return (a << c) | (a >> (32 - c));
+	return (_a << _c) | (_a >> (32 - _c));
 }
 
 
 
 BEGIN_NS(ne::crypto)
-	void SHA1::Init()
+	void_t SHA1::Init()
 	{
 		memset(buffer, 0, sizeof(byte_t) * Sha1BlockSize);
 		bufferSize = 0;
@@ -37,7 +37,7 @@ BEGIN_NS(ne::crypto)
 		sha1Value[4] = 0xc3d2e1f0;
 	}
 
-	void SHA1::AddBuffer(const void_t* _data, size_t _dataLength)
+	void_t SHA1::AddBuffer(const void_t* _data, size_t _dataLength)
 	{
 		const auto* data = static_cast<const byte_t*>(_data);
 
@@ -101,7 +101,7 @@ BEGIN_NS(ne::crypto)
 
 
 
-	void SHA1::ProcessBuffer()
+	void_t SHA1::ProcessBuffer()
 	{
 		size_t paddedLength = bufferSize * 8;
 
@@ -163,7 +163,7 @@ BEGIN_NS(ne::crypto)
 		}
 	}
 
-	void SHA1::ProcessBlock(const void_t* _data)
+	void_t SHA1::ProcessBlock(const void_t* _data)
 	{
 		const auto data = static_cast<const uint_t*>(_data);
 		uint_t words[80] = { 0, };

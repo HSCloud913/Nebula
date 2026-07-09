@@ -5,8 +5,8 @@
 #pragma once
 #include <cstdint>
 #include <unordered_map>
-#include "Frame.h"
-#include "Type.h"
+#include "Network/Protocol/Http/Http2/Frame.h"
+#include "Base/Type.h"
 
 BEGIN_NS(ne::network::http_2)
 	// 연결 레벨 + 스트림 레벨 흐름 제어.

@@ -5,7 +5,7 @@
 #pragma once
 #include <algorithm>
 #include <ranges>
-#include "Type.h"
+#include "Base/Type.h"
 
 BEGIN_NS(ne)
 	class NEBULA_API Ascii final

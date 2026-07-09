@@ -5,7 +5,7 @@
 #pragma once
 #include <type_traits>
 #include <memory>
-#include "Type.h"
+#include "Base/Type.h"
 
 template <typename T>
 concept IsTrivial = std::is_trivial_v<T>;
@@ -34,6 +34,7 @@ BEGIN_NS(ne)
 
 			return *this;
 		}
+
 		constexpr Handle& operator=(Handle&& _nebulaHandle) noexcept
 		{
 			if (this != std::addressof(_nebulaHandle))

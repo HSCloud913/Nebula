@@ -6,7 +6,7 @@
 #include <cstddef>
 #include <span>
 #include <cassert>
-#include "Type.h"
+#include "Base/Type.h"
 
 BEGIN_NS(ne::io)
 	// 비소유 메모리 조각(포인터+길이). scatter/gather(BufferChain)의 세그먼트 단위로 쓰인다.
@@ -23,7 +23,6 @@ BEGIN_NS(ne::io)
 		}
 
 		[[nodiscard]] std::span<const ne::byte_t> Span() const noexcept { return { ptr, length }; }
-
 		[[nodiscard]] bool_t IsValid() const noexcept { return ptr != nullptr; }
 	};
 

@@ -2,9 +2,9 @@
 // Created by hscloud on 25. 6. 29.
 //
 
-#include "Client.h"
-#include "../../../Stream/Plain/PlainStream.h"
-#include "Socket/Socket.h"
+#include "Network/Protocol/Http/Http1/Client.h"
+#include "Network/Stream/Plain/PlainStream.h"
+#include "Network/Socket/Socket.h"
 #include <array>
 #include <string>
 

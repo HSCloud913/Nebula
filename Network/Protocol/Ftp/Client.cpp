@@ -2,8 +2,8 @@
 // Created by hscloud on 26. 6. 30.
 //
 
-#include "Client.h"
-#include "FtpUtil.h"
+#include "Network/Protocol/Ftp/Client.h"
+#include "Network/Protocol/Ftp/FtpUtil.h"
 #include <array>
 #include <format>
 

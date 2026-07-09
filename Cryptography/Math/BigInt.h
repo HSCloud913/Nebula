@@ -1,10 +1,10 @@
 #pragma once
-#include "Type.h"
-
 #include <vector>
-#include <random>
+#include "Base/Type.h"
 
 BEGIN_NS(ne::crypto)
+	class SecureRandom; // Random/RandomPrime 이 참조. 정의는 Random/SecureRandom.h (.cpp 에서 include).
+
 	class BigInt
 	{
 	public:
@@ -17,12 +17,12 @@ BEGIN_NS(ne::crypto)
 		std::vector<uint_t> d;
 
 	public:
-		bool operator==(const BigInt& _other) const { return d == _other.d; }
-		bool operator!=(const BigInt& _other) const { return d != _other.d; }
-		bool operator<(const BigInt& _other) const;
-		bool operator<=(const BigInt& _other) const { return !(_other < *this); }
-		bool operator>(const BigInt& _other) const { return _other < *this; }
-		bool operator>=(const BigInt& _other) const { return !(*this < _other); }
+		bool_t operator==(const BigInt& _other) const { return d == _other.d; }
+		bool_t operator!=(const BigInt& _other) const { return d != _other.d; }
+		bool_t operator<(const BigInt& _other) const;
+		bool_t operator<=(const BigInt& _other) const { return !(_other < *this); }
+		bool_t operator>(const BigInt& _other) const { return _other < *this; }
+		bool_t operator>=(const BigInt& _other) const { return !(*this < _other); }
 
 		BigInt operator+(const BigInt& _other) const;
 		BigInt operator-(const BigInt& _other) const;
@@ -36,19 +36,19 @@ BEGIN_NS(ne::crypto)
 		BigInt& operator-=(const BigInt& _other);
 
 	public:
-		void Trim();
+		void_t Trim();
 
 		[[nodiscard]] string_t ToHex() const;
 		[[nodiscard]] string_t ToBytes(size_t _minLength = 0) const; // big-endian, zero-padded to minLen
 
-		[[nodiscard]] bool IsZero() const { return d.size() == 1 && d[0] == 0; }
-		[[nodiscard]] bool IsOne() const { return d.size() == 1 && d[0] == 1; }
-		[[nodiscard]] bool IsEven() const { return (d[0] & 1u) == 0; }
-		[[nodiscard]] bool IsOdd() const { return (d[0] & 1u) != 0; }
-		[[nodiscard]] bool IsProbablyPrime(int_t _rounds = 20) const;
+		[[nodiscard]] bool_t IsZero() const { return d.size() == 1 && d[0] == 0; }
+		[[nodiscard]] bool_t IsOne() const { return d.size() == 1 && d[0] == 1; }
+		[[nodiscard]] bool_t IsEven() const { return (d[0] & 1u) == 0; }
+		[[nodiscard]] bool_t IsOdd() const { return (d[0] & 1u) != 0; }
+		[[nodiscard]] bool_t IsProbablyPrime(int_t _rounds = 20) const;
 
 		[[nodiscard]] size_t BitLength() const;
-		[[nodiscard]] bool TestBit(size_t _number) const;
+		[[nodiscard]] bool_t TestBit(size_t _number) const;
 
 	public:
 		static std::pair<BigInt, BigInt> DivMod(const BigInt& _lhs, const BigInt& _rhs);
@@ -60,8 +60,8 @@ BEGIN_NS(ne::crypto)
 		static BigInt FromHex(const string_t& _hex);
 		static BigInt FromBytes(const string_t& _bytes); // big-endian bytes
 
-		static BigInt Random(size_t _bits, std::mt19937_64& _rng);
-		static BigInt RandomPrime(size_t _bits, std::mt19937_64& _rng);
+		static BigInt Random(size_t _bits, SecureRandom& _rng);
+		static BigInt RandomPrime(size_t _bits, SecureRandom& _rng);
 	};
 
 END_NS

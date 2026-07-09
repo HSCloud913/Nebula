@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
-#include "Coroutine/Task.h"
-#include "IoResult.h"
+#include "Base/Coroutine/Task.h"
+#include "Io/IoResult.h"
 
 using namespace ne;
 using namespace ne::io;
@@ -23,10 +23,10 @@ namespace
 	}
 
 	// void 결과 전파.
-	ne::Task<IoResult<void>> RequireEven(const int_t _value)
+	ne::Task<IoResult<void_t>> RequireEven(const int_t _value)
 	{
 		CO_TRYV(Halve(_value));
-		co_return IoResult<void>::Ok();
+		co_return IoResult<void_t>::Ok();
 	}
 
 	template <typename T>

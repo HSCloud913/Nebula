@@ -7,12 +7,12 @@
 #include <optional>
 #include <span>
 #include <vector>
-#include "SftpBase.h"
-#include "Stream/SSH/SshStream.h"  // for ne::network::SshConfig
-#include "Socket/Socket.h"
-#include "Coroutine/Task.h"
-#include "Result.h"
-#include "Error.h"
+#include "Network/Protocol/Sftp/SftpBase.h"
+#include "Network/Stream/SSH/SshStream.h"  // for ne::network::SshConfig
+#include "Network/Socket/Socket.h"
+#include "Base/Coroutine/Task.h"
+#include "Base/Result.h"
+#include "Base/Error.h"
 
 BEGIN_NS(ne::network::sftp)
 	// Async SFTP client backed by libssh2.

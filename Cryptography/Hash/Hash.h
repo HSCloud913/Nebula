@@ -1,5 +1,5 @@
 #pragma once
-#include "Type.h"
+#include "Base/Type.h"
 
 BEGIN_NS(ne::crypto)
 	enum class HashType

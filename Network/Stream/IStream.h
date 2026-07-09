@@ -4,12 +4,12 @@
 
 #pragma once
 #include <cstddef>
-#include "Coroutine/Task.h"
-#include "Result.h"
-#include "Error.h"
-#include "Type.h"
-#include "Buffer/BufferView.h"
-#include "Buffer/BufferChain.h"
+#include "Base/Coroutine/Task.h"
+#include "Base/Result.h"
+#include "Base/Error.h"
+#include "Base/Type.h"
+#include "Io/Buffer/BufferView.h"
+#include "Io/Buffer/BufferChain.h"
 
 BEGIN_NS(ne::network)
 	// 바이트 스트림 추상 인터페이스 (async-only).

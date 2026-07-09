@@ -2,7 +2,7 @@
 // Created by nebula on 24. 6. 14.
 //
 
-#include "ThreadPool.h"
+#include "Concurrency/ThreadPool.h"
 
 
 
@@ -11,6 +11,7 @@ BEGIN_NS(ne)
 		: isShutdown(false)
 	{
 		threads.reserve(_count);
+
 		for (size_t i = 0; i < _count; i++)
 		{
 			threads.emplace_back([this]()

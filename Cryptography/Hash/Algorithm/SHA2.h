@@ -1,5 +1,5 @@
 #pragma once
-#include "Type.h"
+#include "Base/Type.h"
 
 BEGIN_NS(ne::crypto)
 	class SHA2 final
@@ -19,17 +19,17 @@ BEGIN_NS(ne::crypto)
 
 	private:
 		Type type;
-		uint_t sha2Value32[8] = { 0, };
-		ulonglong_t sha2Value64[8] = { 0, };
+		uint_t sha2Value32[8]{};
+		ulonglong_t sha2Value64[8]{};
 
 	private:
-		byte_t buffer[128] = { 0, };
-		ulonglong_t length = 0;
-		uint_t currentLength = 0;
+		byte_t buffer[128]{};
+		ulonglong_t length{ 0 };
+		uint_t currentLength{ 0 };
 
 	public:
-		void Init();
-		void AddBuffer(const void_t* _data, size_t _dataLength);
+		void_t Init();
+		void_t AddBuffer(const void_t* _data, size_t _dataLength);
 		[[nodiscard]] string_t Get();
 	};
 

@@ -5,7 +5,7 @@
 #pragma once
 #include <cstdint>
 #include <cstddef>
-#include "Type.h"
+#include "Base/Type.h"
 
 BEGIN_NS(ne::network::http_2)
 

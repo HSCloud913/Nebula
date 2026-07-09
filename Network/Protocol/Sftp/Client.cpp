@@ -2,7 +2,7 @@
 // Created by hscloud on 26. 6. 30.
 //
 
-#include "Client.h"
+#include "Network/Protocol/Sftp/Client.h"
 #include <format>
 
 #if defined(NEBULA_WITH_LIBSSH2)

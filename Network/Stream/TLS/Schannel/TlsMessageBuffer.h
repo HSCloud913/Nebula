@@ -8,7 +8,7 @@
 #include <cassert>
 #include <span>
 #include <vector>
-#include "Type.h"
+#include "Base/Type.h"
 
 BEGIN_NS(ne::network)
 	class TlsMessageBuffer final

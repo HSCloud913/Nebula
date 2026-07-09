@@ -6,15 +6,15 @@
 #include <memory>
 #include <span>
 
-#include "Coroutine/Task.h"
-#include "Result.h"
-#include "Error.h"
-#include "Type.h"
+#include "Base/Coroutine/Task.h"
+#include "Base/Result.h"
+#include "Base/Error.h"
+#include "Base/Type.h"
 
-// IIoEngine 전방 선언 — 헤더 체인을 최소화하기 위해 Engine/IIoEngine.h 는 .cpp 에서만 include
+// IEngine 전방 선언 — 헤더 체인을 최소화하기 위해 Engine/IEngine.h 는 .cpp 에서만 include
 namespace ne::io
 {
-	class IIoEngine;
+	class IEngine;
 #if defined(_WIN32)
 	class IocpEngine;
 #endif
@@ -50,7 +50,7 @@ BEGIN_NS(ne::ipc)
 
 	public:
 		// 비동기 API — 둘 다 진짜 Proactor 제출.
-		// POSIX: AF_UNIX SOCK_STREAM → IIoEngine::SubmitSend/SubmitReceive
+		// POSIX: AF_UNIX SOCK_STREAM → IEngine::SubmitSend/SubmitReceive
 		// Windows: 명명 파이프를 FILE_FLAG_OVERLAPPED 로 열고 IocpEngine 에 등록해
 		//          SubmitRead/SubmitWrite 로 완료 기반 비동기 I/O 수행
 		// 주의: Read() 와 달리 ReadAsync() 는 연결 종료를 -1 센티널이 아니라 0 바이트로
@@ -60,8 +60,8 @@ BEGIN_NS(ne::ipc)
 		[[nodiscard]] ne::Task<ne::Result<std::size_t, ne::OsError>> ReadAsync(std::span<std::byte> _buffer, ne::io::IocpEngine& _engine);
 		[[nodiscard]] ne::Task<ne::Result<std::size_t, ne::OsError>> WriteAsync(std::span<const std::byte> _data, ne::io::IocpEngine& _engine);
 #else
-		[[nodiscard]] ne::Task<ne::Result<std::size_t, ne::OsError>> ReadAsync(std::span<std::byte> _buffer, ne::io::IIoEngine& _engine);
-		[[nodiscard]] ne::Task<ne::Result<std::size_t, ne::OsError>> WriteAsync(std::span<const std::byte> _data, ne::io::IIoEngine& _engine);
+		[[nodiscard]] ne::Task<ne::Result<std::size_t, ne::OsError>> ReadAsync(std::span<std::byte> _buffer, ne::io::IEngine& _engine);
+		[[nodiscard]] ne::Task<ne::Result<std::size_t, ne::OsError>> WriteAsync(std::span<const std::byte> _data, ne::io::IEngine& _engine);
 #endif
 
 	public:

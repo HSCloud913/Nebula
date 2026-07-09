@@ -1,4 +1,4 @@
-#include "HashWrapper.h"
+#include "Cryptography/Hash/Algorithm/Wrapper/HashWrapper.h"
 
 #include <cstring>
 
@@ -10,7 +10,7 @@ BEGIN_NS(ne::crypto)
 		return  OnGetHashFromString(std::move(_text));
 	}
 
-	void HashWrapper::GetHashFromString(char_t* _buffer, size_t _bufferSize, lpcstr_t _text)
+	void_t HashWrapper::GetHashFromString(char_t* _buffer, size_t _bufferSize, lpcstr_t _text)
 	{
 		strcpy_s(_buffer, _bufferSize, OnGetHashFromString(_text).c_str());
 	}
@@ -33,7 +33,7 @@ BEGIN_NS(ne::crypto)
 		return result;
 	}
 
-	void HashWrapper::GetHashFromFile(char_t* _buffer, size_t _bufferSize, lpcstr_t _filePath)
+	void_t HashWrapper::GetHashFromFile(char_t* _buffer, size_t _bufferSize, lpcstr_t _filePath)
 	{
 		FILE* file = nullptr;
 

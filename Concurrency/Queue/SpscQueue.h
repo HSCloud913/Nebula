@@ -7,7 +7,7 @@
 #include <cassert>
 #include <cstddef>
 #include <vector>
-#include "Type.h"
+#include "Base/Type.h"
 
 BEGIN_NS(ne::concurrency)
 	// 단일 생산자 단일 소비자 lock-free 링버퍼.
@@ -36,22 +36,24 @@ BEGIN_NS(ne::concurrency)
 	public:
 		[[nodiscard]] bool_t Enqueue(T _value) noexcept
 		{
-			const std::size_t w    = writePos.load(std::memory_order_relaxed);
-			const std::size_t next = (w + 1) & mask;
+			const std::size_t pos = writePos.load(std::memory_order_relaxed);
+			const std::size_t next = (pos + 1) & mask;
 			if (next == readPos.load(std::memory_order_acquire)) return false;
 
-			buffer[w] = std::move(_value);
+			buffer[pos] = std::move(_value);
 			writePos.store(next, std::memory_order_release);
+
 			return true;
 		}
 
 		[[nodiscard]] bool_t Dequeue(T& _out) noexcept
 		{
-			const std::size_t r = readPos.load(std::memory_order_relaxed);
-			if (r == writePos.load(std::memory_order_acquire)) return false;
+			const std::size_t pos = readPos.load(std::memory_order_relaxed);
+			if (pos == writePos.load(std::memory_order_acquire)) return false;
 
-			_out = std::move(buffer[r]);
-			readPos.store((r + 1) & mask, std::memory_order_release);
+			_out = std::move(buffer[pos]);
+			readPos.store((pos + 1) & mask, std::memory_order_release);
+
 			return true;
 		}
 

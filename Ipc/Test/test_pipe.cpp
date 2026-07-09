@@ -13,13 +13,13 @@
 #include <thread>
 #include <vector>
 
-#include "../../Ipc/Pipe.h"
+#include "Ipc/Pipe.h"
 
 #if defined(IS_POSIX)
-#   include "Engine/Epoll/EpollEngine.h"
+#   include "Io/Engine/Epoll/EpollEngine.h"
     using TestIoEngine = ne::io::EpollEngine;
 #elif defined(_WIN32)
-#   include "Engine/Iocp/IocpEngine.h"
+#   include "Io/Engine/Iocp/IocpEngine.h"
     using TestIoEngine = ne::io::IocpEngine;
 #endif
 
@@ -37,7 +37,7 @@ namespace
 		return std::string(reinterpret_cast<const ne::char_t*>(_bytes.data()), _bytes.size());
 	}
 
-	// 최대 5 초 동안 IIoEngine::RunOnce() 를 구동해 _flag 가 true 가 되길 대기.
+	// 최대 5 초 동안 IEngine::RunOnce() 를 구동해 _flag 가 true 가 되길 대기.
 	// POSIX(epoll/io_uring)·Windows(IOCP) 모두 완료 통지는 RunOnce() 호출 스레드에서만
 	// 온다 — 두 플랫폼 다 이 방식으로 이벤트 루프를 돌려야 코루틴이 재개된다.
 	void DriveEngine(TestIoEngine& _engine, const std::atomic<bool>& _flag,
@@ -82,7 +82,7 @@ TEST(PipeTest, ListenConnectReadWrite)
 
 // ─── 비동기 테스트 ────────────────────────────────────────────────────────────
 
-// ReadAsync 가 IIoEngine 기반으로 정상 수신하는지 검증.
+// ReadAsync 가 IEngine 기반으로 정상 수신하는지 검증.
 //   - 서버: ReadAsync 로 대기 (코루틴 suspend)
 //   - 클라이언트 스레드: Connect() 후 동기 Write
 //   - 이벤트 루프 구동: RunOnce() 를 돌려야 완료가 코루틴으로 전달됨 (POSIX/Windows 공통)

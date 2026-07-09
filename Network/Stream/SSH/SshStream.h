@@ -4,9 +4,9 @@
 
 #pragma once
 #include <cstddef>
-#include "Stream/Plain/PlainStream.h"
-#include "Stream/IStream.h"
-#include "Engine/IIoEngine.h"
+#include "Network/Stream/Plain/PlainStream.h"
+#include "Network/Stream/IStream.h"
+#include "Io/Engine/IEngine.h"
 
 BEGIN_NS(ne::network)
 	struct SshConfig

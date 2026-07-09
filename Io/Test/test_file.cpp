@@ -5,10 +5,10 @@
 #include <chrono>
 #include <cstring>
 #include <span>
-#include "Context/IoContext.h" // winsock2 → windows 순서를 IoType.h 가 보장(DeleteFileA 포함)
-#include "File/File.h"
-#include "Coroutine/Task.h"
-#include "Engine/Iocp/IocpEngine.h"
+#include "Io/Context/Context.h" // winsock2 → windows 순서를 IoType.h 가 보장(DeleteFileA 포함)
+#include "Io/File/File.h"
+#include "Base/Coroutine/Task.h"
+#include "Io/Engine/Iocp/IocpEngine.h"
 
 using namespace ne;
 using namespace ne::io;
@@ -16,12 +16,12 @@ using namespace ne::io;
 namespace
 {
 	template <typename T>
-	T Drive(IoContext& _context, ne::Task<T>& _task)
+	T Drive(Context& _context, ne::Task<T>& _task)
 	{
 		_task.Resume();
 		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
 		while (!_task.IsReady() && std::chrono::steady_clock::now() < deadline)
-			(void)_context.RunOnce(std::chrono::milliseconds{ 50 });
+			(void_t)_context.RunOnce(std::chrono::milliseconds{ 50 });
 		return _task.await_resume();
 	}
 }
@@ -31,7 +31,7 @@ TEST(FileTest, WriteThenRead)
 {
 	IocpEngine engine;
 	ASSERT_TRUE(engine.IsValid());
-	IoContext context{ engine };
+	Context context{ engine };
 
 	const lpcstr_t path = "test_file_level3.bin";
 	auto opened = File::Open(context, path, OpenMode::ReadWrite);
@@ -63,7 +63,7 @@ TEST(FileTest, WritevThenReadvRoundTrip)
 {
 	IocpEngine engine;
 	ASSERT_TRUE(engine.IsValid());
-	IoContext context{ engine };
+	Context context{ engine };
 
 	const lpcstr_t path = "test_file_level3_vectored.bin";
 	auto opened = File::Open(context, path, OpenMode::ReadWrite);
@@ -107,7 +107,7 @@ TEST(FileTest, WritevThenReadvRoundTrip)
 TEST(FileTest, OpenNonExistentFails)
 {
 	IocpEngine engine;
-	IoContext context{ engine };
+	Context context{ engine };
 
 	auto opened = File::Open(context, "no_such_file_level3.bin", OpenMode::Read);
 	EXPECT_TRUE(opened.IsError());

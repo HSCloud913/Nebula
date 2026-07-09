@@ -3,8 +3,8 @@
 //
 
 #include <gtest/gtest.h>
-#include "RSA/RSA.h"
-#include "../Math/BigInt.h"
+#include "Cryptography/RSA/RSA.h"
+#include "Cryptography/Math/BigInt.h"
 
 
 

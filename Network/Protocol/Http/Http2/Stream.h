@@ -6,13 +6,13 @@
 #include <cstdint>
 #include <span>
 #include <vector>
-#include "Coroutine/Task.h"
-#include "../HttpCommon.h"
-#include "Frame.h"
-#include "Stream/IStream.h"
-#include "Result.h"
-#include "Error.h"
-#include "Type.h"
+#include "Base/Coroutine/Task.h"
+#include "Network/Protocol/Http/HttpCommon.h"
+#include "Network/Protocol/Http/Http2/Frame.h"
+#include "Network/Stream/IStream.h"
+#include "Base/Result.h"
+#include "Base/Error.h"
+#include "Base/Type.h"
 
 BEGIN_NS(ne::network::http_2)
 	enum class StreamState : uint8_t

@@ -7,7 +7,7 @@
 #include <span>
 #include <utility>
 #include <vector>
-#include "FtpBase.h"
+#include "Network/Protocol/Ftp/FtpBase.h"
 
 BEGIN_NS(ne::network::ftp)
 	// Async FTP client layered over ne::network::IStream.

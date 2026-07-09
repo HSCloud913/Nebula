@@ -1,5 +1,5 @@
 #pragma once
-#include "Type.h"
+#include "Base/Type.h"
 
 BEGIN_NS(ne::crypto)
 	class MD5 final
@@ -17,21 +17,21 @@ BEGIN_NS(ne::crypto)
 		};
 
 	private:
-		uint_t md5Value[MD5HashValues];
+		uint_t md5Value[MD5HashValues]{};
 
 	private:
-		byte_t buffer[MD5BlockSize];
-		size_t bufferSize = 0;
-		ulong_t length = 0;
+		byte_t buffer[MD5BlockSize]{};
+		size_t bufferSize{ 0 };
+		ulong_t length{ 0 };
 
 	public:
-		void Init();
-		void AddBuffer(const void_t* _data, size_t _dataLength);
+		void_t Init();
+		void_t AddBuffer(const void_t* _data, size_t _dataLength);
 		[[nodiscard]] string_t Get();
 
 	private:
-		void ProcessBuffer();
-		void ProcessBlock(const void_t* _data);
+		void_t ProcessBuffer();
+		void_t ProcessBlock(const void_t* _data);
 	};
 
 END_NS

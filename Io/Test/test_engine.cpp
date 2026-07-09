@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "Type.h" // IS_POSIX / 플랫폼 매크로 정의 — 아래 #if/#elif 분기 전에 반드시 포함
+#include "Base/Type.h" // IS_POSIX / 플랫폼 매크로 정의 — 아래 #if/#elif 분기 전에 반드시 포함
 
 #if defined(_WIN32)
 
@@ -8,7 +8,7 @@
 #include <windows.h>
 #include <chrono>
 #include <cstring>
-#include "Engine/Iocp/IocpEngine.h"
+#include "Io/Engine/Iocp/IocpEngine.h"
 
 using namespace ne;
 using namespace ne::io;
@@ -16,12 +16,12 @@ using namespace ne::io;
 namespace
 {
 	// userData 로 특정 완료 하나를 기다려 result 를 돌려준다(없으면 -1).
-	longlong_t WaitFor(IocpEngine& _engine, void* _tag, const std::chrono::milliseconds _timeout = std::chrono::seconds(5))
+	longlong_t WaitFor(IocpEngine& _engine, void_t* _tag, const std::chrono::milliseconds _timeout = std::chrono::seconds(5))
 	{
 		const auto deadline = std::chrono::steady_clock::now() + _timeout;
 		while (std::chrono::steady_clock::now() < deadline)
 		{
-			IoCompletion completions[8];
+			Completion completions[8];
 			const int_t count = _engine.WaitCompletions(completions, 8, std::chrono::milliseconds(50));
 			for (int_t i = 0; i < count; ++i)
 				if (completions[i].userData == _tag) return completions[i].result;
@@ -84,14 +84,14 @@ TEST(IoEngineTest, FileWriteThenReadRoundTrip)
 	const std::size_t length = sizeof(payload) - 1;
 
 	int_t writeTag = 0;
-	IoRequest write{ .op = OpCode::Write, .userData = &writeTag, .handle = reinterpret_cast<ulonglong_t>(file),
+	Request write{ .op = OpCode::Write, .userData = &writeTag, .handle = reinterpret_cast<ulonglong_t>(file),
 	                 .buffer = const_cast<lpstr_t>(payload), .length = length, .offset = 0 };
 	engine.Submit(write);
 	EXPECT_EQ(WaitFor(engine, &writeTag), static_cast<longlong_t>(length));
 
 	char readBuffer[64]{};
 	int_t readTag = 0;
-	IoRequest read{ .op = OpCode::Read, .userData = &readTag, .handle = reinterpret_cast<ulonglong_t>(file),
+	Request read{ .op = OpCode::Read, .userData = &readTag, .handle = reinterpret_cast<ulonglong_t>(file),
 	                .buffer = readBuffer, .length = length, .offset = 0 };
 	engine.Submit(read);
 	EXPECT_EQ(WaitFor(engine, &readTag), static_cast<longlong_t>(length));
@@ -116,14 +116,14 @@ TEST(IoEngineTest, SocketSendThenReceiveRoundTrip)
 	const std::size_t length = sizeof(payload) - 1;
 
 	int_t sendTag = 0;
-	IoRequest send{ .op = OpCode::Send, .userData = &sendTag, .handle = static_cast<ulonglong_t>(a),
+	Request send{ .op = OpCode::Send, .userData = &sendTag, .handle = static_cast<ulonglong_t>(a),
 	                .buffer = const_cast<lpstr_t>(payload), .length = length };
 	engine.Submit(send);
 	EXPECT_EQ(WaitFor(engine, &sendTag), static_cast<longlong_t>(length));
 
 	char receiveBuffer[64]{};
 	int_t receiveTag = 0;
-	IoRequest receive{ .op = OpCode::Receive, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b),
+	Request receive{ .op = OpCode::Receive, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b),
 	                   .buffer = receiveBuffer, .length = length };
 	engine.Submit(receive);
 	EXPECT_EQ(WaitFor(engine, &receiveTag), static_cast<longlong_t>(length));
@@ -159,14 +159,14 @@ TEST(IoEngineTest, SendFileZeroCopyRoundTrip)
 	ASSERT_TRUE(MakeConnectedPair(a, b));
 
 	int_t sendFileTag = 0;
-	IoRequest sendFile{ .op = OpCode::SendFile, .userData = &sendFileTag, .handle = static_cast<ulonglong_t>(a),
+	Request sendFile{ .op = OpCode::SendFile, .userData = &sendFileTag, .handle = static_cast<ulonglong_t>(a),
 	                    .length = length, .offset = 0, .auxHandle = reinterpret_cast<ulonglong_t>(sourceFile) };
 	engine.Submit(sendFile);
 	EXPECT_EQ(WaitFor(engine, &sendFileTag), static_cast<longlong_t>(length));
 
 	char receiveBuffer[64]{};
 	int_t receiveTag = 0;
-	IoRequest receive{ .op = OpCode::Receive, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b),
+	Request receive{ .op = OpCode::Receive, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b),
 	                   .buffer = receiveBuffer, .length = length };
 	engine.Submit(receive);
 	EXPECT_EQ(WaitFor(engine, &receiveTag), static_cast<longlong_t>(length));
@@ -215,14 +215,14 @@ TEST(IoEngineTest, SendZeroCopyRegisteredBufferRoundTrip)
 	::closesocket(listener);
 
 	int_t sendTag = 0;
-	IoRequest send{ .op = OpCode::SendZeroCopy, .userData = &sendTag, .handle = static_cast<ulonglong_t>(a),
+	Request send{ .op = OpCode::SendZeroCopy, .userData = &sendTag, .handle = static_cast<ulonglong_t>(a),
 	                .buffer = region, .length = length, .bufferId = handle.value };
 	engine.Submit(send);
 	EXPECT_EQ(WaitFor(engine, &sendTag), static_cast<longlong_t>(length));
 
 	char receiveBuffer[64]{};
 	int_t receiveTag = 0;
-	IoRequest receive{ .op = OpCode::Receive, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b),
+	Request receive{ .op = OpCode::Receive, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b),
 	                   .buffer = receiveBuffer, .length = length };
 	engine.Submit(receive);
 	EXPECT_EQ(WaitFor(engine, &receiveTag), static_cast<longlong_t>(length));
@@ -252,7 +252,7 @@ TEST(IoEngineTest, WakeUnblocksWait)
 	engine.Wake();
 
 	const auto start = std::chrono::steady_clock::now();
-	IoCompletion completions[4];
+	Completion completions[4];
 	const int_t count = engine.WaitCompletions(completions, 4, std::chrono::seconds(5));
 	const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
 
@@ -267,20 +267,20 @@ TEST(IoEngineTest, WakeUnblocksWait)
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/socket.h>
-#include "Engine/Epoll/EpollEngine.h"
-#include "Engine/IoUring/IoUringEngine.h"
+#include "Io/Engine/Epoll/EpollEngine.h"
+#include "Io/Engine/IoUring/IoUringEngine.h"
 
 using namespace ne;
 using namespace ne::io;
 
 namespace
 {
-	longlong_t WaitFor(IIoEngine& _engine, void* _tag, const std::chrono::milliseconds _timeout = std::chrono::seconds(5))
+	longlong_t WaitFor(IEngine& _engine, void_t* _tag, const std::chrono::milliseconds _timeout = std::chrono::seconds(5))
 	{
 		const auto deadline = std::chrono::steady_clock::now() + _timeout;
 		while (std::chrono::steady_clock::now() < deadline)
 		{
-			IoCompletion completions[8];
+			Completion completions[8];
 			const int_t count = _engine.WaitCompletions(completions, 8, std::chrono::milliseconds(50));
 			for (int_t i = 0; i < count; ++i)
 				if (completions[i].userData == _tag) return completions[i].result;
@@ -289,7 +289,7 @@ namespace
 	}
 
 	// 임시 파일 Write → Read 왕복 (엔진 무관 — Submit/WaitCompletions 계약만 사용).
-	void_t RunFileRoundTrip(IIoEngine& _engine)
+	void_t RunFileRoundTrip(IEngine& _engine)
 	{
 		const lpcstr_t path = "test_engine_posix_file.bin";
 		const int_t fd = ::open(path, O_RDWR | O_CREAT | O_TRUNC, 0644);
@@ -299,14 +299,14 @@ namespace
 		const std::size_t length = sizeof(payload) - 1;
 
 		int_t writeTag = 0;
-		IoRequest write{ .op = OpCode::Write, .userData = &writeTag, .handle = static_cast<ulonglong_t>(fd),
+		Request write{ .op = OpCode::Write, .userData = &writeTag, .handle = static_cast<ulonglong_t>(fd),
 		                 .buffer = const_cast<char*>(payload), .length = length, .offset = 0 };
 		_engine.Submit(write);
 		EXPECT_EQ(WaitFor(_engine, &writeTag), static_cast<longlong_t>(length));
 
 		char buffer[64]{};
 		int_t readTag = 0;
-		IoRequest read{ .op = OpCode::Read, .userData = &readTag, .handle = static_cast<ulonglong_t>(fd),
+		Request read{ .op = OpCode::Read, .userData = &readTag, .handle = static_cast<ulonglong_t>(fd),
 		                .buffer = buffer, .length = length, .offset = 0 };
 		_engine.Submit(read);
 		EXPECT_EQ(WaitFor(_engine, &readTag), static_cast<longlong_t>(length));
@@ -317,25 +317,25 @@ namespace
 	}
 
 	// socketpair Send → Receive 왕복.
-	void_t RunSocketRoundTrip(IIoEngine& _engine)
+	void_t RunSocketRoundTrip(IEngine& _engine)
 	{
 		int_t pair[2] = { -1, -1 };
 		ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-		(void)::fcntl(pair[0], F_SETFL, O_NONBLOCK);
-		(void)::fcntl(pair[1], F_SETFL, O_NONBLOCK);
+		(void_t)::fcntl(pair[0], F_SETFL, O_NONBLOCK);
+		(void_t)::fcntl(pair[1], F_SETFL, O_NONBLOCK);
 
 		const char payload[] = "posix-socket-roundtrip";
 		const std::size_t length = sizeof(payload) - 1;
 
 		int_t sendTag = 0;
-		IoRequest send{ .op = OpCode::Send, .userData = &sendTag, .handle = static_cast<ulonglong_t>(pair[0]),
+		Request send{ .op = OpCode::Send, .userData = &sendTag, .handle = static_cast<ulonglong_t>(pair[0]),
 		                .buffer = const_cast<char*>(payload), .length = length };
 		_engine.Submit(send);
 		EXPECT_EQ(WaitFor(_engine, &sendTag), static_cast<longlong_t>(length));
 
 		char buffer[64]{};
 		int_t receiveTag = 0;
-		IoRequest receive{ .op = OpCode::Receive, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(pair[1]),
+		Request receive{ .op = OpCode::Receive, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(pair[1]),
 		                   .buffer = buffer, .length = length };
 		_engine.Submit(receive);
 		EXPECT_EQ(WaitFor(_engine, &receiveTag), static_cast<longlong_t>(length));

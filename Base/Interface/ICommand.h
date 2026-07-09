@@ -4,7 +4,7 @@
 
 #pragma once
 #include <stack>
-#include "Type.h"
+#include "Base/Type.h"
 
 BEGIN_NS(ne)
 	class ICommand
@@ -14,8 +14,8 @@ BEGIN_NS(ne)
 		virtual ~ICommand() = default;
 
 	public:
-		virtual void Execute() = 0;
-		virtual void Undo() = 0;
+		virtual void_t Execute() = 0;
+		virtual void_t Undo() = 0;
 	};
 
 	class IInvoker
@@ -29,12 +29,12 @@ BEGIN_NS(ne)
 		std::stack<std::shared_ptr<ICommand>> undoHistory;
 
 	public:
-		void Push(std::shared_ptr<ICommand> _command)
+		void_t Push(std::shared_ptr<ICommand> _command)
 		{
 			commandHistory.push(std::move(_command));
 		}
 
-		void Execute()
+		void_t Execute()
 		{
 			if (commandHistory.empty()) return;
 
@@ -44,7 +44,7 @@ BEGIN_NS(ne)
 			undoHistory.push(std::move(command));
 		}
 
-		void Undo()
+		void_t Undo()
 		{
 			if (undoHistory.empty()) return;
 
@@ -53,7 +53,7 @@ BEGIN_NS(ne)
 			undoHistory.push(std::move(command));
 		}
 
-		void Redo()
+		void_t Redo()
 		{
 			if (undoHistory.empty()) return;
 

@@ -1,5 +1,5 @@
 #pragma once
-#include "Type.h"
+#include "Base/Type.h"
 
 BEGIN_NS(ne)
 	class Base64 final
@@ -9,8 +9,8 @@ BEGIN_NS(ne)
 		~Base64() = default;
 
 	public:
-		static void Encode(lpcstr_t _string, char_t* _buffer, size_t _bufferSize);
-		static void Decode(lpcstr_t _string, char_t* _buffer, size_t _bufferSize);
+		static void_t Encode(lpcstr_t _string, char_t* _buffer, size_t _bufferSize);
+		static void_t Decode(lpcstr_t _string, char_t* _buffer, size_t _bufferSize);
 
 		static string_t Encode(string_t&& _string);
 		static string_t Decode(string_t&& _string);

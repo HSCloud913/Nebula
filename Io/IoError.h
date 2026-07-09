@@ -3,10 +3,8 @@
 //
 
 #pragma once
-#include "Type.h"
-
-#include <cstdint>
-#include "Error.h"
+#include "Base/Type.h"
+#include "Base/Error.h"
 
 BEGIN_NS(ne::io)
 	// 등록 버퍼/capability 경로 전용 에러 분류. 기존 ne::Error 체계를 상속해

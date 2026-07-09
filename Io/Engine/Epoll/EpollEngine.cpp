@@ -2,7 +2,7 @@
 // Created by hscloud on 25. 6. 29.
 //
 
-#include "EpollEngine.h"
+#include "Io/Engine/Epoll/EpollEngine.h"
 
 #if defined(IS_POSIX)
 #	include <cerrno>
@@ -57,12 +57,12 @@ BEGIN_NS (ne::io)
 
 
 
-	void_t EpollEngine::Submit(const IoRequest& _request)
+	void_t EpollEngine::Submit(const Request& _request)
 	{
 		if (longlong_t result = 0; Perform(_request, false, result))
 		{
 			std::lock_guard lock(mutex);
-			ready.push_back(IoCompletion{ _request.userData, result });
+			ready.push_back(Completion{ _request.userData, result });
 			return;
 		}
 
@@ -79,7 +79,7 @@ BEGIN_NS (ne::io)
 		UpdateEpoll(fd);
 	}
 
-	int_t EpollEngine::WaitCompletions(IoCompletion* _out, const int_t _max, const std::chrono::milliseconds _timeout)
+	int_t EpollEngine::WaitCompletions(Completion* _out, const int_t _max, const std::chrono::milliseconds _timeout)
 	{
 		if (_max <= 0) return 0;
 
@@ -112,7 +112,7 @@ BEGIN_NS (ne::io)
 			if (fd == wakeEventFd)
 			{
 				uint64_t drained = 0;
-				(void)::read(wakeEventFd, &drained, sizeof(drained));
+				(void_t)::read(wakeEventFd, &drained, sizeof(drained));
 				continue;
 			}
 
@@ -124,7 +124,7 @@ BEGIN_NS (ne::io)
 				if (!isWrite && !(events[i].events & (EPOLLIN | EPOLLERR | EPOLLHUP))) continue;
 
 				PendingOperation operation;
-				bool_t found = false;
+				bool_t isFound = false;
 				{
 					std::lock_guard lock(mutex);
 
@@ -132,7 +132,7 @@ BEGIN_NS (ne::io)
 					const auto iterator = waiter.find(fd);
 					if (iterator == waiter.end()) continue;
 
-					void* userData = iterator->second;
+					void_t* userData = iterator->second;
 
 					const auto pendingIterator = pending.find(userData);
 					if (pendingIterator == pending.end())
@@ -142,9 +142,9 @@ BEGIN_NS (ne::io)
 					}
 
 					operation = pendingIterator->second;
-					found = true;
+					isFound = true;
 				}
-				if (!found) continue;
+				if (!isFound) continue;
 
 				longlong_t result = 0;
 				if (!Perform(operation.request, true, result)) continue; // 아직 EAGAIN — 계속 대기
@@ -168,10 +168,10 @@ BEGIN_NS (ne::io)
 	void_t EpollEngine::Wake()
 	{
 		const uint64_t one = 1;
-		(void)::write(wakeEventFd, &one, sizeof(one));
+		(void_t)::write(wakeEventFd, &one, sizeof(one));
 	}
 
-	void_t EpollEngine::Cancel(void* _userData) noexcept
+	void_t EpollEngine::Cancel(void_t* _userData) noexcept
 	{
 		if (_userData == nullptr) return;
 
@@ -205,7 +205,7 @@ BEGIN_NS (ne::io)
 				|| _op == OpCode::SendTo;
 	}
 
-	bool_t EpollEngine::Perform(const IoRequest& _request, const bool_t _isRetry, longlong_t& _result) noexcept
+	bool_t EpollEngine::Perform(const Request& _request, const bool_t _isRetry, longlong_t& _result) noexcept
 	{
 		const int_t fd = static_cast<int_t>(_request.handle);
 
@@ -388,7 +388,7 @@ BEGIN_NS (ne::io)
 				// EPOLLOUT 준비 후 재진입 — SO_ERROR 로 연결 성공/실패 확정.
 				int_t soError = 0;
 				socklen_t length = sizeof(soError);
-				(void)::getsockopt(fd, SOL_SOCKET, SO_ERROR, &soError, &length);
+				(void_t)::getsockopt(fd, SOL_SOCKET, SO_ERROR, &soError, &length);
 				_result = (soError == 0) ? 0 : -static_cast<longlong_t>(soError);
 				return true;
 			}
@@ -422,7 +422,7 @@ BEGIN_NS (ne::io)
 
 		if (events == 0)
 		{
-			(void)::epoll_ctl(epollFd, EPOLL_CTL_DEL, _fd, nullptr);
+			(void_t)::epoll_ctl(epollFd, EPOLL_CTL_DEL, _fd, nullptr);
 			return;
 		}
 
@@ -430,18 +430,18 @@ BEGIN_NS (ne::io)
 		event.events = events;
 		event.data.fd = _fd;
 
-		if (::epoll_ctl(epollFd, EPOLL_CTL_MOD, _fd, &event) != 0) (void)::epoll_ctl(epollFd, EPOLL_CTL_ADD, _fd, &event); // 미등록이면 ADD
+		if (::epoll_ctl(epollFd, EPOLL_CTL_MOD, _fd, &event) != 0) (void_t)::epoll_ctl(epollFd, EPOLL_CTL_ADD, _fd, &event); // 미등록이면 ADD
 	}
 
 	void_t EpollEngine::ProcessCancels()
 	{
-		std::vector<void*> cancels;
+		std::vector<void_t*> cancels;
 		{
 			std::lock_guard lock(mutex);
 			cancels.swap(pendingCancels);
 		}
 
-		for (void* userData : cancels)
+		for (void_t* userData : cancels)
 		{
 			std::lock_guard lock(mutex);
 			const auto iterator = pending.find(userData);
@@ -453,7 +453,7 @@ BEGIN_NS (ne::io)
 			pending.erase(iterator);
 			UpdateEpoll(fd);
 
-			ready.push_back(IoCompletion{ userData, -static_cast<longlong_t>(ECANCELED) });
+			ready.push_back(Completion{ userData, -static_cast<longlong_t>(ECANCELED) });
 		}
 	}
 

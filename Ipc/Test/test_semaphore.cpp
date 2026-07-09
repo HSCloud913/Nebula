@@ -9,7 +9,7 @@
 #include <gtest/gtest.h>
 #include <thread>
 
-#include "../../Ipc/Semaphore.h"
+#include "Ipc/Semaphore.h"
 
 using ne::ipc::Semaphore;
 

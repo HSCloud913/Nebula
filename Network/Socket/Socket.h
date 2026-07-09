@@ -5,12 +5,12 @@
 #pragma once
 #include <chrono>
 #include <vector>
-#include "NetworkType.h"
-#include "Handle.h"
-#include "Result.h"
-#include "Error.h"
-#include "Coroutine/Task.h"
-#include "Engine/IIoEngine.h"
+#include "Network/NetworkType.h"
+#include "Base/Handle.h"
+#include "Base/Result.h"
+#include "Base/Error.h"
+#include "Base/Coroutine/Task.h"
+#include "Io/Engine/IEngine.h"
 
 BEGIN_NS(ne::network)
 	// 소켓의 주소 체계. fd 생성 시점에 고정되며, 이후 Bind/Connect 는 이 체계에

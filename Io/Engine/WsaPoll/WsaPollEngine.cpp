@@ -2,7 +2,7 @@
 // Created by hscloud on 26. 7. 8.
 //
 
-#include "WsaPollEngine.h"
+#include "Io/Engine/WsaPoll/WsaPollEngine.h"
 
 #if defined(_WIN32)
 
@@ -86,12 +86,12 @@ BEGIN_NS(ne::io)
 
 
 
-	void_t WsaPollEngine::Submit(const IoRequest& _request)
+	void_t WsaPollEngine::Submit(const Request& _request)
 	{
 		if (longlong_t result = 0; Perform(_request, false, result))
 		{
 			std::lock_guard lock(mutex);
-			ready.push_back(IoCompletion{ _request.userData, result });
+			ready.push_back(Completion{ _request.userData, result });
 			return;
 		}
 
@@ -106,7 +106,7 @@ BEGIN_NS(ne::io)
 		else readWaiter[fd] = _request.userData;
 	}
 
-	int_t WsaPollEngine::WaitCompletions(IoCompletion* _out, const int_t _max, const std::chrono::milliseconds _timeout)
+	int_t WsaPollEngine::WaitCompletions(Completion* _out, const int_t _max, const std::chrono::milliseconds _timeout)
 	{
 		if (_max <= 0) return 0;
 
@@ -186,7 +186,7 @@ BEGIN_NS(ne::io)
 					const auto iterator = waiter.find(fd);
 					if (iterator == waiter.end()) continue;
 
-					void* userData = iterator->second;
+					void_t* userData = iterator->second;
 					const auto pendingIterator = pending.find(userData);
 					if (pendingIterator == pending.end())
 					{
@@ -220,10 +220,10 @@ BEGIN_NS(ne::io)
 	void_t WsaPollEngine::Wake()
 	{
 		const char_t one = 0;
-		(void)::send(static_cast<SOCKET>(wakeWriteSocket), &one, 1, 0);
+		(void_t)::send(static_cast<SOCKET>(wakeWriteSocket), &one, 1, 0);
 	}
 
-	void_t WsaPollEngine::Cancel(void* _userData) noexcept
+	void_t WsaPollEngine::Cancel(void_t* _userData) noexcept
 	{
 		if (_userData == nullptr) return;
 
@@ -250,7 +250,7 @@ BEGIN_NS(ne::io)
 
 
 
-	bool_t WsaPollEngine::Perform(const IoRequest& _request, const bool_t _isRetry, longlong_t& _result) noexcept
+	bool_t WsaPollEngine::Perform(const Request& _request, const bool_t _isRetry, longlong_t& _result) noexcept
 	{
 		// 파일 scatter/gather — IocpEngine 과 동일한 이유(임의 크기 세그먼트는 ReadFileScatter/
 		// WriteFileGather 의 페이지 정렬 요구를 못 맞춤)로 세그먼트별 순차 동기 처리 후 합산한다.
@@ -436,7 +436,7 @@ BEGIN_NS(ne::io)
 			{
 				int_t soError = 0;
 				int_t length = static_cast<int_t>(sizeof(soError));
-				(void)::getsockopt(socket, SOL_SOCKET, SO_ERROR, reinterpret_cast<lpstr_t>(&soError), &length);
+				(void_t)::getsockopt(socket, SOL_SOCKET, SO_ERROR, reinterpret_cast<lpstr_t>(&soError), &length);
 				_result = (soError == 0) ? 0 : -static_cast<longlong_t>(soError);
 				return true;
 			}
@@ -550,13 +550,13 @@ BEGIN_NS(ne::io)
 
 	void_t WsaPollEngine::ProcessCancels()
 	{
-		std::vector<void*> cancels;
+		std::vector<void_t*> cancels;
 		{
 			std::lock_guard lock(mutex);
 			cancels.swap(pendingCancels);
 		}
 
-		for (void* userData : cancels)
+		for (void_t* userData : cancels)
 		{
 			std::lock_guard lock(mutex);
 			const auto iterator = pending.find(userData);
@@ -568,7 +568,7 @@ BEGIN_NS(ne::io)
 			pending.erase(iterator);
 
 			// IocpEngine 의 실제 취소(CancelIoEx) 결과와 대칭되는 코드로 합성한다.
-			ready.push_back(IoCompletion{ userData, -static_cast<longlong_t>(ERROR_OPERATION_ABORTED) });
+			ready.push_back(Completion{ userData, -static_cast<longlong_t>(ERROR_OPERATION_ABORTED) });
 		}
 	}
 

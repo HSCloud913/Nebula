@@ -1,5 +1,5 @@
 #pragma once
-#include "Type.h"
+#include "Base/Type.h"
 
 BEGIN_NS(ne::crypto)
 	class SHA3 final
@@ -26,22 +26,22 @@ BEGIN_NS(ne::crypto)
 
 	private:
 		Type type;
-		ulonglong_t sha3Value[StateSize] = { 0, };
+		ulonglong_t sha3Value[StateSize] = {};
 
 	private:
-		byte_t buffer[MaxBlockSize];
-		size_t bufferSize = 0;
-		size_t blockSize = 0;
-		ulong_t length = 0;
+		byte_t buffer[MaxBlockSize]{};
+		size_t bufferSize{ 0 };
+		size_t blockSize{ 0 };
+		ulong_t length{ 0 };
 
 	public:
-		void Init();
-		void AddBuffer(const void_t* _data, size_t _dataLength);
+		void_t Init();
+		void_t AddBuffer(const void_t* _data, size_t _dataLength);
 		[[nodiscard]] string_t Get();
 
 	private:
-		void ProcessBuffer();
-		void ProcessBlock(const void_t* _data);
+		void_t ProcessBuffer();
+		void_t ProcessBlock(const void_t* _data);
 	};
 
 END_NS

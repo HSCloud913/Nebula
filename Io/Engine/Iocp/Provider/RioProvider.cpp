@@ -2,10 +2,10 @@
 // Created by hscloud on 26. 7. 7.
 //
 
-#include "RioProvider.h"
+#include "Io/Engine/Iocp/Provider/RioProvider.h"
 
 #if defined(_WIN32)
-#include "Error.h"
+#	include "Base/Error.h"
 
 
 
@@ -30,7 +30,7 @@ BEGIN_NS(ne::io)
 		return ne::Result<BufferHandle, IoError>::Ok(handle);
 	}
 
-	void RioProvider::UnregisterBuffer(const BufferHandle _handle) noexcept
+	void_t RioProvider::UnregisterBuffer(const BufferHandle _handle) noexcept
 	{
 		if (!_handle.IsValid()) return;
 
@@ -43,7 +43,7 @@ BEGIN_NS(ne::io)
 
 
 
-	void RioProvider::ReleaseSocket(const socket_t _socket) noexcept
+	void_t RioProvider::ReleaseSocket(const socket_t _socket) noexcept
 	{
 		std::lock_guard lock(mutex);
 		requestQueues.erase(_socket); // RIO_RQ 는 소켓 close 로 OS 가 파괴 — 맵 엔트리만 지운다.
@@ -51,15 +51,15 @@ BEGIN_NS(ne::io)
 
 
 
-	ne::Result<void, IoError> RioProvider::EnsureInitialized() noexcept
+	ne::Result<void_t, IoError> RioProvider::EnsureInitialized() noexcept
 	{
-		if (isInitialized) return ne::Result<void, IoError>::Ok();
+		if (isInitialized) return ne::Result<void_t, IoError>::Ok();
 
 		// 1) RIO 확장 테이블 획득 — RIO 소켓에서 WSAIoctl 로 함수 포인터를 받는다(프로세스 전역).
 		const SOCKET tmp = ::WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0,
 										WSA_FLAG_OVERLAPPED | WSA_FLAG_REGISTERED_IO);
 		if (tmp == INVALID_SOCKET)
-			return ne::Result<void, IoError>::Error(
+			return ne::Result<void_t, IoError>::Error(
 				IoError{ ne::OsError{ ne::LastOsError() } }.Context("[RioProvider/WSASocketW]"));
 
 		GUID guid = WSAID_MULTIPLE_RIO;
@@ -70,7 +70,7 @@ BEGIN_NS(ne::io)
 		::closesocket(tmp);
 
 		if (rc == SOCKET_ERROR || !table.RIORegisterBuffer || !table.RIOCreateCompletionQueue)
-			return ne::Result<void, IoError>::Error(
+			return ne::Result<void_t, IoError>::Error(
 				IoError{ ne::OsError{ ne::LastOsError() } }.Context("[RioProvider/WSAIoctl(RIO)]"));
 
 		// 2) 공유 RIO_CQ 생성 — 완료를 엔진 IOCP 로 통지(RIO_IOCP_COMPLETION). notifyOverlapped 는
@@ -82,7 +82,7 @@ BEGIN_NS(ne::io)
 
 		cq = table.RIOCreateCompletionQueue(DefaultCqSize, &notifyCompletion);
 		if (cq == RIO_INVALID_CQ)
-			return ne::Result<void, IoError>::Error(
+			return ne::Result<void_t, IoError>::Error(
 				IoError{ ne::OsError{ ne::LastOsError() } }.Context("[RioProvider/RIOCreateCompletionQueue]"));
 
 		cqSize = DefaultCqSize;
@@ -110,7 +110,7 @@ BEGIN_NS(ne::io)
 		return ne::Result<RIO_RQ, IoError>::Ok(rq);
 	}
 
-	RIO_BUF RioProvider::MakeRioBufferLocked(const BufferHandle _handle, const void* _buffer, const std::size_t _length) const noexcept
+	RIO_BUF RioProvider::MakeRioBufferLocked(const BufferHandle _handle, const void_t* _buffer, const std::size_t _length) const noexcept
 	{
 		RIO_BUF buffer{}; // BufferId 기본 nullptr(0) = 무효
 		if (!_handle.IsValid()) return buffer;
@@ -125,43 +125,43 @@ BEGIN_NS(ne::io)
 		return buffer;
 	}
 
-	ne::Result<void, ne::OsError> RioProvider::Submit(const socket_t _socket, const BufferHandle _handle, const void* _buffer, const std::size_t _length, void* _userData, const bool_t _isSend) noexcept
+	ne::Result<void_t, ne::OsError> RioProvider::Submit(const socket_t _socket, const BufferHandle _handle, const void_t* _buffer, const std::size_t _length, void_t* _userData, const bool_t _isSend) noexcept
 	{
 		std::lock_guard lock(mutex); // EnsureInitialized/RQ 조회·생성/RIO 제출/regionBases 조회를 함께 보호(엔진은 MT RunOnce)
 
 		const RIO_BUF buf = MakeRioBufferLocked(_handle, _buffer, _length);
-		if (!buf.BufferId) return ne::Result<void, ne::OsError>::Error(ne::OsError{ 0, "unregistered buffer handle" });
+		if (!buf.BufferId) return ne::Result<void_t, ne::OsError>::Error(ne::OsError{ 0, "unregistered buffer handle" });
 
-		if (auto init = EnsureInitialized(); init.IsError()) return ne::Result<void, ne::OsError>::Error(ne::OsError{ init.Error().Code(), init.Error().Message() });
+		if (auto init = EnsureInitialized(); init.IsError()) return ne::Result<void_t, ne::OsError>::Error(ne::OsError{ init.Error().Code(), init.Error().Message() });
 
 		auto rq = EnsureRequestQueueLocked(_socket);
-		if (rq.IsError()) return ne::Result<void, ne::OsError>::Error(ne::OsError{ rq.Error().Code(), rq.Error().Message() });
+		if (rq.IsError()) return ne::Result<void_t, ne::OsError>::Error(ne::OsError{ rq.Error().Code(), rq.Error().Message() });
 
-		// RequestContext = userData (완료 시 IocpEngine::DrainRioCompletions 가 IoCompletion{userData,...}
+		// RequestContext = userData (완료 시 IocpEngine::DrainRioCompletions 가 Completion{userData,...}
 		// 로 그대로 정규화). 단일 RIO_BUF.
 		RIO_BUF localBuf = buf; // RIO 는 제출 시 내용을 복사하므로 지역 변수로 넘겨도 안전
 		const BOOL ok = _isSend
 							? table.RIOSend(rq.Value(), &localBuf, 1, 0, reinterpret_cast<PVOID>(_userData))
 							: table.RIOReceive(rq.Value(), &localBuf, 1, 0, reinterpret_cast<PVOID>(_userData));
 		if (!ok)
-			return ne::Result<void, ne::OsError>::Error(
+			return ne::Result<void_t, ne::OsError>::Error(
 				ne::OsError{ ne::LastOsError() }.Context(_isSend ? "[RioProvider/RIOSend]" : "[RioProvider/RIOReceive]"));
 
-		return ne::Result<void, ne::OsError>::Ok();
+		return ne::Result<void_t, ne::OsError>::Ok();
 	}
 
 
 
-	ne::Result<void, IoError> RioProvider::ArmNotify() noexcept
+	ne::Result<void_t, IoError> RioProvider::ArmNotify() noexcept
 	{
 		// 드레인 스레드(단일) 또는 EnsureInitialized(mutex 보유) 에서만 호출된다 — 별도 락 없음.
-		if (!isInitialized || !table.RIONotify) return ne::Result<void, IoError>::Error(IoError{ IoErrorKind::UNSUPPORTED, "RIO CQ not initialized" });
+		if (!isInitialized || !table.RIONotify) return ne::Result<void_t, IoError>::Error(IoError{ IoErrorKind::UNSUPPORTED, "RIO CQ not initialized" });
 
 		if (const int rc = table.RIONotify(cq); rc != 0) // 0 = ERROR_SUCCESS
-			return ne::Result<void, IoError>::Error(
+			return ne::Result<void_t, IoError>::Error(
 				IoError{ ne::OsError{ static_cast<ne::ulong_t>(rc) } }.Context("[RioProvider/RIONotify]"));
 
-		return ne::Result<void, IoError>::Ok();
+		return ne::Result<void_t, IoError>::Ok();
 	}
 
 END_NS

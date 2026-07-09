@@ -9,7 +9,7 @@
 #endif
 #include <gtest/gtest.h>
 
-#include "Type.h"
+#include "Base/Type.h"
 
 
 

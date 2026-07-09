@@ -3,7 +3,7 @@
 //
 
 #include <cstdint>
-#include "Type.h"
+#include "Base/Type.h"
 
 BEGIN_NS(ne::network::sftp)
 	struct Entry

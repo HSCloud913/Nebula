@@ -1,5 +1,5 @@
 #pragma once
-#include "Type.h"
+#include "Base/Type.h"
 
 BEGIN_NS(ne::crypto)
 	class SHA1 final
@@ -17,21 +17,21 @@ BEGIN_NS(ne::crypto)
 		};
 
 	private:
-		ulong_t sha1Value[Sha1HashValues];
+		ulong_t sha1Value[Sha1HashValues]{};
 
 	private:
-		byte_t buffer[Sha1BlockSize] = { 0, };
-		size_t bufferSize = 0;
-		ulonglong_t length = 0;
+		byte_t buffer[Sha1BlockSize]{};
+		size_t bufferSize{ 0 };
+		ulonglong_t length{ 0 };
 
 	public:
-		void Init();
-		void AddBuffer(const void_t* _data, size_t _dataLength);
+		void_t Init();
+		void_t AddBuffer(const void_t* _data, size_t _dataLength);
 		[[nodiscard]] string_t Get();
 
 	private:
-		void ProcessBuffer();
-		void ProcessBlock(const void_t* _data);
+		void_t ProcessBuffer();
+		void_t ProcessBlock(const void_t* _data);
 	};
 
 END_NS

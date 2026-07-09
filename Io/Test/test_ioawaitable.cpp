@@ -7,10 +7,10 @@
 #include <chrono>
 #include <cstring>
 #include <stop_token>
-#include "Context/IoContext.h"
-#include "Coroutine/Awaitable.h"
-#include "Coroutine/Task.h"
-#include "Engine/Iocp/IocpEngine.h"
+#include "Io/Context/Context.h"
+#include "Io/Coroutine/Awaitable.h"
+#include "Base/Coroutine/Task.h"
+#include "Io/Engine/Iocp/IocpEngine.h"
 
 using namespace ne;
 using namespace ne::io;
@@ -55,23 +55,23 @@ namespace
 		~WsaScope() noexcept { ::WSACleanup(); }
 	};
 
-	ne::Task<IoResult<std::size_t>> ReceiveOp(IoContext& _context, const ulonglong_t _handle, void* _buffer, const std::size_t _length)
+	ne::Task<IoResult<std::size_t>> ReceiveOp(Context& _context, const ulonglong_t _handle, void_t* _buffer, const std::size_t _length)
 	{
-		co_return co_await Awaitable{ _context, IoRequest{ .op = OpCode::Receive, .handle = _handle, .buffer = _buffer, .length = _length } };
+		co_return co_await Awaitable{ _context, Request{ .op = OpCode::Receive, .handle = _handle, .buffer = _buffer, .length = _length } };
 	}
 
-	ne::Task<IoResult<std::size_t>> ReceiveOpCancellable(IoContext& _context, const ulonglong_t _handle, void* _buffer, const std::size_t _length, std::stop_token _token)
+	ne::Task<IoResult<std::size_t>> ReceiveOpCancellable(Context& _context, const ulonglong_t _handle, void_t* _buffer, const std::size_t _length, std::stop_token _token)
 	{
-		co_return co_await Awaitable{ _context, IoRequest{ .op = OpCode::Receive, .handle = _handle, .buffer = _buffer, .length = _length }, std::move(_token) };
+		co_return co_await Awaitable{ _context, Request{ .op = OpCode::Receive, .handle = _handle, .buffer = _buffer, .length = _length }, std::move(_token) };
 	}
 
 	template <typename T>
-	T Drive(IoContext& _context, ne::Task<T>& _task)
+	T Drive(Context& _context, ne::Task<T>& _task)
 	{
 		_task.Resume();
 		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
 		while (!_task.IsReady() && std::chrono::steady_clock::now() < deadline)
-			(void)_context.RunOnce(std::chrono::milliseconds{ 50 });
+			(void_t)_context.RunOnce(std::chrono::milliseconds{ 50 });
 		return _task.await_resume();
 	}
 }
@@ -81,7 +81,7 @@ TEST(IoAwaitableTest, ReceiveReturnsBytes)
 {
 	const WsaScope wsa;
 	IocpEngine engine;
-	IoContext context{ engine };
+	Context context{ engine };
 
 	SOCKET a = INVALID_SOCKET;
 	SOCKET b = INVALID_SOCKET;
@@ -108,7 +108,7 @@ TEST(IoAwaitableTest, AbandonedInFlightIsSafe)
 {
 	const WsaScope wsa;
 	IocpEngine engine;
-	IoContext context{ engine };
+	Context context{ engine };
 
 	SOCKET a = INVALID_SOCKET;
 	SOCKET b = INVALID_SOCKET;
@@ -137,7 +137,7 @@ TEST(IoAwaitableTest, StopTokenCancelsInFlight)
 {
 	const WsaScope wsa;
 	IocpEngine engine;
-	IoContext context{ engine };
+	Context context{ engine };
 
 	SOCKET a = INVALID_SOCKET;
 	SOCKET b = INVALID_SOCKET;
@@ -154,7 +154,7 @@ TEST(IoAwaitableTest, StopTokenCancelsInFlight)
 
 	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
 	while (!task.IsReady() && std::chrono::steady_clock::now() < deadline)
-		(void)context.RunOnce(std::chrono::milliseconds{ 50 });
+		(void_t)context.RunOnce(std::chrono::milliseconds{ 50 });
 
 	ASSERT_TRUE(task.IsReady());
 	auto result = task.await_resume();

@@ -1,34 +1,34 @@
-#include "MD5.h"
+#include "Cryptography/Hash/Algorithm/MD5.h"
 
 #include <cstring>
 
 
 
-inline ne::uint_t MD5_F1(ne::uint_t b, ne::uint_t c, ne::uint_t d)
+inline ne::uint_t MD5_F1(const ne::uint_t _b, const ne::uint_t _c, const ne::uint_t _d)
 {
-	return d ^ (b & (c ^ d)); // original: f = (b & c) | ((~b) & d);
+	return _d ^ (_b & (_c ^ _d)); // original: f = (b & c) | ((~b) & d);
 }
-inline ne::uint_t MD5_F2(ne::uint_t b, ne::uint_t c, ne::uint_t d)
+inline ne::uint_t MD5_F2(const ne::uint_t _b, const ne::uint_t _c, const ne::uint_t _d)
 {
-	return c ^ (d & (b ^ c)); // original: f = (b & d) | (c & (~d));
+	return _c ^ (_d & (_b ^ _c)); // original: f = (b & d) | (c & (~d));
 }
-inline ne::uint_t MD5_F3(ne::uint_t b, ne::uint_t c, ne::uint_t d)
+inline ne::uint_t MD5_F3(const ne::uint_t _b, const ne::uint_t _c, const ne::uint_t _d)
 {
-	return b ^ c ^ d;
+	return _b ^ _c ^ _d;
 }
-inline ne::uint_t MD5_F4(ne::uint_t b, ne::uint_t c, ne::uint_t d)
+inline ne::uint_t MD5_F4(const ne::uint_t _b, const ne::uint_t _c, const ne::uint_t _d)
 {
-	return c ^ (b | ~d);
+	return _c ^ (_b | ~_d);
 }
-inline ne::uint_t MD5_Rotate(ne::uint_t a, ne::uint_t c)
+inline ne::uint_t MD5_Rotate(const ne::uint_t _a, const ne::uint_t _c)
 {
-	return (a << c) | (a >> (32 - c));
+	return (_a << _c) | (_a >> (32 - _c));
 }
 
 
 
 BEGIN_NS(ne::crypto)
-	void MD5::Init()
+	void_t MD5::Init()
 	{
 		memset(buffer, 0, sizeof(byte_t) * MD5BlockSize);
 		bufferSize = 0;
@@ -40,7 +40,7 @@ BEGIN_NS(ne::crypto)
 		md5Value[3] = 0x10325476;
 	}
 
-	void MD5::AddBuffer(const void* _data, size_t _dataLength)
+	void_t MD5::AddBuffer(const void_t* _data, size_t _dataLength)
 	{
 		const auto* data = static_cast<const byte_t*>(_data);
 
@@ -104,7 +104,7 @@ BEGIN_NS(ne::crypto)
 
 
 
-	void MD5::ProcessBuffer()
+	void_t MD5::ProcessBuffer()
 	{
 		size_t paddedLen = bufferSize * 8;
 
@@ -168,7 +168,7 @@ BEGIN_NS(ne::crypto)
 	}
 
 
-	void MD5::ProcessBlock(const void* _data)
+	void_t MD5::ProcessBlock(const void_t* _data)
 	{
 		const auto data = static_cast<const uint_t*>(_data);
 		uint_t words[16] = { 0, };
@@ -203,7 +203,6 @@ BEGIN_NS(ne::crypto)
 		d = MD5_Rotate(d + MD5_F1(a, b, c) + words[13] + 0xfd987193, 12) + a;
 		c = MD5_Rotate(c + MD5_F1(d, a, b) + words[14] + 0xa679438e, 17) + d;
 		b = MD5_Rotate(b + MD5_F1(c, d, a) + words[15] + 0x49b40821, 22) + c;
-
 
 		// second round
 		a = MD5_Rotate(a + MD5_F2(b, c, d) + words[1] + 0xf61e2562, 5) + b;

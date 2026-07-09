@@ -4,7 +4,7 @@
 
 #pragma once
 #include <memory>
-#include "Type.h"
+#include "Base/Type.h"
 
 BEGIN_NS(ne)
 	template <typename T>

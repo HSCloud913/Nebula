@@ -7,14 +7,14 @@
 #include <atomic>
 #include <memory>
 #include <unordered_map>
-#include "Coroutine/Task.h"
-#include "../HttpCommon.h"
-#include "FlowControl.h"
-#include "Hpack.h"
-#include "Stream/IStream.h"
-#include "Result.h"
-#include "Error.h"
-#include "Type.h"
+#include "Base/Coroutine/Task.h"
+#include "Network/Protocol/Http/HttpCommon.h"
+#include "Network/Protocol/Http/Http2/FlowControl.h"
+#include "Network/Protocol/Http/Http2/Hpack.h"
+#include "Network/Stream/IStream.h"
+#include "Base/Result.h"
+#include "Base/Error.h"
+#include "Base/Type.h"
 
 BEGIN_NS(ne::network::http_2)
 	// HTTP/2 클라이언트.

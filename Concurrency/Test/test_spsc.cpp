@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "Queue/SpscQueue.h"
+#include "Concurrency/Queue/SpscQueue.h"
 #include <thread>
 
 using namespace ne::concurrency;

@@ -2,7 +2,7 @@
 // Created by hscloud on 26. 6. 30.
 //
 
-#include "TimerWheel.h"
+#include "Time/Timer/TimerWheel.h"
 
 #include <algorithm>
 #include <limits>
@@ -11,104 +11,77 @@
 
 BEGIN_NS(ne::time)
 	TimerWheel::TimerWheel()
-		: TimerWheel([] { return std::chrono::steady_clock::now(); })
-	{
-	}
+		: TimerWheel([] { return std::chrono::steady_clock::now(); }) {}
 
 	TimerWheel::TimerWheel(Clock _clock)
 		: clock(std::move(_clock))
-		, baseTime(clock())
-	{
-	}
+		, baseTime(clock()) {}
 
-	ulonglong_t TimerWheel::ElapsedMs() const noexcept
-	{
-		const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(clock() - baseTime).count();
-		return ms > 0 ? static_cast<ulonglong_t>(ms) : 0;
-	}
 
-	ulonglong_t TimerWheel::Schedule(const std::chrono::milliseconds _delay, std::function<void()> _callback)
+
+	ulonglong_t TimerWheel::Schedule(const std::chrono::milliseconds _delay, std::function<void_t()> _callback)
 	{
 		const ulonglong_t id = nextId.fetch_add(1, std::memory_order_relaxed);
 		const ulonglong_t delay = _delay.count() > 0 ? static_cast<ulonglong_t>(_delay.count()) : 0;
 		const ulonglong_t tick = ElapsedMs() + delay;
-		const std::size_t bucket = tick & BucketMask;
 
 		std::lock_guard lock(mutex);
-		buckets[bucket].push_back({ id, tick, std::move(_callback) });
+		heap.push_back({ id, tick, std::move(_callback) });
+		std::push_heap(heap.begin(), heap.end(), LaterExpiry{});
+		live.insert(id);
 
 		return id;
 	}
 
 	bool_t TimerWheel::Cancel(const ulonglong_t _id)
 	{
-		std::lock_guard<std::mutex> lock(mutex);
-
-		for (auto& bucket : buckets)
-		{
-			auto iter = std::find_if(bucket.begin(), bucket.end(), [_id](const TimerEntry& e) { return e.id == _id; });
-			if (iter != bucket.end())
-			{
-				bucket.erase(iter);
-				return true;
-			}
-		}
-
-		return false;
+		std::lock_guard lock(mutex);
+		// 지연 삭제: live 에서만 제거한다. 힙 엔트리는 만료 시 Tick 이 live 에 없음을 보고 스킵·폐기.
+		return live.erase(_id) > 0;
 	}
 
 	void_t TimerWheel::Tick()
 	{
-		// 실제 경과 시간까지 currentTick 을 따라잡는다. wakeup 1 회가 여러 ms 를 블록했을 수
-		// 있으므로(GQCS/epoll_wait 이 NextExpiryMs 만큼 대기) 그 사이 만료된 타이머를 모두
-		// 발화하려면 지나온 tick 마다 해당 버킷을 훑어야 한다.
 		const ulonglong_t target = ElapsedMs();
 
 		std::vector<TimerEntry> fired;
 		{
 			std::lock_guard lock(mutex);
 
-			ulonglong_t tick = currentTick.load(std::memory_order_relaxed);
-			while (tick < target)
+			while (!heap.empty() && heap.front().expireTick <= target)
 			{
-				++tick;
-				auto& vec = buckets[tick & BucketMask];
-				auto iter = vec.begin();
-				while (iter != vec.end())
-				{
-					if (iter->expireTick <= tick)
-					{
-						fired.push_back(std::move(*iter));
-						iter = vec.erase(iter);
-					}
-					else ++iter;
-				}
+				std::pop_heap(heap.begin(), heap.end(), LaterExpiry{}); // top → back
+				TimerEntry entry = std::move(heap.back());
+				heap.pop_back();
+
+				if (live.erase(entry.id) > 0) fired.push_back(std::move(entry)); // 살아있으면 발화 예약
+				// else: 이미 취소됨 — 스킵(폐기). live 를 늘리지 않으므로 세트는 항상 유효 타이머만 유지.
 			}
 
-			currentTick.store(tick, std::memory_order_relaxed);
+			// 취소로 남은 dead 엔트리(만료 전이라 아직 힙에 있음)가 과반이면 힙을 재구성해 메모리 증가를 막는다.
+			if (heap.size() > 64 && heap.size() > live.size() * 2)
+			{
+				std::vector<TimerEntry> alive;
+				alive.reserve(live.size());
+				for (auto& entry : heap)
+					if (live.contains(entry.id)) alive.push_back(std::move(entry));
+
+				heap = std::move(alive);
+				std::make_heap(heap.begin(), heap.end(), LaterExpiry{});
+			}
 		}
 
-		for (auto& entry : fired) entry.cb();
+		for (auto& entry : fired) entry.callback();
 	}
 
 	int_t TimerWheel::NextExpiryMs() const noexcept
 	{
 		std::lock_guard lock(mutex);
+		if (heap.empty()) return -1;
 
-		ulonglong_t earliest = std::numeric_limits<ulonglong_t>::max();
-		for (const auto& bucket : buckets)
-		{
-			for (const auto& entry : bucket)
-			{
-				if (entry.expireTick < earliest)
-					earliest = entry.expireTick;
-			}
-		}
-
-		if (earliest == std::numeric_limits<ulonglong_t>::max()) return -1;
-
-		// currentTick(마지막 Tick 시점) 이 아니라 실제 현재 시각 기준으로 남은 시간을 계산한다.
-		// 그래야 이벤트 루프가 다음 만료까지 정확히 블록한다.
+		// top 이 취소된 엔트리면 실제보다 이른 값을 돌려줄 수 있으나(→ 스퓨리어스 웨이크 1회), 그 즉시
+		// Tick 이 해당 엔트리를 팝·폐기하므로 안전하다.
+		const ulonglong_t earliest = heap.front().expireTick;
 		const ulonglong_t now = ElapsedMs();
 		if (earliest <= now) return 0;
 
@@ -117,4 +90,13 @@ BEGIN_NS(ne::time)
 
 		return static_cast<int_t>(delta);
 	}
+
+
+
+	ulonglong_t TimerWheel::ElapsedMs() const noexcept
+	{
+		const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(clock() - baseTime).count();
+		return ms > 0 ? static_cast<ulonglong_t>(ms) : 0;
+	}
+
 END_NS

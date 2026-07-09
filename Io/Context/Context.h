@@ -2,7 +2,7 @@
 // Created by hscloud on 26. 7. 8.
 //
 // Level 1 — Executor + 이벤트 루프. 단일 스레드 전제(thread-per-core 는 이후 확장).
-// 엔진을 구동해 완료를 회수하고, 각 완료의 userData(IoCompletionHandler*)를 통해 대기 중인
+// 엔진을 구동해 완료를 회수하고, 각 완료의 userData(CompletionHandler*)를 통해 대기 중인
 // 코루틴을 resume 한다. 다른 스레드가 넘긴 작업은 Post() → Wake() 로 루프에 전달한다.
 //
 // 핵심 원칙(스펙 3): 코루틴이 어느 컨텍스트에 속하는지 항상 명확해야 하며, 코어 간 이동은
@@ -14,8 +14,8 @@
 #include <coroutine>
 #include <mutex>
 #include <vector>
-#include "Type.h"
-#include "Engine/IIoEngine.h"
+#include "Base/Type.h"
+#include "Io/Engine/IEngine.h"
 
 namespace ne::time
 {
@@ -23,13 +23,13 @@ namespace ne::time
 }
 
 BEGIN_NS(ne::io)
-	// 완료 디스패치 규약. 엔진에 제출하는 IoRequest.userData 는 이 구조체를 가리킨다 —
+	// 완료 디스패치 규약. 엔진에 제출하는 Request.userData 는 이 구조체를 가리킨다 —
 	// 루프가 완료 시 result 를 채우고(completed=true) handle 을 resume 한다.
 	//
 	// mid-flight 수명 안전(스펙 4·Task.h 경고): 진행 중 I/O 상태로 코루틴 프레임이 파괴되면
 	// Level 2 awaitable 이 이 핸들러를 heap 에 두고 abandoned=true 로 표시해 소유권을 루프에 넘긴다.
 	// 루프는 완료 회수 시 abandoned 면 resume 없이 delete 하여 use-after-free 를 막는다.
-	struct IoCompletionHandler
+	struct CompletionHandler
 	{
 		std::coroutine_handle<> handle{};
 		longlong_t result{ 0 };
@@ -37,26 +37,26 @@ BEGIN_NS(ne::io)
 		bool_t isAbandoned{ false };
 	};
 
-	class IoContext
+	class Context
 	{
 	public:
-		explicit IoContext(IIoEngine& _engine) noexcept;
-		~IoContext() = default;
+		explicit Context(IEngine& _engine) noexcept;
+		~Context() = default;
 
-		NEBULA_NON_COPYABLE_MOVABLE(IoContext)
+		NEBULA_NON_COPYABLE_MOVABLE(Context)
 
 	private:
 		static constexpr int_t MaxBatch = 128; // WaitCompletions 한 번에 회수할 완료 상한
 
 	private:
-		IIoEngine& engine;
+		IEngine& engine;
 		ne::time::TimerWheel* timerWheel;                       // optional — 있으면 루프가 Tick/타임아웃 반영
 		std::mutex postMutex;                        // postedHandles 보호(다른 스레드 Post)
 		std::vector<std::coroutine_handle<>> postedHandles;     // Post 로 넘어와 다음 루프에서 resume 될 작업
 		std::atomic<bool_t> isRunning{ false };
 		// Run() 이 실제로 시작하기 전에(다른 스레드가 스폰 직후 곧장) Stop() 이 먼저 도착하면,
 		// Run() 진입부의 running=true 세팅이 그 Stop() 을 덮어써 무기한 대기에 빠질 수 있다 —
-		// 그 경합을 잡기 위한 플래그(자세한 내용은 IoContext.cpp 참고).
+		// 그 경합을 잡기 위한 플래그(자세한 내용은 Context.cpp 참고).
 		std::atomic<bool_t> isStopRequested{ false };
 
 	public:
@@ -77,7 +77,7 @@ BEGIN_NS(ne::io)
 		void_t DrainPosted();
 
 	public:
-		[[nodiscard]] IIoEngine& Engine() const noexcept { return engine; }
+		[[nodiscard]] IEngine& Engine() const noexcept { return engine; }
 		[[nodiscard]] bool_t IsRunning() const noexcept { return isRunning.load(std::memory_order_acquire); }
 	};
 

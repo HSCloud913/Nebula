@@ -4,8 +4,8 @@
 
 #include <atomic>
 #include <chrono>
-#include "Engine/Epoll/EpollEngine.h"
-#include "TimerWheel.h"
+#include "Io/Engine/Epoll/EpollEngine.h"
+#include "Time/Timer/TimerWheel.h"
 
 using namespace ne::time;
 using namespace ne::io;
@@ -66,8 +66,8 @@ TEST(TimerEngineIntegrationTest, NextExpiryMsReturnsZeroForOverdueTimer)
 
 #include <atomic>
 #include <chrono>
-#include "Engine/Iocp/IocpEngine.h"
-#include "../../Time/Timer/TimerWheel.h"
+#include "Io/Engine/Iocp/IocpEngine.h"
+#include "Time/Timer/TimerWheel.h"
 
 using namespace ne::time;
 using namespace ne::io;

@@ -1,15 +1,16 @@
 #pragma once
 #include <memory>
-#include "Type.h"
-#include "HashWrapper.h"
-#include "Hash/Algorithm/SHA3.h"
+#include "Base/Type.h"
+#include "Cryptography/Hash/Algorithm/Wrapper/HashWrapper.h"
+#include "Cryptography/Hash/Algorithm/SHA3.h"
 
 BEGIN_NS(ne::crypto)
 	class SHA3Wrapper :public HashWrapper
 	{
 	public:
-		explicit SHA3Wrapper(SHA3::Type _type) : sha3(std::make_unique<SHA3>(_type)) {}
-		virtual ~SHA3Wrapper() = default;
+		explicit SHA3Wrapper(const SHA3::Type _type)
+			: sha3(std::make_unique<SHA3>(_type)) {}
+		virtual ~SHA3Wrapper() override = default;
 
 	private:
 		std::unique_ptr<SHA3> sha3;

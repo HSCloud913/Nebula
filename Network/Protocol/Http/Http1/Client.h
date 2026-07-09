@@ -3,11 +3,11 @@
 //
 
 #pragma once
-#include "../HttpCommon.h"
-#include "Coroutine/Task.h"
-#include "Engine/IIoEngine.h"
-#include "Result.h"
-#include "Error.h"
+#include "Network/Protocol/Http/HttpCommon.h"
+#include "Base/Coroutine/Task.h"
+#include "Io/Engine/IEngine.h"
+#include "Base/Result.h"
+#include "Base/Error.h"
 
 BEGIN_NS(ne::network::http_1)
 	// HTTP/1.1 클라이언트.

@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "Queue/MpscQueue.h"
+#include "Concurrency/Queue/MpscQueue.h"
 #include <thread>
 #include <vector>
 #include <numeric>

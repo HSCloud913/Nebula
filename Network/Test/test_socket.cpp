@@ -8,16 +8,16 @@
 #include <cstdlib>
 #include <cstring>
 #include <thread>
-#include "Socket/Socket.h"
-#include "Stream/Plain/PlainStream.h"
-#include "Coroutine/Task.h"
-#include "Allocator/PoolAllocator.h"
+#include "Network/Socket/Socket.h"
+#include "Network/Stream/Plain/PlainStream.h"
+#include "Base/Coroutine/Task.h"
+#include "Memory/Allocator/PoolAllocator.h"
 #include "Buffer/BufferBlock.h"
 
 #if defined(IS_POSIX)
-#	include "Engine/Epoll/EpollEngine.h"
+#	include "Io/Engine/Epoll/EpollEngine.h"
 #elif defined(_WIN32)
-#	include "Engine/Iocp/IocpEngine.h"
+#	include "Io/Engine/Iocp/IocpEngine.h"
 #endif
 
 using namespace ne::network;
