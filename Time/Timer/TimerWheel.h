@@ -49,17 +49,14 @@ BEGIN_NS(ne::time)
 		// push_heap/pop_heap 는 기본 max-heap 이므로, 가장 이른 expireTick 을 top 에 두려면 '>' 로 비교한다.
 		struct LaterExpiry
 		{
-			[[nodiscard]] bool_t operator()(const TimerEntry& _lhs, const TimerEntry& _rhs) const noexcept
-			{
-				return _lhs.expireTick > _rhs.expireTick;
-			}
+			[[nodiscard]] bool_t operator()(const TimerEntry& _lhs, const TimerEntry& _rhs) const noexcept { return _lhs.expireTick > _rhs.expireTick; }
 		};
 
 	private:
 		Clock clock;
 		std::chrono::steady_clock::time_point baseTime;
-		std::vector<TimerEntry> heap;   // 이진 힙(수동 push/pop_heap — callback 를 이동해 꺼내기 위함)
-		std::unordered_set<ulonglong_t> live;   // 아직 발화/취소되지 않은 id. Cancel/Tick 에서 제거.
+		std::vector<TimerEntry> heap;         // 이진 힙(수동 push/pop_heap — callback 를 이동해 꺼내기 위함)
+		std::unordered_set<ulonglong_t> live; // 아직 발화/취소되지 않은 id. Cancel/Tick 에서 제거.
 		std::atomic<ulonglong_t> nextId{ 1 };
 		mutable std::mutex mutex;
 

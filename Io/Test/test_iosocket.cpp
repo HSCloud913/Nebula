@@ -12,6 +12,8 @@
 #include "Io/Socket/Socket.h"
 #include "Base/Coroutine/Task.h"
 #include "Io/Engine/Iocp/IocpEngine.h"
+#include "Io/Coroutine/Timeout.h"
+#include "Time/Timer/TimerWheel.h"
 
 using namespace ne;
 using namespace ne::io;
@@ -29,9 +31,7 @@ namespace
 		address.sin_port = 0;
 
 		int_t length = static_cast<int_t>(sizeof(address));
-		if (::bind(listener, reinterpret_cast<sockaddr*>(&address), length) != 0 ||
-			::getsockname(listener, reinterpret_cast<sockaddr*>(&address), &length) != 0 ||
-			::listen(listener, 1) != 0)
+		if (::bind(listener, reinterpret_cast<sockaddr*>(&address), length) != 0 || ::getsockname(listener, reinterpret_cast<sockaddr*>(&address), &length) != 0 || ::listen(listener, 1) != 0)
 		{
 			::closesocket(listener);
 			return false;
@@ -52,7 +52,11 @@ namespace
 
 	struct WsaScope
 	{
-		WsaScope() noexcept { WSADATA data; ::WSAStartup(MAKEWORD(2, 2), &data); }
+		WsaScope() noexcept
+		{
+			WSADATA data;
+			::WSAStartup(MAKEWORD(2, 2), &data);
+		}
 		~WsaScope() noexcept { ::WSACleanup(); }
 	};
 
@@ -61,8 +65,7 @@ namespace
 	{
 		_task.Resume();
 		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-		while (!_task.IsReady() && std::chrono::steady_clock::now() < deadline)
-			(void_t)_context.RunOnce(std::chrono::milliseconds{ 50 });
+		while (!_task.IsReady() && std::chrono::steady_clock::now() < deadline) (void_t)_context.RunOnce(std::chrono::milliseconds{ 50 });
 		return _task.await_resume();
 	}
 }
@@ -153,7 +156,6 @@ TEST(SocketLevel3Test, SendVThenReceiveVRoundTrip)
 	EXPECT_EQ(std::memcmp(bufferB, partB, sizeof(bufferB)), 0);
 	EXPECT_EQ(std::memcmp(bufferC, partC, sizeof(bufferC)), 0);
 }
-
 TEST(SocketLevel3Test, AdoptInvalidFails)
 {
 	IocpEngine engine;
@@ -197,8 +199,7 @@ TEST(SocketLevel3Test, AcceptConnectRoundTrip)
 	connectTask.Resume();
 
 	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-	while ((!acceptTask.IsReady() || !connectTask.IsReady()) && std::chrono::steady_clock::now() < deadline)
-		(void_t)context.RunOnce(std::chrono::milliseconds{ 50 });
+	while ((!acceptTask.IsReady() || !connectTask.IsReady()) && std::chrono::steady_clock::now() < deadline) (void_t)context.RunOnce(std::chrono::milliseconds{ 50 });
 
 	ASSERT_TRUE(acceptTask.IsReady());
 	ASSERT_TRUE(connectTask.IsReady());
@@ -267,8 +268,7 @@ TEST(SocketLevel3Test, SendToReceiveFromRoundTrip)
 	const char payload[] = "udp-sendto-receivefrom";
 	const std::size_t length = sizeof(payload) - 1;
 
-	auto sendTask = socketA.SendTo(std::span<const ne::byte_t>{ reinterpret_cast<const ne::byte_t*>(payload), length },
-	                                "127.0.0.1", portB);
+	auto sendTask = socketA.SendTo(std::span<const ne::byte_t>{ reinterpret_cast<const ne::byte_t*>(payload), length }, "127.0.0.1", portB);
 	auto sendResult = Drive(context, sendTask);
 	ASSERT_TRUE(sendResult.IsOk()) << sendResult.Error().What();
 	EXPECT_EQ(sendResult.Value(), length);
@@ -283,6 +283,161 @@ TEST(SocketLevel3Test, SendToReceiveFromRoundTrip)
 	EXPECT_EQ(std::memcmp(buffer, payload, length), 0);
 	EXPECT_EQ(ip, "127.0.0.1");
 	EXPECT_EQ(port, portA);
+}
+
+// ── WaitReadable: 데이터 도착 전엔 대기, 도착하면 ready. IOCP 는 0-byte WSARecv 로 근사하며 데이터를
+//    소비하지 않아, readiness 후 실제 Receive 가 payload 를 그대로 돌려받는지 검증한다. ──
+TEST(SocketLevel3Test, WaitReadableReadyOnData)
+{
+	const WsaScope wsa;
+	IocpEngine engine;
+	ASSERT_TRUE(engine.IsValid());
+	Context context{ engine };
+
+	SOCKET rawA = INVALID_SOCKET;
+	SOCKET rawB = INVALID_SOCKET;
+	ASSERT_TRUE(MakeConnectedPair(rawA, rawB));
+
+	auto adoptedA = Socket::Attach(static_cast<socket_t>(rawA), context);
+	auto adoptedB = Socket::Attach(static_cast<socket_t>(rawB), context);
+	ASSERT_TRUE(adoptedA.IsOk());
+	ASSERT_TRUE(adoptedB.IsOk());
+	Socket sender = std::move(adoptedA.Value());
+	Socket receiver = std::move(adoptedB.Value());
+
+	const char payload[] = "ready";
+	const std::size_t length = sizeof(payload) - 1;
+
+	// readiness 대기 + 송신을 둘 다 제출한 뒤 함께 구동(제출 직후엔 미도착이라 대기 상태).
+	auto waitTask = receiver.WaitReadable();
+	auto sendTask = sender.Send(std::span<const ne::byte_t>{ reinterpret_cast<const ne::byte_t*>(payload), length });
+	waitTask.Resume();
+	sendTask.Resume();
+
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+	while ((!waitTask.IsReady() || !sendTask.IsReady()) && std::chrono::steady_clock::now() < deadline) (void_t)context.RunOnce(std::chrono::milliseconds{ 50 });
+
+	ASSERT_TRUE(waitTask.IsReady());
+	ASSERT_TRUE(sendTask.IsReady());
+	ASSERT_TRUE(sendTask.await_resume().IsOk());
+	auto waitResult = waitTask.await_resume();
+	ASSERT_TRUE(waitResult.IsOk()) << waitResult.Error().What();
+
+	// readiness 는 데이터를 소비하지 않았으므로 실제 Receive 가 payload 전체를 반환.
+	ne::byte_t buffer[16]{};
+	auto receiveTask = receiver.Receive(std::span<ne::byte_t>{ buffer, sizeof(buffer) });
+	auto receiveResult = Drive(context, receiveTask);
+	ASSERT_TRUE(receiveResult.IsOk()) << receiveResult.Error().What();
+	EXPECT_EQ(receiveResult.Value(), length);
+	EXPECT_EQ(std::memcmp(buffer, payload, length), 0);
+}
+
+// ── Shutdown(half-close send): 상대는 남은 데이터를 읽은 뒤 EOF(Receive == 0)를 본다. ──
+TEST(SocketLevel3Test, ShutdownHalfClosesSend)
+{
+	const WsaScope wsa;
+	IocpEngine engine;
+	ASSERT_TRUE(engine.IsValid());
+	Context context{ engine };
+
+	SOCKET rawA = INVALID_SOCKET;
+	SOCKET rawB = INVALID_SOCKET;
+	ASSERT_TRUE(MakeConnectedPair(rawA, rawB));
+
+	auto adoptedA = Socket::Attach(static_cast<socket_t>(rawA), context);
+	auto adoptedB = Socket::Attach(static_cast<socket_t>(rawB), context);
+	ASSERT_TRUE(adoptedA.IsOk());
+	ASSERT_TRUE(adoptedB.IsOk());
+	Socket sender = std::move(adoptedA.Value());
+	Socket receiver = std::move(adoptedB.Value());
+
+	const char payload[] = "bye";
+	const std::size_t length = sizeof(payload) - 1;
+	auto sendTask = sender.Send(std::span<const ne::byte_t>{ reinterpret_cast<const ne::byte_t*>(payload), length });
+	auto sendResult = Drive(context, sendTask);
+	ASSERT_TRUE(sendResult.IsOk()) << sendResult.Error().What();
+
+	auto shutdownResult = sender.Shutdown();
+	ASSERT_TRUE(shutdownResult.IsOk()) << shutdownResult.Error().What();
+
+	ne::byte_t buffer[16]{};
+	auto firstTask = receiver.Receive(std::span<ne::byte_t>{ buffer, sizeof(buffer) });
+	auto firstResult = Drive(context, firstTask);
+	ASSERT_TRUE(firstResult.IsOk()) << firstResult.Error().What();
+	EXPECT_EQ(firstResult.Value(), length);
+
+	auto eofTask = receiver.Receive(std::span<ne::byte_t>{ buffer, sizeof(buffer) });
+	auto eofResult = Drive(context, eofTask);
+	ASSERT_TRUE(eofResult.IsOk()) << eofResult.Error().What();
+	EXPECT_EQ(eofResult.Value(), 0u); // EOF — 상대가 send 방향을 닫음
+}
+
+// ── Timeout: I/O 가 데드라인보다 빨리 끝나면 값을 반환(has_value) ──
+TEST(SocketLevel3Test, TimeoutIoWins)
+{
+	const WsaScope wsa;
+	IocpEngine engine;
+	ASSERT_TRUE(engine.IsValid());
+	Context context{ engine };
+	ne::time::TimerWheel wheel;
+	context.SetTimerWheel(&wheel); // SleepFor(=Timeout 의 타이머 레이서) 전제
+
+	SOCKET rawA = INVALID_SOCKET;
+	SOCKET rawB = INVALID_SOCKET;
+	ASSERT_TRUE(MakeConnectedPair(rawA, rawB));
+	auto adoptedA = Socket::Attach(static_cast<socket_t>(rawA), context);
+	auto adoptedB = Socket::Attach(static_cast<socket_t>(rawB), context);
+	ASSERT_TRUE(adoptedA.IsOk());
+	ASSERT_TRUE(adoptedB.IsOk());
+	Socket sender = std::move(adoptedA.Value());
+	Socket receiver = std::move(adoptedB.Value());
+
+	const char payload[] = "x";
+	auto sendTask = sender.Send(std::span<const ne::byte_t>{ reinterpret_cast<const ne::byte_t*>(payload), 1 });
+	auto sendResult = Drive(context, sendTask);
+	ASSERT_TRUE(sendResult.IsOk()) << sendResult.Error().What();
+
+	ne::byte_t buffer[8]{};
+	auto task = Timeout(context, std::chrono::seconds(5), [&](std::stop_token _token) { return receiver.Receive(std::span<ne::byte_t>{ buffer, sizeof(buffer) }, std::move(_token)); });
+	auto result = Drive(context, task);
+	ASSERT_TRUE(result.has_value()); // I/O 가 데드라인보다 빨랐다
+	ASSERT_TRUE(result->IsOk()) << result->Error().What();
+	EXPECT_EQ(result->Value(), 1u);
+}
+
+// ── Timeout: I/O 가 데드라인 안에 안 끝나면 nullopt(타이머 승리 + 진행 중 I/O 취소) ──
+TEST(SocketLevel3Test, TimeoutTimerWins)
+{
+	const WsaScope wsa;
+	IocpEngine engine;
+	ASSERT_TRUE(engine.IsValid());
+	Context context{ engine };
+	ne::time::TimerWheel wheel;
+	context.SetTimerWheel(&wheel);
+
+	SOCKET rawA = INVALID_SOCKET;
+	SOCKET rawB = INVALID_SOCKET;
+	ASSERT_TRUE(MakeConnectedPair(rawA, rawB));
+	auto adoptedA = Socket::Attach(static_cast<socket_t>(rawA), context);
+	auto adoptedB = Socket::Attach(static_cast<socket_t>(rawB), context);
+	ASSERT_TRUE(adoptedA.IsOk());
+	ASSERT_TRUE(adoptedB.IsOk());
+	Socket sender = std::move(adoptedA.Value()); // 데이터를 보내지 않아 Receive 가 블록 → 타이머가 이긴다
+	Socket receiver = std::move(adoptedB.Value());
+
+	ne::byte_t buffer[8]{};
+	auto task = Timeout(context, std::chrono::milliseconds(100), [&](std::stop_token _token) { return receiver.Receive(std::span<ne::byte_t>{ buffer, sizeof(buffer) }, std::move(_token)); });
+	auto result = Drive(context, task);
+	EXPECT_FALSE(result.has_value()); // 타이머가 이겨 nullopt
+
+	// 타이머 승리 후 내부 Receive 는 '취소 요청'만 된 상태 — 그 aborted 완료를 반드시 배수해야 커널이
+	// 참조 중인 overlapped 가 살아있는 채로 op 이 끝난다(미배수 상태로 teardown 하면 힙 손상). 조용해질
+	// 때까지(완료 없음 연속) 돌린다.
+	int_t idle = 0;
+	const auto drainDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+	while (idle < 3 && std::chrono::steady_clock::now() < drainDeadline) idle = context.RunOnce(std::chrono::milliseconds{ 10 }) ? 0 : idle + 1;
+
+	(void_t)sender.IsValid(); // sender 는 연결 유지 목적(소켓을 열어둠)
 }
 
 #endif // _WIN32

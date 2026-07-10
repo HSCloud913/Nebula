@@ -71,41 +71,25 @@ BEGIN_NS(ne)
 		inline static bool_t Tokenize(const T& _source, const T& _separators, std::vector<T>& _tokens, TokenizeOption _option = TokenizeOption::NONE);
 
 	public:
-		inline static constexpr auto LowerCaseTransform = std::views::transform([](const char_t _c)
-		{
-			return static_cast<char_t>(std::tolower(static_cast<byte_t>(_c)));
-		});
+		inline static constexpr auto LowerCaseTransform = std::views::transform([](const char_t _c) { return static_cast<char_t>(std::tolower(static_cast<byte_t>(_c))); });
 
-		inline static constexpr auto UpperCaseTransform = std::views::transform([](const char_t _c)
-		{
-			return static_cast<char_t>(std::toupper(static_cast<byte_t>(_c)));
-		});
+		inline static constexpr auto UpperCaseTransform = std::views::transform([](const char_t _c) { return static_cast<char_t>(std::toupper(static_cast<byte_t>(_c))); });
 
-		inline static constexpr auto LowerCaseWideTransform = std::views::transform([](const wchar_t _c)
-		{
-			return static_cast<wchar_t>(std::towlower(static_cast<ushort_t>(_c)));
-		});
+		inline static constexpr auto LowerCaseWideTransform = std::views::transform([](const wchar_t _c) { return static_cast<wchar_t>(std::towlower(static_cast<ushort_t>(_c))); });
 
-		inline static constexpr auto UpperCaseWideTransform = std::views::transform([](const wchar_t _c)
-		{
-			return static_cast<wchar_t>(std::towupper(static_cast<ushort_t>(_c)));
-		});
+		inline static constexpr auto UpperCaseWideTransform = std::views::transform([](const wchar_t _c) { return static_cast<wchar_t>(std::towupper(static_cast<ushort_t>(_c))); });
 
-		[[nodiscard]]
-		inline static constexpr bool_t EqualCaseInsensitive(string_view_t _lhs, string_view_t _rhs) noexcept;
+		[[nodiscard]] inline static constexpr bool_t EqualCaseInsensitive(string_view_t _lhs, string_view_t _rhs) noexcept;
 
-		[[nodiscard]]
-		inline static constexpr bool_t EqualCaseInsensitive(wstring_view_t _lhs, wstring_view_t _rhs) noexcept;
+		[[nodiscard]] inline static constexpr bool_t EqualCaseInsensitive(wstring_view_t _lhs, wstring_view_t _rhs) noexcept;
 
 #if defined(_WIN32)
 
 	public:
 		inline static string_t WCStoMBCS(const wchar_t* _wcs);
 		inline static string_t WCStoUTF8(const wchar_t* _wcs);
-
 		inline static string_t MBCStoUTF8(const char_t* _mbcs);
 		inline static std::wstring MBCStoWCS(const char_t* _mbcs);
-
 		inline static string_t UTF8toMBCS(const char_t* _utf8);
 		inline static std::wstring UTF8toWCS(const char_t* _utf8);
 #endif
@@ -117,14 +101,8 @@ BEGIN_NS(ne)
 		int_t first = 0;
 		int_t last = static_cast<int_t>(_source.size()) - 1;
 
-		while (first <= last && Ascii::IsSpace(_source[first]))
-		{
-			++first;
-		}
-		while (last >= first && Ascii::IsSpace(_source[last]))
-		{
-			--last;
-		}
+		while (first <= last && Ascii::IsSpace(_source[first])) { ++first; }
+		while (last >= first && Ascii::IsSpace(_source[last])) { --last; }
 
 		return T(_source, first, last - first + 1);
 	}
@@ -135,14 +113,8 @@ BEGIN_NS(ne)
 		int_t first = 0;
 		int_t last = static_cast<int_t>(_source.size()) - 1;
 
-		while (first <= last && Ascii::IsSpace(_source[first]))
-		{
-			++first;
-		}
-		while (last >= first && Ascii::IsSpace(_source[last]))
-		{
-			--last;
-		}
+		while (first <= last && Ascii::IsSpace(_source[first])) { ++first; }
+		while (last >= first && Ascii::IsSpace(_source[last])) { --last; }
 
 		_source.resize(last + 1);
 		_source.erase(0, first);
@@ -157,10 +129,7 @@ BEGIN_NS(ne)
 		auto iter = _source.begin();
 		auto end = _source.end();
 
-		while (iter != end && Ascii::IsSpace(*iter))
-		{
-			++iter;
-		}
+		while (iter != end && Ascii::IsSpace(*iter)) { ++iter; }
 
 		return T(iter, end);
 	}
@@ -171,10 +140,7 @@ BEGIN_NS(ne)
 		auto iter = _source.begin();
 		auto end = _source.end();
 
-		while (iter != end && Ascii::IsSpace(*iter))
-		{
-			++iter;
-		}
+		while (iter != end && Ascii::IsSpace(*iter)) { ++iter; }
 
 		_source.erase(_source.begin(), iter);
 
@@ -187,10 +153,7 @@ BEGIN_NS(ne)
 	{
 		int_t pos = static_cast<int_t>(_source.size()) - 1;
 
-		while (pos >= 0 && Ascii::IsSpace(_source[pos]))
-		{
-			--pos;
-		}
+		while (pos >= 0 && Ascii::IsSpace(_source[pos])) { --pos; }
 
 		return T(_source, 0, pos + 1);
 	}
@@ -200,10 +163,7 @@ BEGIN_NS(ne)
 	{
 		int_t pos = static_cast<int_t>(_source.size()) - 1;
 
-		while (pos >= 0 && Ascii::IsSpace(_source[pos]))
-		{
-			--pos;
-		}
+		while (pos >= 0 && Ascii::IsSpace(_source[pos])) { --pos; }
 
 		_source.resize(pos + 1);
 
@@ -220,10 +180,7 @@ BEGIN_NS(ne)
 
 		T result;
 		result.reserve(_source.size());
-		while (iter != end)
-		{
-			result += static_cast<typename T::value_type>(Ascii::Lower(*iter++));
-		}
+		while (iter != end) { result += static_cast<typename T::value_type>(Ascii::Lower(*iter++)); }
 
 		return result;
 	}
@@ -253,10 +210,7 @@ BEGIN_NS(ne)
 
 		T result;
 		result.reserve(_source.size());
-		while (iter != end)
-		{
-			result += static_cast<typename T::value_type>(Ascii::Upper(*iter++));
-		}
+		while (iter != end) { result += static_cast<typename T::value_type>(Ascii::Upper(*iter++)); }
 
 		return result;
 	}
@@ -310,10 +264,7 @@ BEGIN_NS(ne)
 				result.append(_to);
 				_start = pos + _from.length();
 			}
-			else
-			{
-				result.append(_source, _start, _source.size() - _start);
-			}
+			else { result.append(_source, _start, _source.size() - _start); }
 		} while (pos != T::npos);
 
 		_source.swap(result);
@@ -339,10 +290,7 @@ BEGIN_NS(ne)
 				result.append(_to);
 				_start = pos + length;
 			}
-			else
-			{
-				result.append(_source, _start, _source.size() - _start);
-			}
+			else { result.append(_source, _start, _source.size() - _start); }
 		} while (pos != T::npos);
 
 		_source.swap(result);
@@ -352,16 +300,10 @@ BEGIN_NS(ne)
 
 
 	template <class T>
-	int_t StringFormat::Compare(const T& _lhs, const T& _rhs)
-	{
-		return _lhs.compare(_rhs);
-	}
+	int_t StringFormat::Compare(const T& _lhs, const T& _rhs) { return _lhs.compare(_rhs); }
 
 	template <class T>
-	int_t StringFormat::CompareIgnoreCase(const T& _lhs, const T& _rhs)
-	{
-		return Upper(_lhs).compare(Upper(_rhs));
-	}
+	int_t StringFormat::CompareIgnoreCase(const T& _lhs, const T& _rhs) { return Upper(_lhs).compare(Upper(_rhs)); }
 
 
 
@@ -374,52 +316,25 @@ BEGIN_NS(ne)
 		auto end = _source.end();
 		while (begin != end)
 		{
-			if (static_cast<int>(_option) & static_cast<int>(TokenizeOption::TRIM))
-			{
-				while (begin != end && Ascii::IsSpace(*begin))
-				{
-					++begin;
-				}
-			}
+			if (static_cast<int>(_option) & static_cast<int>(TokenizeOption::TRIM)) { while (begin != end && Ascii::IsSpace(*begin)) { ++begin; } }
 
 			auto iter1 = begin;
-			while (iter1 != end && _separators.find(*iter1) == T::npos)
-			{
-				++iter1;
-			}
+			while (iter1 != end && _separators.find(*iter1) == T::npos) { ++iter1; }
 
 			auto iter2 = iter1;
 			if (iter2 != begin && (static_cast<int>(_option) & static_cast<int>(TokenizeOption::TRIM)))
 			{
 				--iter2;
-				while (iter2 != begin && Ascii::IsSpace(*iter2))
-				{
-					--iter2;
-				}
+				while (iter2 != begin && Ascii::IsSpace(*iter2)) { --iter2; }
 
-				if (!Ascii::IsSpace(*iter2))
-				{
-					++iter2;
-				}
+				if (!Ascii::IsSpace(*iter2)) { ++iter2; }
 			}
 
-			if (static_cast<int>(_option) & static_cast<int>(TokenizeOption::IGNORE_EMPTY))
-			{
-				if (iter2 != begin)
-				{
-					_tokens.push_back(T(begin, iter2));
-				}
-			}
-			else
-			{
-				_tokens.push_back(T(begin, iter2));
-			}
+			if (static_cast<int>(_option) & static_cast<int>(TokenizeOption::IGNORE_EMPTY)) { if (iter2 != begin) { _tokens.push_back(T(begin, iter2)); } }
+			else { _tokens.push_back(T(begin, iter2)); }
 
 			begin = iter1;
-			if (begin != end)
-			{
-				++begin;
-			}
+			if (begin != end) { ++begin; }
 		}
 
 		return _tokens.empty() ? false : true;
@@ -427,15 +342,9 @@ BEGIN_NS(ne)
 
 
 
-	constexpr bool_t StringFormat::EqualCaseInsensitive(string_view_t _lhs, string_view_t _rhs) noexcept
-	{
-		return std::ranges::equal(_lhs | LowerCaseTransform, _rhs | LowerCaseTransform);
-	}
+	constexpr bool_t StringFormat::EqualCaseInsensitive(string_view_t _lhs, string_view_t _rhs) noexcept { return std::ranges::equal(_lhs | LowerCaseTransform, _rhs | LowerCaseTransform); }
 
-	constexpr bool_t StringFormat::EqualCaseInsensitive(wstring_view_t _lhs, wstring_view_t _rhs) noexcept
-	{
-		return std::ranges::equal(_lhs | LowerCaseWideTransform, _rhs | LowerCaseWideTransform);
-	}
+	constexpr bool_t StringFormat::EqualCaseInsensitive(wstring_view_t _lhs, wstring_view_t _rhs) noexcept { return std::ranges::equal(_lhs | LowerCaseWideTransform, _rhs | LowerCaseWideTransform); }
 
 
 
@@ -444,110 +353,73 @@ BEGIN_NS(ne)
 	{
 		if (auto required = WideCharToMultiByte(CP_ACP, 0, _wcs, -1, nullptr, 0, nullptr, nullptr); required)
 		{
-			std::shared_ptr<char_t> buffer(new char_t[required], [](const char_t* _p)
-			{
-				delete[] _p;
-			});
+			std::shared_ptr<char_t> buffer(new char_t[required], [](const char_t* _p) { delete[] _p; });
 			if (buffer.get())
 			{
 				memset(buffer.get(), 0, required);
-				if (WideCharToMultiByte(CP_ACP, 0, _wcs, -1, buffer.get(), required, nullptr, nullptr))
-				{
-					return buffer.get();
-				}
+				if (WideCharToMultiByte(CP_ACP, 0, _wcs, -1, buffer.get(), required, nullptr, nullptr)) { return buffer.get(); }
 			}
 		}
 
 		return "";
 	}
-
 	string_t StringFormat::WCStoUTF8(const wchar_t* _wcs)
 	{
 		if (auto required = WideCharToMultiByte(CP_UTF8, 0, _wcs, -1, nullptr, 0, nullptr, nullptr); required)
 		{
 			required++;
 
-			std::shared_ptr<char_t> buffer(new char_t[required], [](const char_t* _p)
-			{
-				delete[] _p;
-			});
+			std::shared_ptr<char_t> buffer(new char_t[required], [](const char_t* _p) { delete[] _p; });
 			if (buffer.get())
 			{
 				memset(buffer.get(), 0, required);
 				required = WideCharToMultiByte(CP_UTF8, 0, _wcs, -1, buffer.get(), required, nullptr, nullptr);
-				if (required)
-				{
-					return buffer.get();
-				}
+				if (required) { return buffer.get(); }
 			}
 		}
 
 		return "";
 	}
-
-
 	string_t StringFormat::MBCStoUTF8(const char_t* _mbcs)
 	{
 		std::wstring wcs = MBCStoWCS(_mbcs);
-		if (!wcs.empty())
-		{
-			return WCStoUTF8(wcs.c_str());
-		}
+		if (!wcs.empty()) { return WCStoUTF8(wcs.c_str()); }
 
 		return "";
 	}
-
 	std::wstring StringFormat::MBCStoWCS(const char_t* _mbcs)
 	{
 		if (auto required = MultiByteToWideChar(CP_ACP, 0, _mbcs, -1, nullptr, 0); required)
 		{
-			std::shared_ptr<wchar_t> buffer(new wchar_t[required], [](const wchar_t* _p)
-			{
-				delete[] _p;
-			});
+			std::shared_ptr<wchar_t> buffer(new wchar_t[required], [](const wchar_t* _p) { delete[] _p; });
 			if (buffer.get())
 			{
 				memset(buffer.get(), 0, required * sizeof(wchar_t));
-				if (MultiByteToWideChar(CP_ACP, 0, _mbcs, -1, buffer.get(), required))
-				{
-					return buffer.get();
-				}
+				if (MultiByteToWideChar(CP_ACP, 0, _mbcs, -1, buffer.get(), required)) { return buffer.get(); }
 			}
 		}
 
 		return L"";
 	}
-
-
 	string_t StringFormat::UTF8toMBCS(const char_t* _utf8)
 	{
 		std::wstring wcs = UTF8toWCS(_utf8);
-		if (!wcs.empty())
-		{
-			return WCStoMBCS(wcs.c_str());
-		}
+		if (!wcs.empty()) { return WCStoMBCS(wcs.c_str()); }
 
 		return "";
 	}
-
 	std::wstring StringFormat::UTF8toWCS(const char_t* _utf8)
 	{
 		if (auto required = MultiByteToWideChar(CP_UTF8, 0, _utf8, -1, nullptr, 0); required)
 		{
 			required++;
 
-			std::shared_ptr<wchar_t> buffer(new wchar_t[required], [](const wchar_t* _p)
-			{
-				delete[] _p;
-			});
+			std::shared_ptr<wchar_t> buffer(new wchar_t[required], [](const wchar_t* _p) { delete[] _p; });
 			if (buffer.get())
 			{
 				memset(buffer.get(), 0, required * sizeof(wchar_t));
 				required = MultiByteToWideChar(CP_UTF8, 0, _utf8, -1, buffer.get(), required);
-				if (required)
-				{
-					return buffer.get();
-				}
+				if (required) { return buffer.get(); }
 			}
 		}
 

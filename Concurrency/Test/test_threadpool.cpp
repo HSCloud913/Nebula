@@ -13,7 +13,7 @@
 TEST(ThreadPoolTest, ExecutesSingleJob)
 {
 	ne::ThreadPool pool(1);
-	std::atomic<bool> executed{false};
+	std::atomic<bool> executed{ false };
 
 	auto future = pool.Enqueue([&]() { executed = true; });
 	future.get();
@@ -25,11 +25,10 @@ TEST(ThreadPoolTest, ExecutesAllJobs)
 {
 	ne::ThreadPool pool(4);
 	constexpr int numJobs = 100;
-	std::atomic<int> counter{0};
+	std::atomic<int> counter{ 0 };
 
 	std::vector<std::future<void>> futures;
-	for (int i = 0; i < numJobs; ++i)
-		futures.push_back(pool.Enqueue([&]() { ++counter; }));
+	for (int i = 0; i < numJobs; ++i) futures.push_back(pool.Enqueue([&]() { ++counter; }));
 
 	for (auto& f : futures) f.get();
 	EXPECT_EQ(counter.load(), numJobs);
@@ -57,7 +56,7 @@ TEST(ThreadPoolTest, EnqueueInvalidAfterShutdown)
 
 TEST(ThreadPoolTest, DestructorWaitsForJobs)
 {
-	std::atomic<bool> executed{false};
+	std::atomic<bool> executed{ false };
 	{
 		ne::ThreadPool pool(2);
 		pool.Enqueue([&]()
@@ -74,17 +73,10 @@ TEST(ThreadPoolTest, ConcurrentEnqueue)
 	ne::ThreadPool pool(4);
 	constexpr int numProducers = 8;
 	constexpr int jobsPerProducer = 50;
-	std::atomic<int> counter{0};
+	std::atomic<int> counter{ 0 };
 
 	std::vector<std::thread> producers;
-	for (int i = 0; i < numProducers; ++i)
-	{
-		producers.emplace_back([&]()
-		{
-			for (int j = 0; j < jobsPerProducer; ++j)
-				pool.Enqueue([&]() { ++counter; });
-		});
-	}
+	for (int i = 0; i < numProducers; ++i) { producers.emplace_back([&]() { for (int j = 0; j < jobsPerProducer; ++j) pool.Enqueue([&]() { ++counter; }); }); }
 	for (auto& t : producers) t.join();
 
 	pool.Shutdown();

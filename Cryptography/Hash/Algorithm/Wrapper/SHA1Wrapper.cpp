@@ -22,10 +22,7 @@ BEGIN_NS(ne::crypto)
 		do
 		{
 			bufferLength = fread(buffer, 1, 1024, _file);
-			if (bufferLength > 0)
-			{
-				sha1->AddBuffer(buffer, bufferLength);
-			}
+			if (bufferLength > 0) { sha1->AddBuffer(buffer, bufferLength); }
 		} while (bufferLength);
 
 		return sha1->Get();

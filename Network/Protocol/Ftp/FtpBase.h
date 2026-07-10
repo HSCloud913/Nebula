@@ -12,35 +12,34 @@
 #include "Base/Error.h"
 #include "Base/Type.h"
 
-BEGIN_NS(ne::network::ftp)
-	enum class TransferType : uint8_t
-	{
-		Ascii,
-		Binary
-	};
+BEGIN_NS (ne::network::ftp)
 
-	struct FtpEntry
-	{
-		string_t name;
-		bool_t isDirectory{ false };
-		uint64_t size{ 0 };
-	};
+enum class TransferType : uint8_t
+{
+	Ascii,
+	Binary
+};
 
-	struct FtpReply
-	{
-		int_t code{ 0 };
-		string_t message;
-	};
+struct FtpEntry
+{
+	string_t name;
+	bool_t isDirectory{ false };
+	uint64_t size{ 0 };
+};
 
-	struct FtpConfig
-	{
-		string_t username;
-		string_t password;
-	};
+struct FtpReply
+{
+	int_t code{ 0 };
+	string_t message;
+};
 
-	// Factory invoked per data-channel connection (PASV host/port → async IStream).
-	using DataStreamFactory_t = std::function<
-		ne::Task<ne::Result<std::unique_ptr<ne::network::IStream>, ne::OsError>>(
-			string_view_t, uint16_t)>;
+struct FtpConfig
+{
+	string_t username;
+	string_t password;
+};
+
+// Factory invoked per data-channel connection (PASV host/port → async IStream).
+using DataStreamFactory_t = std::function<ne::Task<ne::Result<std::unique_ptr<ne::network::IStream>, ne::OsError>>(string_view_t, uint16_t)>;
 
 END_NS

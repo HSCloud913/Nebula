@@ -40,14 +40,14 @@ BEGIN_NS(ne::io)
 		};
 
 	private:
-		ulonglong_t wakeReadSocket{ 0 };  // socket_t 를 64비트로 정규화(Request.handle 과 동일 관례)
+		ulonglong_t wakeReadSocket{ 0 }; // socket_t 를 64비트로 정규화(Request.handle 과 동일 관례)
 		ulonglong_t wakeWriteSocket{ 0 };
 		bool_t isValid{ false };
 		std::mutex mutex;
-		std::unordered_map<void_t*, PendingOperation> pending;    // userData → 대기 op
-		std::unordered_map<ulonglong_t, void_t*> readWaiter;  // fd → POLLIN 대기 userData
-		std::unordered_map<ulonglong_t, void_t*> writeWaiter; // fd → POLLOUT 대기 userData
-		std::vector<Completion> ready;        // 즉시/합성 완료
+		std::unordered_map<void_t*, PendingOperation> pending; // userData → 대기 op
+		std::unordered_map<ulonglong_t, void_t*> readWaiter;   // fd → POLLIN 대기 userData
+		std::unordered_map<ulonglong_t, void_t*> writeWaiter;  // fd → POLLOUT 대기 userData
+		std::vector<Completion> ready;                         // 즉시/합성 완료
 		std::vector<void_t*> pendingCancels;
 
 	public:

@@ -14,7 +14,8 @@ BEGIN_NS(ne::crypto)
 		};
 
 	public:
-		explicit SHA2(const Type _type) : type(_type) {}
+		explicit SHA2(const Type _type)
+			: type(_type) {}
 		~SHA2() = default;
 
 	private:

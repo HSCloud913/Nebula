@@ -8,7 +8,7 @@
 #include "Base/Type.h"
 
 BEGIN_NS(ne::memory)
-	class IAllocator : public std::pmr::memory_resource
+	class IAllocator :public std::pmr::memory_resource
 	{
 	public:
 		IAllocator() = default;

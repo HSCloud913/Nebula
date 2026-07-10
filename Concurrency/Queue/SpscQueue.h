@@ -19,10 +19,7 @@ BEGIN_NS(ne::concurrency)
 		explicit SpscQueue(std::size_t _capacity)
 			: capacity(_capacity)
 			, mask(_capacity - 1)
-			, buffer(_capacity)
-		{
-			assert((_capacity & (_capacity - 1)) == 0 && "SpscQueue: capacity must be power of 2");
-		}
+			, buffer(_capacity) { assert((_capacity & (_capacity - 1)) == 0 && "SpscQueue: capacity must be power of 2"); }
 
 		NEBULA_NON_COPYABLE_MOVABLE(SpscQueue)
 
@@ -57,10 +54,7 @@ BEGIN_NS(ne::concurrency)
 			return true;
 		}
 
-		[[nodiscard]] bool_t IsEmpty() const noexcept
-		{
-			return readPos.load(std::memory_order_acquire) == writePos.load(std::memory_order_acquire);
-		}
+		[[nodiscard]] bool_t IsEmpty() const noexcept { return readPos.load(std::memory_order_acquire) == writePos.load(std::memory_order_acquire); }
 
 		[[nodiscard]] bool_t IsFull() const noexcept
 		{
@@ -69,4 +63,5 @@ BEGIN_NS(ne::concurrency)
 			return next == readPos.load(std::memory_order_acquire);
 		}
 	};
+
 END_NS

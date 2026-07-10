@@ -22,8 +22,10 @@ BEGIN_NS(ne)
 		static_assert(!std::is_same_v<T, E>, "value type and error type must differ");
 
 	private:
-		explicit Result(T _value) : storage(std::move(_value)) {}
-		explicit Result(E _error) : storage(std::move(_error)) {}
+		explicit Result(T _value)
+			: storage(std::move(_value)) {}
+		explicit Result(E _error)
+			: storage(std::move(_error)) {}
 
 	public:
 		NEBULA_DEFAULT_COPY_MOVE(Result)
@@ -69,7 +71,8 @@ BEGIN_NS(ne)
 	{
 	private:
 		Result() = default;
-		explicit Result(E _error) : errorStorage(std::move(_error)) {}
+		explicit Result(E _error)
+			: errorStorage(std::move(_error)) {}
 
 	public:
 		NEBULA_DEFAULT_COPY_MOVE(Result)

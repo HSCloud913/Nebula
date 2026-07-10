@@ -46,9 +46,9 @@ BEGIN_NS(ne::io)
 
 	private:
 		IEngine& engine;
-		ne::time::TimerWheel* timerWheel;                       // optional — 있으면 루프가 Tick/타임아웃 반영
-		std::mutex postMutex;                        // postedHandles 보호(다른 스레드 Post)
-		std::vector<std::coroutine_handle<>> postedHandles;     // Post 로 넘어와 다음 루프에서 resume 될 작업
+		ne::time::TimerWheel* timerWheel;                   // optional — 있으면 루프가 Tick/타임아웃 반영
+		std::mutex postMutex;                               // postedHandles 보호(다른 스레드 Post)
+		std::vector<std::coroutine_handle<>> postedHandles; // Post 로 넘어와 다음 루프에서 resume 될 작업
 		std::atomic<bool_t> isRunning{ false };
 		// Run() 이 실제로 시작하기 전에(다른 스레드가 스폰 직후 곧장) Stop() 이 먼저 도착하면,
 		// Run() 진입부의 running=true 세팅이 그 Stop() 을 덮어써 무기한 대기에 빠질 수 있다 —

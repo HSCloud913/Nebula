@@ -16,15 +16,9 @@ using ne::ipc::SharedMemory;
 
 namespace
 {
-	std::span<const std::byte> AsBytes(const std::string& _string)
-	{
-		return std::span(reinterpret_cast<const std::byte*>(_string.data()), _string.size());
-	}
+	std::span<const std::byte> AsBytes(const std::string& _string) { return std::span(reinterpret_cast<const std::byte*>(_string.data()), _string.size()); }
 
-	std::string AsString(const std::span<const std::byte> _bytes)
-	{
-		return std::string(reinterpret_cast<const ne::char_t*>(_bytes.data()), _bytes.size());
-	}
+	std::string AsString(const std::span<const std::byte> _bytes) { return std::string(reinterpret_cast<const ne::char_t*>(_bytes.data()), _bytes.size()); }
 }
 
 TEST(SharedMemoryTest, ViewIsSizedAsRequested)

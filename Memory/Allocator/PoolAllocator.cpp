@@ -13,10 +13,7 @@
 BEGIN_NS(ne::memory)
 	namespace
 	{
-		[[nodiscard]] std::size_t RoundUp(const std::size_t _value, const std::size_t _multiple) noexcept
-		{
-			return (_value + _multiple - 1) / _multiple * _multiple;
-		}
+		[[nodiscard]] std::size_t RoundUp(const std::size_t _value, const std::size_t _multiple) noexcept { return (_value + _multiple - 1) / _multiple * _multiple; }
 
 		[[nodiscard]] void_t* AlignedAlloc(const std::size_t _alignment, const std::size_t _size) noexcept
 		{
@@ -44,8 +41,7 @@ BEGIN_NS(ne::memory)
 		, available(_blockCount)
 	{
 		// 곱셈 오버플로 검사 — 초과하면 할당하지 않는다(pool == nullptr → Allocate 는 값으로 nullptr 반환).
-		if (_blockCount != 0 && blockSize <= (std::numeric_limits<std::size_t>::max)() / _blockCount)
-			pool = static_cast<ne::byte_t*>(AlignedAlloc(alignment, blockSize * _blockCount));
+		if (_blockCount != 0 && blockSize <= (std::numeric_limits<std::size_t>::max)() / _blockCount) pool = static_cast<ne::byte_t*>(AlignedAlloc(alignment, blockSize * _blockCount));
 
 		if (pool == nullptr)
 		{

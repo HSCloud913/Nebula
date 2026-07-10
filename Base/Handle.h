@@ -7,8 +7,7 @@
 #include <memory>
 #include "Base/Type.h"
 
-template <typename T>
-concept IsTrivial = std::is_trivial_v<T>;
+template <typename T>concept IsTrivial = std::is_trivial_v<T>;
 
 BEGIN_NS(ne)
 	template <IsTrivial T, std::invocable<T&> Deleter, T InvalidHandle = T{}>

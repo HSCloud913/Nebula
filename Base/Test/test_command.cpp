@@ -7,29 +7,20 @@
 
 
 
-class TestCommand final : public ne::ICommand
+class TestCommand final :public ne::ICommand
 {
 public:
-	virtual void Execute() override
-	{
-		isExecuted = true;
-	}
+	virtual void Execute() override { isExecuted = true; }
 
-	virtual void Undo() override
-	{
-		isExecuted = false;
-	}
+	virtual void Undo() override { isExecuted = false; }
 
-	[[nodiscard]] bool IsExecuted() const
-	{
-		return isExecuted;
-	}
+	[[nodiscard]] bool IsExecuted() const { return isExecuted; }
 
 private:
 	bool isExecuted = false;
 };
 
-class CommandTest : public ::testing::Test
+class CommandTest :public ::testing::Test
 {
 protected:
 	std::unique_ptr<ne::IInvoker> invoker;

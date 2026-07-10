@@ -14,10 +14,7 @@ BEGIN_NS(ne::crypto)
 		const BigInt be = BigInt::FromHex(e);
 
 		const size_t keyLength = (bn.BitLength() + 7) / 8;
-		if (_plainText.size() > keyLength - 11)
-		{
-			throw std::invalid_argument("RSA::Encrypt: plaintext too large for key size");
-		}
+		if (_plainText.size() > keyLength - 11) { throw std::invalid_argument("RSA::Encrypt: plaintext too large for key size"); }
 
 		SecureRandom rng; // PKCS#1 v1.5 패딩 난수 — CSPRNG 사용(URBG 모델링이라 distribution 과 호환)
 		std::uniform_int_distribution<uint_t> dist(1, 255);
@@ -50,18 +47,12 @@ BEGIN_NS(ne::crypto)
 		const BigInt m = BigInt::ModPow(c, bd, bn);
 		const string_t em = m.ToBytes(keyLen);
 
-		if (em.size() < 11 || static_cast<byte_t>(em[0]) != 0x00 || static_cast<byte_t>(em[1]) != 0x02)
-		{
-			throw std::runtime_error("RSA::Decrypt: invalid padding");
-		}
+		if (em.size() < 11 || static_cast<byte_t>(em[0]) != 0x00 || static_cast<byte_t>(em[1]) != 0x02) { throw std::runtime_error("RSA::Decrypt: invalid padding"); }
 
 		size_t sep = 2;
 		while (sep < em.size() && em[sep] != '\x00') ++sep;
 
-		if (sep == em.size())
-		{
-			throw std::runtime_error("RSA::Decrypt: padding separator not found");
-		}
+		if (sep == em.size()) { throw std::runtime_error("RSA::Decrypt: padding separator not found"); }
 
 		return em.substr(sep + 1);
 	}

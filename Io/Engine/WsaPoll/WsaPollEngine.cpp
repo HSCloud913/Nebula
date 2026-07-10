@@ -26,9 +26,8 @@ BEGIN_NS(ne::io)
 			address.sin_port = 0;
 
 			int_t addressLength = static_cast<int_t>(sizeof(address));
-			if (::bind(listener, reinterpret_cast<sockaddr*>(&address), addressLength) == SOCKET_ERROR ||
-				::getsockname(listener, reinterpret_cast<sockaddr*>(&address), &addressLength) == SOCKET_ERROR ||
-				::listen(listener, 1) == SOCKET_ERROR)
+			if (::bind(listener, reinterpret_cast<sockaddr*>(&address), addressLength) == SOCKET_ERROR || ::getsockname(listener, reinterpret_cast<sockaddr*>(&address), &addressLength) == SOCKET_ERROR
+				|| ::listen(listener, 1) == SOCKET_ERROR)
 			{
 				::closesocket(listener);
 				return false;
@@ -77,15 +76,11 @@ BEGIN_NS(ne::io)
 		wakeWriteSocket = static_cast<ulonglong_t>(writeSocket);
 		isValid = true;
 	}
-
 	WsaPollEngine::~WsaPollEngine()
 	{
 		if (wakeReadSocket != 0) ::closesocket(static_cast<SOCKET>(wakeReadSocket));
 		if (wakeWriteSocket != 0) ::closesocket(static_cast<SOCKET>(wakeWriteSocket));
 	}
-
-
-
 	void_t WsaPollEngine::Submit(const Request& _request)
 	{
 		if (longlong_t result = 0; Perform(_request, false, result))
@@ -105,7 +100,6 @@ BEGIN_NS(ne::io)
 		if (isWrite) writeWaiter[fd] = _request.userData;
 		else readWaiter[fd] = _request.userData;
 	}
-
 	int_t WsaPollEngine::WaitCompletions(Completion* _out, const int_t _max, const std::chrono::milliseconds _timeout)
 	{
 		if (_max <= 0) return 0;
@@ -216,13 +210,11 @@ BEGIN_NS(ne::io)
 
 		return count;
 	}
-
 	void_t WsaPollEngine::Wake()
 	{
 		const char_t one = 0;
 		(void_t)::send(static_cast<SOCKET>(wakeWriteSocket), &one, 1, 0);
 	}
-
 	void_t WsaPollEngine::Cancel(void_t* _userData) noexcept
 	{
 		if (_userData == nullptr) return;
@@ -234,22 +226,22 @@ BEGIN_NS(ne::io)
 
 		Wake();
 	}
-
 	bool_t WsaPollEngine::Supports(const Capability _capability) const noexcept
 	{
 		switch (_capability)
 		{
-		case Capability::SendFileZeroCopy: return true;  // TransmitFile(SendFile) — RIO 없이도 가능
-		case Capability::SendMemZeroCopy: return false; // RIO 는 IOCP 완료 모델 전제라 reactor 폴백에서 불가
-		case Capability::RecvOverheadReduced: return false; // 등록 버퍼 없음
-		case Capability::RecvTrueZeroCopy: return false;
+			case Capability::SendFileZeroCopy:
+				return true; // TransmitFile(SendFile) — RIO 없이도 가능
+			case Capability::SendMemZeroCopy:
+				return false; // RIO 는 IOCP 완료 모델 전제라 reactor 폴백에서 불가
+			case Capability::RecvOverheadReduced:
+				return false; // 등록 버퍼 없음
+			case Capability::RecvTrueZeroCopy:
+				return false;
 		}
 
 		return false;
 	}
-
-
-
 	bool_t WsaPollEngine::Perform(const Request& _request, const bool_t _isRetry, longlong_t& _result) noexcept
 	{
 		// 파일 scatter/gather — IocpEngine 과 동일한 이유(임의 크기 세그먼트는 ReadFileScatter/
@@ -267,13 +259,9 @@ BEGIN_NS(ne::io)
 				overlapped.OffsetHigh = static_cast<ulong_t>(currentOffset >> 32);
 
 				ulong_t transferred = 0;
-				bool_t isOk = (_request.op == OpCode::Read)
-								? ::ReadFile(handle, segment.ptr, static_cast<ulong_t>(segment.length), &transferred, &overlapped)
-								: ::WriteFile(handle, segment.ptr, static_cast<ulong_t>(segment.length), &transferred, &overlapped);
-				if (!isOk && ::GetLastError() == ERROR_IO_PENDING)
-				{
-					isOk = ::GetOverlappedResult(handle, &overlapped, &transferred, TRUE);
-				}
+				bool_t isOk = (_request.op == OpCode::Read) ? ::ReadFile(handle, segment.ptr, static_cast<ulong_t>(segment.length), &transferred, &overlapped) :
+								::WriteFile(handle, segment.ptr, static_cast<ulong_t>(segment.length), &transferred, &overlapped);
+				if (!isOk && ::GetLastError() == ERROR_IO_PENDING) { isOk = ::GetOverlappedResult(handle, &overlapped, &transferred, TRUE); }
 
 				if (!isOk)
 				{
@@ -293,245 +281,269 @@ BEGIN_NS(ne::io)
 
 		switch (_request.op)
 		{
-		case OpCode::Read:
-		{
-			const HANDLE handle = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(_request.handle));
-
-			OVERLAPPED overlapped{};
-			overlapped.Offset = static_cast<ulong_t>(_request.offset & 0xFFFFFFFFull);
-			overlapped.OffsetHigh = static_cast<ulong_t>(_request.offset >> 32);
-
-			ulong_t read = 0;
-			if (::ReadFile(handle, _request.buffer, static_cast<ulong_t>(_request.length), &read, &overlapped))
+			case OpCode::Read:
 			{
-				_result = static_cast<longlong_t>(read);
-				return true;
-			}
+				const HANDLE handle = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(_request.handle));
 
-			if (::GetLastError() == ERROR_IO_PENDING)
-			{
-				ulong_t transferred = 0;
-				if (::GetOverlappedResult(handle, &overlapped, &transferred, TRUE))
+				OVERLAPPED overlapped{};
+				overlapped.Offset = static_cast<ulong_t>(_request.offset & 0xFFFFFFFFull);
+				overlapped.OffsetHigh = static_cast<ulong_t>(_request.offset >> 32);
+
+				ulong_t read = 0;
+				if (::ReadFile(handle, _request.buffer, static_cast<ulong_t>(_request.length), &read, &overlapped))
 				{
-					_result = static_cast<longlong_t>(transferred);
+					_result = static_cast<longlong_t>(read);
 					return true;
 				}
-			}
-			break;
-		}
-		case OpCode::Write:
-		{
-			const HANDLE handle = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(_request.handle));
 
-			OVERLAPPED overlapped{};
-			overlapped.Offset = static_cast<ulong_t>(_request.offset & 0xFFFFFFFFull);
-			overlapped.OffsetHigh = static_cast<ulong_t>(_request.offset >> 32);
-
-			ulong_t written = 0;
-			if (::WriteFile(handle, _request.buffer, _request.length, &written, &overlapped))
-			{
-				_result = static_cast<longlong_t>(written);
-				return true;
-			}
-
-			if (::GetLastError() == ERROR_IO_PENDING)
-			{
-				ulong_t transferred = 0;
-				if (::GetOverlappedResult(handle, &overlapped, &transferred, TRUE))
+				if (::GetLastError() == ERROR_IO_PENDING)
 				{
-					_result = static_cast<longlong_t>(transferred);
+					ulong_t transferred = 0;
+					if (::GetOverlappedResult(handle, &overlapped, &transferred, TRUE))
+					{
+						_result = static_cast<longlong_t>(transferred);
+						return true;
+					}
+				}
+				break;
+			}
+			case OpCode::Write:
+			{
+				const HANDLE handle = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(_request.handle));
+
+				OVERLAPPED overlapped{};
+				overlapped.Offset = static_cast<ulong_t>(_request.offset & 0xFFFFFFFFull);
+				overlapped.OffsetHigh = static_cast<ulong_t>(_request.offset >> 32);
+
+				ulong_t written = 0;
+				if (::WriteFile(handle, _request.buffer, _request.length, &written, &overlapped))
+				{
+					_result = static_cast<longlong_t>(written);
 					return true;
 				}
-			}
-			break;
-		}
-		case OpCode::Receive:
-		{
-			const SOCKET socket = _request.handle;
 
-			if (_request.chain != nullptr)
-			{
-				std::vector<WSABUF> wsaBuffers;
-				wsaBuffers.reserve(_request.chain->Segments().size());
-				for (const auto& segment : _request.chain->Segments()) wsaBuffers.push_back(WSABUF{ .len = static_cast<ulong_t>(segment.length), .buf = reinterpret_cast<lpstr_t>(segment.ptr) });
-
-				ulong_t received = 0;
-				ulong_t flags = 0;
-				if (::WSARecv(socket, wsaBuffers.data(), static_cast<ulong_t>(wsaBuffers.size()), &received, &flags, nullptr, nullptr) == 0)
+				if (::GetLastError() == ERROR_IO_PENDING)
 				{
-					_result = static_cast<longlong_t>(received);
+					ulong_t transferred = 0;
+					if (::GetOverlappedResult(handle, &overlapped, &transferred, TRUE))
+					{
+						_result = static_cast<longlong_t>(transferred);
+						return true;
+					}
+				}
+				break;
+			}
+			case OpCode::Receive:
+			{
+				const SOCKET socket = _request.handle;
+
+				if (_request.chain != nullptr)
+				{
+					std::vector<WSABUF> wsaBuffers;
+					wsaBuffers.reserve(_request.chain->Segments().size());
+					for (const auto& segment : _request.chain->Segments()) wsaBuffers.push_back(WSABUF{ .len = static_cast<ulong_t>(segment.length), .buf = reinterpret_cast<lpstr_t>(segment.ptr) });
+
+					ulong_t received = 0;
+					ulong_t flags = 0;
+					if (::WSARecv(socket, wsaBuffers.data(), static_cast<ulong_t>(wsaBuffers.size()), &received, &flags, nullptr, nullptr) == 0)
+					{
+						_result = static_cast<longlong_t>(received);
+						return true;
+					}
+					break;
+				}
+
+				const int_t bytes = ::recv(socket, static_cast<lpstr_t>(_request.buffer), static_cast<int_t>(_request.length), 0);
+				if (bytes >= 0)
+				{
+					_result = static_cast<longlong_t>(bytes);
 					return true;
 				}
 				break;
 			}
-
-			const int_t bytes = ::recv(socket, static_cast<lpstr_t>(_request.buffer), static_cast<int_t>(_request.length), 0);
-			if (bytes >= 0)
+			case OpCode::Send:
 			{
-				_result = static_cast<longlong_t>(bytes);
-				return true;
-			}
-			break;
-		}
-		case OpCode::Send:
-		{
-			const SOCKET socket = _request.handle;
+				const SOCKET socket = _request.handle;
 
-			if (_request.chain != nullptr)
-			{
-				std::vector<WSABUF> wsaBuffers;
-				wsaBuffers.reserve(_request.chain->Segments().size());
-				for (const auto& segment : _request.chain->Segments()) wsaBuffers.push_back(WSABUF{ .len = static_cast<ulong_t>(segment.length), .buf = reinterpret_cast<lpstr_t>(segment.ptr) });
-
-				ulong_t sent = 0;
-				if (::WSASend(socket, wsaBuffers.data(), static_cast<ulong_t>(wsaBuffers.size()), &sent, 0, nullptr, nullptr) == 0)
+				if (_request.chain != nullptr)
 				{
-					_result = static_cast<longlong_t>(sent);
+					std::vector<WSABUF> wsaBuffers;
+					wsaBuffers.reserve(_request.chain->Segments().size());
+					for (const auto& segment : _request.chain->Segments()) wsaBuffers.push_back(WSABUF{ .len = static_cast<ulong_t>(segment.length), .buf = reinterpret_cast<lpstr_t>(segment.ptr) });
+
+					ulong_t sent = 0;
+					if (::WSASend(socket, wsaBuffers.data(), static_cast<ulong_t>(wsaBuffers.size()), &sent, 0, nullptr, nullptr) == 0)
+					{
+						_result = static_cast<longlong_t>(sent);
+						return true;
+					}
+					break;
+				}
+
+				const int_t bytes = ::send(socket, static_cast<lpstr_t>(_request.buffer), static_cast<int_t>(_request.length), 0);
+				if (bytes >= 0)
+				{
+					_result = static_cast<longlong_t>(bytes);
 					return true;
 				}
 				break;
 			}
-
-			const int_t bytes = ::send(socket, static_cast<lpstr_t>(_request.buffer), static_cast<int_t>(_request.length), 0);
-			if (bytes >= 0)
+			case OpCode::SendTo: // 비연결형(UDP) 송신 — address/addressLength 가 매 호출 목적지
 			{
-				_result = static_cast<longlong_t>(bytes);
-				return true;
+				const SOCKET socket = _request.handle;
+				const int_t bytes = ::sendto(socket,
+											static_cast<lpstr_t>(_request.buffer),
+											static_cast<int_t>(_request.length),
+											0,
+											static_cast<const sockaddr*>(_request.address),
+											_request.addressLength);
+				if (bytes >= 0)
+				{
+					_result = static_cast<longlong_t>(bytes);
+					return true;
+				}
+				break;
 			}
-			break;
-		}
-		case OpCode::SendTo: // 비연결형(UDP) 송신 — address/addressLength 가 매 호출 목적지
-		{
-			const SOCKET socket = _request.handle;
-			const int_t bytes = ::sendto(socket, static_cast<lpstr_t>(_request.buffer), static_cast<int_t>(_request.length), 0,
-			                              static_cast<const sockaddr*>(_request.address), _request.addressLength);
-			if (bytes >= 0) { _result = static_cast<longlong_t>(bytes); return true; }
-			break;
-		}
-		case OpCode::ReceiveFrom: // 비연결형(UDP) 수신 — fromAddress/fromAddressLength 에 발신자 주소를 채움
-		{
-			const SOCKET socket = _request.handle;
-			const int_t bytes = ::recvfrom(socket, static_cast<lpstr_t>(_request.buffer), static_cast<int_t>(_request.length), 0,
-			                                static_cast<sockaddr*>(_request.fromAddress), _request.fromAddressLength);
-			if (bytes >= 0) { _result = static_cast<longlong_t>(bytes); return true; }
-			break;
-		}
-		case OpCode::Accept:
-		{
-			const SOCKET socket = _request.handle;
-
-			const SOCKET accepted = ::accept(socket, nullptr, nullptr);
-			if (accepted != INVALID_SOCKET)
+			case OpCode::ReceiveFrom: // 비연결형(UDP) 수신 — fromAddress/fromAddressLength 에 발신자 주소를 채움
 			{
-				_result = static_cast<longlong_t>(accepted);
-				return true;
+				const SOCKET socket = _request.handle;
+				const int_t bytes = ::recvfrom(socket,
+												static_cast<lpstr_t>(_request.buffer),
+												static_cast<int_t>(_request.length),
+												0,
+												static_cast<sockaddr*>(_request.fromAddress),
+												_request.fromAddressLength);
+				if (bytes >= 0)
+				{
+					_result = static_cast<longlong_t>(bytes);
+					return true;
+				}
+				break;
 			}
-			break;
-		}
-		case OpCode::Connect:
-		{
-			const SOCKET socket = _request.handle;
-			
-			if (_isRetry)
-			{
-				int_t soError = 0;
-				int_t length = static_cast<int_t>(sizeof(soError));
-				(void_t)::getsockopt(socket, SOL_SOCKET, SO_ERROR, reinterpret_cast<lpstr_t>(&soError), &length);
-				_result = (soError == 0) ? 0 : -static_cast<longlong_t>(soError);
-				return true;
-			}
-
-			if (::connect(socket, static_cast<const sockaddr*>(_request.address), _request.addressLength) == 0)
-			{
+			case OpCode::WaitReadable:
+			case OpCode::WaitWritable:
+				// readiness 대기 — 실제 recv/send 없이 POLLRDNORM/POLLWRNORM(IsWriteDirection 이 방향 결정)만
+				// 기다린다. 첫 호출은 미준비로 등록(false), WSAPoll 이 준비를 알린 재수행에서 ready(result 0)로 완료.
+				if (!_isRetry) return false;
 				_result = 0;
-				return true; // 즉시 연결(로컬 등)
-			}
-
-			if (::WSAGetLastError() == WSAEWOULDBLOCK) return false; // POLLOUT 대기
-			break;
-		}
-		case OpCode::SendFile: // handle=목적지 소켓(Send 계열과 동일), auxHandle=원본 파일.
-		{                      // IocpEngine 과 달리 여기엔 IOCP 가 없어 stray completion 위험이 없으므로
-			// 로컬 OVERLAPPED 로 바로 동기 완료시킬 수 있다(File Read/Write 와 동일 패턴).
-			const SOCKET destSocket = static_cast<SOCKET>(_request.handle);
-			const HANDLE sourceFile = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(_request.auxHandle));
-
-			OVERLAPPED overlapped{};
-			overlapped.Offset = static_cast<ulong_t>(_request.offset & 0xFFFFFFFFull);
-			overlapped.OffsetHigh = static_cast<ulong_t>(_request.offset >> 32);
-
-			if (::TransmitFile(destSocket, sourceFile, static_cast<ulong_t>(_request.length), 0, &overlapped, nullptr, 0))
-			{
-				_result = static_cast<longlong_t>(_request.length);
 				return true;
-			}
 
-			if (::WSAGetLastError() == WSA_IO_PENDING)
+			case OpCode::Accept:
 			{
-				ulong_t transferred = 0;
-				if (::GetOverlappedResult(reinterpret_cast<HANDLE>(destSocket), &overlapped, &transferred, TRUE))
+				const SOCKET socket = _request.handle;
+
+				const SOCKET accepted = ::accept(socket, nullptr, nullptr);
+				if (accepted != INVALID_SOCKET)
 				{
-					_result = static_cast<longlong_t>(transferred);
+					_result = static_cast<longlong_t>(accepted);
 					return true;
 				}
+				break;
 			}
-			break;
-		}
-		case OpCode::ReadFixed: // Windows 에 파일 등록 버퍼 개념이 없다 — 일반 Read 와 동일, bufferId 무시
-		{
-			const HANDLE handle = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(_request.handle));
-
-			OVERLAPPED overlapped{};
-			overlapped.Offset = static_cast<ulong_t>(_request.offset & 0xFFFFFFFFull);
-			overlapped.OffsetHigh = static_cast<ulong_t>(_request.offset >> 32);
-
-			ulong_t read = 0;
-			if (::ReadFile(handle, _request.buffer, static_cast<ulong_t>(_request.length), &read, &overlapped))
+			case OpCode::Connect:
 			{
-				_result = static_cast<longlong_t>(read);
-				return true;
-			}
+				const SOCKET socket = _request.handle;
 
-			if (::GetLastError() == ERROR_IO_PENDING)
-			{
-				ulong_t transferred = 0;
-				if (::GetOverlappedResult(handle, &overlapped, &transferred, TRUE))
+				if (_isRetry)
 				{
-					_result = static_cast<longlong_t>(transferred);
+					int_t soError = 0;
+					int_t length = static_cast<int_t>(sizeof(soError));
+					(void_t)::getsockopt(socket, SOL_SOCKET, SO_ERROR, reinterpret_cast<lpstr_t>(&soError), &length);
+					_result = (soError == 0) ? 0 : -static_cast<longlong_t>(soError);
 					return true;
 				}
-			}
-			break;
-		}
-		case OpCode::WriteFixed: // 위와 동일
-		{
-			const HANDLE handle = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(_request.handle));
 
-			OVERLAPPED overlapped{};
-			overlapped.Offset = static_cast<ulong_t>(_request.offset & 0xFFFFFFFFull);
-			overlapped.OffsetHigh = static_cast<ulong_t>(_request.offset >> 32);
-
-			ulong_t written = 0;
-			if (::WriteFile(handle, _request.buffer, static_cast<ulong_t>(_request.length), &written, &overlapped))
-			{
-				_result = static_cast<longlong_t>(written);
-				return true;
-			}
-
-			if (::GetLastError() == ERROR_IO_PENDING)
-			{
-				ulong_t transferred = 0;
-				if (::GetOverlappedResult(handle, &overlapped, &transferred, TRUE))
+				if (::connect(socket, static_cast<const sockaddr*>(_request.address), _request.addressLength) == 0)
 				{
-					_result = static_cast<longlong_t>(transferred);
+					_result = 0;
+					return true; // 즉시 연결(로컬 등)
+				}
+
+				if (::WSAGetLastError() == WSAEWOULDBLOCK) return false; // POLLOUT 대기
+				break;
+			}
+			case OpCode::SendFile: // handle=목적지 소켓(Send 계열과 동일), auxHandle=원본 파일.
+			{                      // IocpEngine 과 달리 여기엔 IOCP 가 없어 stray completion 위험이 없으므로
+				// 로컬 OVERLAPPED 로 바로 동기 완료시킬 수 있다(File Read/Write 와 동일 패턴).
+				const SOCKET destSocket = static_cast<SOCKET>(_request.handle);
+				const HANDLE sourceFile = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(_request.auxHandle));
+
+				OVERLAPPED overlapped{};
+				overlapped.Offset = static_cast<ulong_t>(_request.offset & 0xFFFFFFFFull);
+				overlapped.OffsetHigh = static_cast<ulong_t>(_request.offset >> 32);
+
+				if (::TransmitFile(destSocket, sourceFile, static_cast<ulong_t>(_request.length), 0, &overlapped, nullptr, 0))
+				{
+					_result = static_cast<longlong_t>(_request.length);
 					return true;
 				}
+
+				if (::WSAGetLastError() == WSA_IO_PENDING)
+				{
+					ulong_t transferred = 0;
+					if (::GetOverlappedResult(reinterpret_cast<HANDLE>(destSocket), &overlapped, &transferred, TRUE))
+					{
+						_result = static_cast<longlong_t>(transferred);
+						return true;
+					}
+				}
+				break;
 			}
-			break;
-		}
-		default:
-			_result = -static_cast<longlong_t>(ERROR_NOT_SUPPORTED); // SendZeroCopy(RIO) 는 reactor 모델에서 불가
-			return true;
+			case OpCode::ReadFixed: // Windows 에 파일 등록 버퍼 개념이 없다 — 일반 Read 와 동일, bufferId 무시
+			{
+				const HANDLE handle = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(_request.handle));
+
+				OVERLAPPED overlapped{};
+				overlapped.Offset = static_cast<ulong_t>(_request.offset & 0xFFFFFFFFull);
+				overlapped.OffsetHigh = static_cast<ulong_t>(_request.offset >> 32);
+
+				ulong_t read = 0;
+				if (::ReadFile(handle, _request.buffer, static_cast<ulong_t>(_request.length), &read, &overlapped))
+				{
+					_result = static_cast<longlong_t>(read);
+					return true;
+				}
+
+				if (::GetLastError() == ERROR_IO_PENDING)
+				{
+					ulong_t transferred = 0;
+					if (::GetOverlappedResult(handle, &overlapped, &transferred, TRUE))
+					{
+						_result = static_cast<longlong_t>(transferred);
+						return true;
+					}
+				}
+				break;
+			}
+			case OpCode::WriteFixed: // 위와 동일
+			{
+				const HANDLE handle = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(_request.handle));
+
+				OVERLAPPED overlapped{};
+				overlapped.Offset = static_cast<ulong_t>(_request.offset & 0xFFFFFFFFull);
+				overlapped.OffsetHigh = static_cast<ulong_t>(_request.offset >> 32);
+
+				ulong_t written = 0;
+				if (::WriteFile(handle, _request.buffer, static_cast<ulong_t>(_request.length), &written, &overlapped))
+				{
+					_result = static_cast<longlong_t>(written);
+					return true;
+				}
+
+				if (::GetLastError() == ERROR_IO_PENDING)
+				{
+					ulong_t transferred = 0;
+					if (::GetOverlappedResult(handle, &overlapped, &transferred, TRUE))
+					{
+						_result = static_cast<longlong_t>(transferred);
+						return true;
+					}
+				}
+				break;
+			}
+			default:
+				_result = -static_cast<longlong_t>(ERROR_NOT_SUPPORTED); // SendZeroCopy(RIO) 는 reactor 모델에서 불가
+				return true;
 		}
 
 		const int_t error = ::WSAGetLastError();
@@ -541,13 +553,10 @@ BEGIN_NS(ne::io)
 
 		return true;
 	}
-
 	bool_t WsaPollEngine::IsWriteDirection(const OpCode _op) noexcept
 	{
-		return _op == OpCode::Write || _op == OpCode::Send || _op == OpCode::Connect
-				|| _op == OpCode::WriteFixed || _op == OpCode::SendFile || _op == OpCode::SendTo;
+		return _op == OpCode::Write || _op == OpCode::Send || _op == OpCode::Connect || _op == OpCode::WriteFixed || _op == OpCode::SendFile || _op == OpCode::SendTo || _op == OpCode::WaitWritable;
 	}
-
 	void_t WsaPollEngine::ProcessCancels()
 	{
 		std::vector<void_t*> cancels;
@@ -571,7 +580,6 @@ BEGIN_NS(ne::io)
 			ready.push_back(Completion{ userData, -static_cast<longlong_t>(ERROR_OPERATION_ABORTED) });
 		}
 	}
-
 END_NS
 
 #endif // _WIN32

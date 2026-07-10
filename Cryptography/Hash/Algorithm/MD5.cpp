@@ -12,18 +12,9 @@ inline ne::uint_t MD5_F2(const ne::uint_t _b, const ne::uint_t _c, const ne::uin
 {
 	return _c ^ (_d & (_b ^ _c)); // original: f = (b & d) | (c & (~d));
 }
-inline ne::uint_t MD5_F3(const ne::uint_t _b, const ne::uint_t _c, const ne::uint_t _d)
-{
-	return _b ^ _c ^ _d;
-}
-inline ne::uint_t MD5_F4(const ne::uint_t _b, const ne::uint_t _c, const ne::uint_t _d)
-{
-	return _c ^ (_b | ~_d);
-}
-inline ne::uint_t MD5_Rotate(const ne::uint_t _a, const ne::uint_t _c)
-{
-	return (_a << _c) | (_a >> (32 - _c));
-}
+inline ne::uint_t MD5_F3(const ne::uint_t _b, const ne::uint_t _c, const ne::uint_t _d) { return _b ^ _c ^ _d; }
+inline ne::uint_t MD5_F4(const ne::uint_t _b, const ne::uint_t _c, const ne::uint_t _d) { return _c ^ (_b | ~_d); }
+inline ne::uint_t MD5_Rotate(const ne::uint_t _a, const ne::uint_t _c) { return (_a << _c) | (_a >> (32 - _c)); }
 
 
 
@@ -111,45 +102,21 @@ BEGIN_NS(ne::crypto)
 		paddedLen++;
 
 		size_t lower11Bits = paddedLen & 511;
-		if (lower11Bits <= 448)
-		{
-			paddedLen += 448 - lower11Bits;
-		}
-		else
-		{
-			paddedLen += 512 + 448 - lower11Bits;
-		}
+		if (lower11Bits <= 448) { paddedLen += 448 - lower11Bits; }
+		else { paddedLen += 512 + 448 - lower11Bits; }
 		paddedLen /= 8;
 
 		byte_t extra[MD5BlockSize];
-		if (bufferSize < MD5BlockSize)
-		{
-			buffer[bufferSize] = 128;
-		}
-		else
-		{
-			extra[0] = 128;
-		}
+		if (bufferSize < MD5BlockSize) { buffer[bufferSize] = 128; }
+		else { extra[0] = 128; }
 
 		size_t i;
-		for (i = bufferSize + 1; i < MD5BlockSize; i++)
-		{
-			buffer[i] = 0;
-		}
-		for (; i < paddedLen; i++)
-		{
-			extra[i - MD5BlockSize] = 0;
-		}
+		for (i = bufferSize + 1; i < MD5BlockSize; i++) { buffer[i] = 0; }
+		for (; i < paddedLen; i++) { extra[i - MD5BlockSize] = 0; }
 
 		byte_t* addLength;
-		if (paddedLen < MD5BlockSize)
-		{
-			addLength = buffer + paddedLen;
-		}
-		else
-		{
-			addLength = extra + paddedLen - MD5BlockSize;
-		}
+		if (paddedLen < MD5BlockSize) { addLength = buffer + paddedLen; }
+		else { addLength = extra + paddedLen - MD5BlockSize; }
 
 		ulonglong_t msgBits = 8 * (length + bufferSize);
 		for (int_t a = 0; a < 7; a++)
@@ -161,10 +128,7 @@ BEGIN_NS(ne::crypto)
 		*addLength++ = static_cast<byte_t>(msgBits & 0xFF);
 
 		ProcessBlock(buffer);
-		if (paddedLen > MD5BlockSize)
-		{
-			ProcessBlock(extra);
-		}
+		if (paddedLen > MD5BlockSize) { ProcessBlock(extra); }
 	}
 
 
@@ -173,10 +137,7 @@ BEGIN_NS(ne::crypto)
 		const auto data = static_cast<const uint_t*>(_data);
 		uint_t words[16] = { 0, };
 
-		for (int_t i = 0; i < 16; i++)
-		{
-			words[i] = data[i];
-		}
+		for (int_t i = 0; i < 16; i++) { words[i] = data[i]; }
 
 		uint_t a = md5Value[0];
 		uint_t b = md5Value[1];

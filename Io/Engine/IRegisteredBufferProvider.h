@@ -57,4 +57,5 @@ BEGIN_NS(ne::io)
 		// 기본 no-op — 소켓별 상태가 없는 provider(예: io_uring)는 재정의하지 않아도 된다.
 		virtual void_t ReleaseSocket(socket_t _socket) noexcept {}
 	};
+
 END_NS

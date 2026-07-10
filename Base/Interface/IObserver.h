@@ -39,24 +39,12 @@ BEGIN_NS(ne)
 		void_t Attach(const std::shared_ptr<IObserver>& _observer) { observers[_observer->GetID()] = _observer; }
 		void_t Detach(const uint_t _id) { observers.erase(_id); }
 
-		void_t Notify(const std::any& _data)
-		{
-			for (const auto& observer : observers | std::views::values)
-			{
-				observer->Update(_data);
-			}
-		}
+		void_t Notify(const std::any& _data) { for (const auto& observer : observers | std::views::values) { observer->Update(_data); } }
 		void_t Notify(const std::unordered_set<uint_t>& _ids, const std::any& _data)
 		{
-			auto ObserverFilter = [&_ids](const auto& _pair)
-			{
-				return _ids.contains(_pair.first);
-			};
+			auto ObserverFilter = [&_ids](const auto& _pair) { return _ids.contains(_pair.first); };
 
-			for (auto& [id, observer] : observers | std::views::filter(ObserverFilter))
-			{
-				observer->Update(_data);
-			}
+			for (auto& [id, observer] : observers | std::views::filter(ObserverFilter)) { observer->Update(_data); }
 		}
 	};
 

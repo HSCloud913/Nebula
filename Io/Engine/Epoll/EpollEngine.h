@@ -16,7 +16,7 @@
 #	include <vector>
 #	include <unordered_map>
 
-BEGIN_NS (ne::io)
+BEGIN_NS(ne::io)
 	class EpollEngine final :public IEngine
 	{
 	public:
@@ -40,10 +40,10 @@ BEGIN_NS (ne::io)
 		int_t wakeEventFd{ -1 };
 		bool_t isValid{ false };
 		std::mutex mutex;
-		std::unordered_map<void_t*, PendingOperation> pending;   // userData → 대기 op
-		std::unordered_map<int_t, void_t*> readWaiter;  // fd → EPOLLIN 대기 userData
-		std::unordered_map<int_t, void_t*> writeWaiter; // fd → EPOLLOUT 대기 userData
-		std::vector<Completion> ready;        // 즉시/합성 완료
+		std::unordered_map<void_t*, PendingOperation> pending; // userData → 대기 op
+		std::unordered_map<int_t, void_t*> readWaiter;         // fd → EPOLLIN 대기 userData
+		std::unordered_map<int_t, void_t*> writeWaiter;        // fd → EPOLLOUT 대기 userData
+		std::vector<Completion> ready;                         // 즉시/합성 완료
 		std::vector<void_t*> pendingCancels;
 
 	public:
@@ -58,7 +58,7 @@ BEGIN_NS (ne::io)
 		// op 를 즉시 non-blocking 수행. true=완료(_result 설정), false=EAGAIN(epoll 대기 필요).
 		[[nodiscard]] bool_t Perform(const Request& _request, bool_t _isRetry, longlong_t& _result) noexcept;
 		[[nodiscard]] static bool_t IsWriteDirection(OpCode _op) noexcept;
-		void_t UpdateEpoll(int_t _fd) noexcept;                 // readWaiter/writeWaiter 기준 epoll_ctl ADD/MOD/DEL
+		void_t UpdateEpoll(int_t _fd) noexcept; // readWaiter/writeWaiter 기준 epoll_ctl ADD/MOD/DEL
 		void_t ProcessCancels();
 	};
 

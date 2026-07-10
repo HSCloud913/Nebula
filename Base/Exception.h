@@ -23,13 +23,7 @@ BEGIN_NS(ne)
 	private:
 		[[nodiscard]] static string_t CreateMessage(const string_view_t _module, const string_view_t _message) noexcept
 		{
-			try
-			{
-				return std::format("[{}] {}", _module, _message);
-			} catch (...)
-			{
-				return "Error formatting message";
-			}
+			try { return std::format("[{}] {}", _module, _message); } catch (...) { return "Error formatting message"; }
 		}
 
 	public:

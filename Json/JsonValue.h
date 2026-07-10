@@ -34,21 +34,49 @@ BEGIN_NS(ne)
 		friend class Json;
 
 	public:
-		JsonValue() : type(JsonType::INVALID) {}
-		explicit JsonValue(const JsonType _type) : type(_type) {}
-		explicit JsonValue(const bool_t _value) : type(JsonType::BOOLEAN), value(_value) {}
-		explicit JsonValue(const int_t _value) : type(JsonType::NUMBER), value(_value) {}
-		explicit JsonValue(const uint_t _value) : type(JsonType::POSITIVE_NUMBER), value(_value) {}
-		explicit JsonValue(const longlong_t _value) : type(JsonType::LARGE_NUMBER), value(_value) {}
-		explicit JsonValue(const ulonglong_t _value) : type(JsonType::POSITIVE_LARGE_NUMBER), value(_value) {}
-		explicit JsonValue(const double_t _value) : type(JsonType::REAL), value(_value) {}
-		explicit JsonValue(lpcstr_t _value) : type(JsonType::STRING), value(std::make_shared<string_t>(_value)) {}
-		explicit JsonValue(const string_t& _value) : type(JsonType::STRING), value(std::make_shared<string_t>(_value)) {}
-		explicit JsonValue(const JsonObject& _value) : type(JsonType::OBJECT), value(_value) {}
-		explicit JsonValue(JsonObject&& _value) : type(JsonType::OBJECT), value(std::move(_value)) {}
-		explicit JsonValue(const JsonArray& _value) : type(JsonType::ARRAY), value(_value) {}
-		explicit JsonValue(JsonArray&& _value) : type(JsonType::ARRAY), value(std::move(_value)) {}
-		JsonValue(const JsonValue& _value) : type(_value.type), value(_value.value) {}
+		JsonValue()
+			: type(JsonType::INVALID) {}
+		explicit JsonValue(const JsonType _type)
+			: type(_type) {}
+		explicit JsonValue(const bool_t _value)
+			: type(JsonType::BOOLEAN)
+			, value(_value) {}
+		explicit JsonValue(const int_t _value)
+			: type(JsonType::NUMBER)
+			, value(_value) {}
+		explicit JsonValue(const uint_t _value)
+			: type(JsonType::POSITIVE_NUMBER)
+			, value(_value) {}
+		explicit JsonValue(const longlong_t _value)
+			: type(JsonType::LARGE_NUMBER)
+			, value(_value) {}
+		explicit JsonValue(const ulonglong_t _value)
+			: type(JsonType::POSITIVE_LARGE_NUMBER)
+			, value(_value) {}
+		explicit JsonValue(const double_t _value)
+			: type(JsonType::REAL)
+			, value(_value) {}
+		explicit JsonValue(lpcstr_t _value)
+			: type(JsonType::STRING)
+			, value(std::make_shared<string_t>(_value)) {}
+		explicit JsonValue(const string_t& _value)
+			: type(JsonType::STRING)
+			, value(std::make_shared<string_t>(_value)) {}
+		explicit JsonValue(const JsonObject& _value)
+			: type(JsonType::OBJECT)
+			, value(_value) {}
+		explicit JsonValue(JsonObject&& _value)
+			: type(JsonType::OBJECT)
+			, value(std::move(_value)) {}
+		explicit JsonValue(const JsonArray& _value)
+			: type(JsonType::ARRAY)
+			, value(_value) {}
+		explicit JsonValue(JsonArray&& _value)
+			: type(JsonType::ARRAY)
+			, value(std::move(_value)) {}
+		JsonValue(const JsonValue& _value)
+			: type(_value.type)
+			, value(_value.value) {}
 
 	private:
 		using Value = std::variant<std::monostate, bool_t, int_t, uint_t, longlong_t, ulonglong_t, double_t, std::shared_ptr<string_t>, JsonObject, JsonArray>;
@@ -80,18 +108,78 @@ BEGIN_NS(ne)
 		[[nodiscard]] const JsonObject& AsObject() const { return std::get<JsonObject>(value); }
 		[[nodiscard]] const JsonArray& AsArray() const { return std::get<JsonArray>(value); }
 
-		JsonValue& operator=(bool_t _value) { type = JsonType::BOOLEAN; value = _value; return *this; }
-		JsonValue& operator=(int_t _value) { type = JsonType::NUMBER; value = _value; return *this; }
-		JsonValue& operator=(uint_t _value) { type = JsonType::POSITIVE_NUMBER; value = _value; return *this; }
-		JsonValue& operator=(longlong_t _value) { type = JsonType::LARGE_NUMBER; value = _value; return *this; }
-		JsonValue& operator=(ulonglong_t _value) { type = JsonType::POSITIVE_LARGE_NUMBER; value = _value; return *this; }
-		JsonValue& operator=(double_t _value) { type = JsonType::REAL; value = _value; return *this; }
-		JsonValue& operator=(lpcstr_t _value) { type = JsonType::STRING; value = std::make_shared<string_t>(_value); return *this; }
-		JsonValue& operator=(const string_t& _value) { type = JsonType::STRING; value = std::make_shared<string_t>(_value); return *this; }
-		JsonValue& operator=(const JsonObject& _value) { type = JsonType::OBJECT; value = _value; return *this; }
-		JsonValue& operator=(JsonObject&& _value) { type = JsonType::OBJECT; value = std::move(_value); return *this; }
-		JsonValue& operator=(const JsonArray& _value) { type = JsonType::ARRAY; value = _value; return *this; }
-		JsonValue& operator=(JsonArray&& _value) { type = JsonType::ARRAY; value = std::move(_value); return *this; }
+		JsonValue& operator=(bool_t _value)
+		{
+			type = JsonType::BOOLEAN;
+			value = _value;
+			return *this;
+		}
+		JsonValue& operator=(int_t _value)
+		{
+			type = JsonType::NUMBER;
+			value = _value;
+			return *this;
+		}
+		JsonValue& operator=(uint_t _value)
+		{
+			type = JsonType::POSITIVE_NUMBER;
+			value = _value;
+			return *this;
+		}
+		JsonValue& operator=(longlong_t _value)
+		{
+			type = JsonType::LARGE_NUMBER;
+			value = _value;
+			return *this;
+		}
+		JsonValue& operator=(ulonglong_t _value)
+		{
+			type = JsonType::POSITIVE_LARGE_NUMBER;
+			value = _value;
+			return *this;
+		}
+		JsonValue& operator=(double_t _value)
+		{
+			type = JsonType::REAL;
+			value = _value;
+			return *this;
+		}
+		JsonValue& operator=(lpcstr_t _value)
+		{
+			type = JsonType::STRING;
+			value = std::make_shared<string_t>(_value);
+			return *this;
+		}
+		JsonValue& operator=(const string_t& _value)
+		{
+			type = JsonType::STRING;
+			value = std::make_shared<string_t>(_value);
+			return *this;
+		}
+		JsonValue& operator=(const JsonObject& _value)
+		{
+			type = JsonType::OBJECT;
+			value = _value;
+			return *this;
+		}
+		JsonValue& operator=(JsonObject&& _value)
+		{
+			type = JsonType::OBJECT;
+			value = std::move(_value);
+			return *this;
+		}
+		JsonValue& operator=(const JsonArray& _value)
+		{
+			type = JsonType::ARRAY;
+			value = _value;
+			return *this;
+		}
+		JsonValue& operator=(JsonArray&& _value)
+		{
+			type = JsonType::ARRAY;
+			value = std::move(_value);
+			return *this;
+		}
 
 	public:
 		[[nodiscard]] std::vector<string_t> ObjectKeys() const;

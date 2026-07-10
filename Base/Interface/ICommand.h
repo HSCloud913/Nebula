@@ -29,10 +29,7 @@ BEGIN_NS(ne)
 		std::stack<std::shared_ptr<ICommand>> undoHistory;
 
 	public:
-		void_t Push(std::shared_ptr<ICommand> _command)
-		{
-			commandHistory.push(std::move(_command));
-		}
+		void_t Push(std::shared_ptr<ICommand> _command) { commandHistory.push(std::move(_command)); }
 
 		void_t Execute()
 		{

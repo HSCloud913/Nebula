@@ -38,7 +38,7 @@ TEST_F(NebulaHandleTest, MoveConstructor)
 	ne::Handle<HandleType, TestDeleter, InvalidHandle> handle1(42); // 유효한 핸들
 	ne::Handle handle2(std::move(handle1));
 
-	EXPECT_EQ(handle2.Get(), 42); // 이동 후 핸들 값 확인
+	EXPECT_EQ(handle2.Get(), 42);            // 이동 후 핸들 값 확인
 	EXPECT_EQ(handle1.Get(), InvalidHandle); // 원래 핸들은 InvalidHandle이어야 함
 }
 
@@ -48,14 +48,14 @@ TEST_F(NebulaHandleTest, MoveAssignmentOperator)
 	ne::Handle<HandleType, TestDeleter, InvalidHandle> handle1(42);
 	ne::Handle<HandleType, TestDeleter, InvalidHandle> handle2 = std::move(handle1);
 
-	EXPECT_EQ(handle2.Get(), 42); // 이동 후 핸들 값 확인
+	EXPECT_EQ(handle2.Get(), 42);            // 이동 후 핸들 값 확인
 	EXPECT_EQ(handle1.Get(), InvalidHandle); // 원래 핸들은 InvalidHandle이어야 함
 }
 
 // 핸들 설정 테스트
 TEST_F(NebulaHandleTest, AssignmentOperator)
 {
-	handle = 42; // 핸들을 설정
+	handle = 42;                 // 핸들을 설정
 	EXPECT_EQ(handle.Get(), 42); // 핸들이 올바르게 설정되었는지 확인
 }
 
@@ -70,7 +70,7 @@ TEST_F(NebulaHandleTest, CloseMethod)
 // 핸들 변환 연산자 테스트
 TEST_F(NebulaHandleTest, ConversionOperator)
 {
-	handle = 42; // 유효한 핸들 설정
+	handle = 42;                                    // 유효한 핸들 설정
 	EXPECT_EQ(static_cast<HandleType>(handle), 42); // 변환 연산자가 올바르게 작동하는지 확인
 }
 
@@ -78,5 +78,5 @@ TEST_F(NebulaHandleTest, ConversionOperator)
 TEST_F(NebulaHandleTest, InvalidHandle)
 {
 	ne::Handle<HandleType, TestDeleter, InvalidHandle> invalidHandle; // 기본 생성자로 InvalidHandle 생성
-	EXPECT_TRUE(static_cast<bool>(invalidHandle) == false); // InvalidHandle은 false로 평가되어야 함
+	EXPECT_TRUE(static_cast<bool>(invalidHandle) == false);           // InvalidHandle은 false로 평가되어야 함
 }

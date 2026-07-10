@@ -7,18 +7,12 @@
 #include <utility>
 
 BEGIN_NS(ne::io)
-	BufferPoolSlot::~BufferPoolSlot()
-	{
-		if (pool != nullptr) pool->Release(index);
-	}
+	BufferPoolSlot::~BufferPoolSlot() { if (pool != nullptr) pool->Release(index); }
 
 	BufferPoolSlot::BufferPoolSlot(BufferPoolSlot&& _other) noexcept
 		: pool(_other.pool)
 		, index(_other.index)
-		, view(_other.view)
-	{
-		_other.pool = nullptr;
-	}
+		, view(_other.view) { _other.pool = nullptr; }
 
 	BufferPoolSlot& BufferPoolSlot::operator=(BufferPoolSlot&& _other) noexcept
 	{
@@ -37,10 +31,7 @@ BEGIN_NS(ne::io)
 
 
 
-	BufferHandle BufferPoolSlot::Handle() const noexcept
-	{
-		return pool != nullptr ? pool->buffer.Handle() : BufferHandle{};
-	}
+	BufferHandle BufferPoolSlot::Handle() const noexcept { return pool != nullptr ? pool->buffer.Handle() : BufferHandle{}; }
 
 
 
@@ -62,8 +53,7 @@ BEGIN_NS(ne::io)
 
 	IoResult<BufferPool> BufferPool::Create(IEngine& _engine, const std::size_t _slotSize, const std::size_t _slotCount)
 	{
-		if (_slotSize == 0 || _slotCount == 0)
-			return IoResult<BufferPool>::Error(IoError{ IoErrorKind::INVALID_BUFFER, "slotSize/slotCount must be non-zero" });
+		if (_slotSize == 0 || _slotCount == 0) return IoResult<BufferPool>::Error(IoError{ IoErrorKind::INVALID_BUFFER, "slotSize/slotCount must be non-zero" });
 
 		std::vector<ne::byte_t> storage(_slotSize * _slotCount);
 		const std::span<ne::byte_t> region{ storage.data(), storage.size() };

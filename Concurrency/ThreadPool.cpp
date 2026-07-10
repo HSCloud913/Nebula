@@ -20,10 +20,7 @@ BEGIN_NS(ne)
 				{
 					std::unique_lock lock(mutex);
 
-					conditionVariable.wait(lock, [this]()
-					{
-						return !this->jobs.empty() || isShutdown;
-					});
+					conditionVariable.wait(lock, [this]() { return !this->jobs.empty() || isShutdown; });
 
 					if (this->jobs.empty() && isShutdown) break;
 
@@ -32,10 +29,7 @@ BEGIN_NS(ne)
 
 					lock.unlock();
 
-					try
-					{
-						job();
-					} catch (...)
+					try { job(); } catch (...)
 					{
 						// A job's exception must not escape the thread's top-level function:
 						// doing so would call std::terminate() and bring down the whole process.
@@ -58,10 +52,7 @@ BEGIN_NS(ne)
 
 		conditionVariable.notify_all();
 
-		for (auto& thread : threads)
-		{
-			if (thread.joinable()) thread.join();
-		}
+		for (auto& thread : threads) { if (thread.joinable()) thread.join(); }
 	}
 
 END_NS

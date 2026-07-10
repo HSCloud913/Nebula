@@ -1,4 +1,4 @@
- //
+//
 // Created by hscloud on 25. 6. 29.
 //
 
@@ -28,14 +28,8 @@ BEGIN_NS(ne)
 	public:
 		Error& Context(string_view_t _context)
 		{
-			if (contextChain.empty())
-			{
-				contextChain = std::format("{} -> ", _context);
-			}
-			else
-			{
-				contextChain = std::format("{} -> {}", _context, contextChain);
-			}
+			if (contextChain.empty()) { contextChain = std::format("{} -> ", _context); }
+			else { contextChain = std::format("{} -> {}", _context, contextChain); }
 
 			return *this;
 		}
@@ -72,15 +66,7 @@ BEGIN_NS(ne)
 		{
 #if defined(_WIN32)
 			char_t buffer[512]{};
-			::FormatMessageA(
-				FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-				nullptr,
-				_code,
-				MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-				buffer,
-				sizeof(buffer) - 1,
-				nullptr
-			);
+			::FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr, _code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), buffer, sizeof(buffer) - 1, nullptr);
 
 			string_t msg(buffer);
 			while (!msg.empty() && (msg.back() == '\r' || msg.back() == '\n')) msg.pop_back();

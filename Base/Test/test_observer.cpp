@@ -11,9 +11,7 @@ class TestObserver :public ne::IObserver
 {
 public:
 	explicit TestObserver(const ne::uint_t _id)
-		: IObserver(_id)
-	{
-	}
+		: IObserver(_id) {}
 
 public:
 	ne::string_t stringData;
@@ -24,29 +22,14 @@ public:
 	{
 		try
 		{
-			if (_data.type() == typeid(ne::string_t))
-			{
-				stringData = std::any_cast<ne::string_t>(_data);
-			}
-			else if (_data.type() == typeid(ne::int_t))
-			{
-				numberData = std::any_cast<ne::int_t>(_data);
-			}
-			else
-			{
-				stringData = "Unknown type";
-			}
-		} catch (const std::bad_any_cast& e)
-		{
-			stringData = "Bad cast!";
-		}
+			if (_data.type() == typeid(ne::string_t)) { stringData = std::any_cast<ne::string_t>(_data); }
+			else if (_data.type() == typeid(ne::int_t)) { numberData = std::any_cast<ne::int_t>(_data); }
+			else { stringData = "Unknown type"; }
+		} catch (const std::bad_any_cast& e) { stringData = "Bad cast!"; }
 	}
 };
 
-class TestSubject : public ne::ISubject
-{
-
-};
+class TestSubject :public ne::ISubject {};
 
 
 

@@ -44,15 +44,18 @@ BEGIN_NS(ne::io)
 		ulong_t disposition = 0;
 		switch (_mode)
 		{
-		case OpenMode::Read: access = GENERIC_READ;
-			disposition = OPEN_EXISTING;
-			break;
-		case OpenMode::Write: access = GENERIC_WRITE;
-			disposition = CREATE_ALWAYS;
-			break;
-		case OpenMode::ReadWrite: access = GENERIC_READ | GENERIC_WRITE;
-			disposition = OPEN_ALWAYS;
-			break;
+			case OpenMode::Read:
+				access = GENERIC_READ;
+				disposition = OPEN_EXISTING;
+				break;
+			case OpenMode::Write:
+				access = GENERIC_WRITE;
+				disposition = CREATE_ALWAYS;
+				break;
+			case OpenMode::ReadWrite:
+				access = GENERIC_READ | GENERIC_WRITE;
+				disposition = OPEN_ALWAYS;
+				break;
 		}
 
 		// FILE_FLAG_OVERLAPPED: IOCP 비동기 I/O 전제.
@@ -61,21 +64,19 @@ BEGIN_NS(ne::io)
 
 		return IoResult<File>::Ok(File{ FileHandle{ raw }, _context });
 #elif defined(IS_POSIX)
-		int_t flags = 0;
-		switch (_mode)
+		int_t flags = 0; switch (_mode)
 		{
-		case OpenMode::Read: flags = O_RDONLY;
-			break;
-		case OpenMode::Write: flags = O_WRONLY | O_CREAT | O_TRUNC;
-			break;
-		case OpenMode::ReadWrite: flags = O_RDWR | O_CREAT;
-			break;
-		}
-
-		const file_t raw = ::open(path.c_str(), flags, 0644);
-		if (raw < 0) return IoResult<File>::Error(IoError{ ne::OsError{ ne::LastOsError() } }.Context("[File/Open]"));
-
-		return IoResult<File>::Ok(File{ FileHandle{ raw }, _context });
+			case OpenMode::Read:
+				flags = O_RDONLY;
+				break;
+			case OpenMode::Write:
+				flags = O_WRONLY | O_CREAT | O_TRUNC;
+				break;
+			case OpenMode::ReadWrite:
+				flags = O_RDWR | O_CREAT;
+				break;
+		} const file_t raw = ::open(path.c_str(), flags, 0644); if (raw < 0) return IoResult<File>::Error(IoError{ ne::OsError{ ne::LastOsError() } }.Context("[File/Open]")); return IoResult<
+			File>::Ok(File{ FileHandle{ raw }, _context });
 #endif
 	}
 
@@ -89,47 +90,31 @@ BEGIN_NS(ne::io)
 
 	ne::Task<IoResult<std::size_t>> File::Read(std::span<ne::byte_t> _buffer, const ulonglong_t _offset, std::stop_token _stopToken)
 	{
-		co_return co_await Awaitable{ *context, Request{
-										.op = OpCode::Read,
-										.handle = ToHandleValue(handle.Get()),
-										.buffer = _buffer.data(),
-										.length = _buffer.size(),
-										.offset = _offset },
-									std::move(_stopToken) };
+		const Request request{ .op = OpCode::Read, .handle = ToHandleValue(handle.Get()), .buffer = _buffer.data(), .length = _buffer.size(), .offset = _offset };
+
+		co_return co_await Awaitable{ *context, request, std::move(_stopToken) };
 	}
 
 	ne::Task<IoResult<std::size_t>> File::Write(std::span<const ne::byte_t> _buffer, const ulonglong_t _offset, std::stop_token _stopToken)
 	{
-		co_return co_await Awaitable{ *context, Request{
-										.op = OpCode::Write,
-										.handle = ToHandleValue(handle.Get()),
-										.buffer = const_cast<ne::byte_t*>(_buffer.data()),
-										.length = _buffer.size(),
-										.offset = _offset },
-									std::move(_stopToken) };
+		const Request request{ .op = OpCode::Write, .handle = ToHandleValue(handle.Get()), .buffer = const_cast<ne::byte_t*>(_buffer.data()), .length = _buffer.size(), .offset = _offset };
+
+		co_return co_await Awaitable{ *context, request, std::move(_stopToken) };
 	}
 
 
 	ne::Task<IoResult<std::size_t>> File::Readv(const BufferChain& _chain, const ulonglong_t _offset, std::stop_token _stopToken)
 	{
-		co_return co_await Awaitable{ *context, Request{
-										.op = OpCode::Read,
-										.handle = ToHandleValue(handle.Get()),
-										.length = _chain.TotalSize(),
-										.offset = _offset,
-										.chain = &_chain },
-									std::move(_stopToken) };
+		const Request request{ .op = OpCode::Read, .handle = ToHandleValue(handle.Get()), .length = _chain.TotalSize(), .offset = _offset, .chain = &_chain };
+
+		co_return co_await Awaitable{ *context, request, std::move(_stopToken) };
 	}
 
 	ne::Task<IoResult<std::size_t>> File::Writev(const BufferChain& _chain, const ulonglong_t _offset, std::stop_token _stopToken)
 	{
-		co_return co_await Awaitable{ *context, Request{
-										.op = OpCode::Write,
-										.handle = ToHandleValue(handle.Get()),
-										.length = _chain.TotalSize(),
-										.offset = _offset,
-										.chain = &_chain },
-									std::move(_stopToken) };
+		const Request request{ .op = OpCode::Write, .handle = ToHandleValue(handle.Get()), .length = _chain.TotalSize(), .offset = _offset, .chain = &_chain };
+
+		co_return co_await Awaitable{ *context, request, std::move(_stopToken) };
 	}
 
 END_NS

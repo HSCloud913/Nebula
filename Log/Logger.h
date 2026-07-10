@@ -49,9 +49,9 @@ BEGIN_NS(ne)
 		// 백엔드 웨이크업: 1ms 폴링 대신 condvar 로 대기한다. pending 플래그(exchange-in-predicate)로
 		// lost-wakeup 과 MPSC 의 순간적 false-empty(생산자 enqueue 도중) 를 함께 방어한다 —
 		// 생산자가 Enqueue 완료 후 pending=true 를 세우므로, 그 사이 놓친 레코드는 다음 wait 에서 재드레인된다.
-		std::mutex              wakeMutex;
+		std::mutex wakeMutex;
 		std::condition_variable wake;
-		std::atomic<bool_t>     pending{ false };
+		std::atomic<bool_t> pending{ false };
 
 	public:
 		LogLevel GetLogLevel() const { return logLevel.load(std::memory_order_relaxed); }

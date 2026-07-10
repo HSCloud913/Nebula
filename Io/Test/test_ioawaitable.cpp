@@ -28,9 +28,7 @@ namespace
 		address.sin_port = 0;
 
 		int_t length = static_cast<int_t>(sizeof(address));
-		if (::bind(listener, reinterpret_cast<sockaddr*>(&address), length) != 0 ||
-			::getsockname(listener, reinterpret_cast<sockaddr*>(&address), &length) != 0 ||
-			::listen(listener, 1) != 0)
+		if (::bind(listener, reinterpret_cast<sockaddr*>(&address), length) != 0 || ::getsockname(listener, reinterpret_cast<sockaddr*>(&address), &length) != 0 || ::listen(listener, 1) != 0)
 		{
 			::closesocket(listener);
 			return false;
@@ -51,7 +49,11 @@ namespace
 
 	struct WsaScope
 	{
-		WsaScope() noexcept { WSADATA data; ::WSAStartup(MAKEWORD(2, 2), &data); }
+		WsaScope() noexcept
+		{
+			WSADATA data;
+			::WSAStartup(MAKEWORD(2, 2), &data);
+		}
 		~WsaScope() noexcept { ::WSACleanup(); }
 	};
 
@@ -70,8 +72,7 @@ namespace
 	{
 		_task.Resume();
 		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-		while (!_task.IsReady() && std::chrono::steady_clock::now() < deadline)
-			(void_t)_context.RunOnce(std::chrono::milliseconds{ 50 });
+		while (!_task.IsReady() && std::chrono::steady_clock::now() < deadline) (void_t)_context.RunOnce(std::chrono::milliseconds{ 50 });
 		return _task.await_resume();
 	}
 }
@@ -127,7 +128,9 @@ TEST(IoAwaitableTest, AbandonedInFlightIsSafe)
 
 	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
 	while (std::chrono::steady_clock::now() < deadline)
-		if (!context.RunOnce(std::chrono::milliseconds{ 20 })) { /* 완료 없음 계속 */ }
+		if (!context.RunOnce(std::chrono::milliseconds{ 20 }))
+		{ /* 완료 없음 계속 */
+		}
 
 	SUCCEED(); // 크래시/UAF 없이 여기 도달하면 성공
 }
@@ -153,8 +156,7 @@ TEST(IoAwaitableTest, StopTokenCancelsInFlight)
 	stopSource.request_stop(); // → Cancel(handler) → CancelIoEx → op 은 aborted 로 완료된다
 
 	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-	while (!task.IsReady() && std::chrono::steady_clock::now() < deadline)
-		(void_t)context.RunOnce(std::chrono::milliseconds{ 50 });
+	while (!task.IsReady() && std::chrono::steady_clock::now() < deadline) (void_t)context.RunOnce(std::chrono::milliseconds{ 50 });
 
 	ASSERT_TRUE(task.IsReady());
 	auto result = task.await_resume();

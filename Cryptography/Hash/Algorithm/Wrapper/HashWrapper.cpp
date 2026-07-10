@@ -5,15 +5,9 @@
 
 
 BEGIN_NS(ne::crypto)
-	string_t HashWrapper::GetHashFromString(string_t&& _text)
-	{
-		return  OnGetHashFromString(std::move(_text));
-	}
+	string_t HashWrapper::GetHashFromString(string_t&& _text) { return OnGetHashFromString(std::move(_text)); }
 
-	void_t HashWrapper::GetHashFromString(char_t* _buffer, size_t _bufferSize, lpcstr_t _text)
-	{
-		strcpy_s(_buffer, _bufferSize, OnGetHashFromString(_text).c_str());
-	}
+	void_t HashWrapper::GetHashFromString(char_t* _buffer, size_t _bufferSize, lpcstr_t _text) { strcpy_s(_buffer, _bufferSize, OnGetHashFromString(_text).c_str()); }
 
 
 	string_t HashWrapper::GetHashFromFile(string_t&& _filePath)

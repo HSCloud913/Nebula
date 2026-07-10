@@ -8,21 +8,21 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(HEADERS
-        Coroutine/Awaitable.h
-        Timer/TimerWheel.h
+    Coroutine/Awaitable.h
+    Timer/TimerWheel.h
 )
 
 set(SOURCES
-        Timer/TimerWheel.cpp
+    Timer/TimerWheel.cpp
 )
 
 add_library(${PROJECT_NAME} STATIC ${HEADERS} ${SOURCES})
 target_include_directories(${PROJECT_NAME} PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}
-        ${CMAKE_SOURCE_DIR}/Base)
+                           ${CMAKE_CURRENT_SOURCE_DIR}
+                           ${CMAKE_SOURCE_DIR}/Base)
 target_link_libraries(NebulaUtil PUBLIC NebulaBase)
 
 
-if(TARGET GTest::gtest_main AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Test)
-    add_subdirectory(Test)
-endif()
+if (TARGET GTest::gtest_main AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Test)
+	add_subdirectory(Test)
+endif ()

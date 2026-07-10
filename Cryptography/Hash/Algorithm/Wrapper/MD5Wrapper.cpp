@@ -21,10 +21,7 @@ BEGIN_NS(ne::crypto)
 		do
 		{
 			bufferLength = fread(buffer, 1, 1024, _file);
-			if (bufferLength > 0)
-			{
-				md5->AddBuffer(buffer, bufferLength);
-			}
+			if (bufferLength > 0) { md5->AddBuffer(buffer, bufferLength); }
 		} while (bufferLength);
 
 		return md5->Get();

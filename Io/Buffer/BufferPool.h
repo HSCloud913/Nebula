@@ -61,8 +61,8 @@ BEGIN_NS(ne::io)
 		NEBULA_DEFAULT_MOVE(BufferPool)
 
 	private:
-		std::vector<ne::byte_t> storage;    // 등록된 region 의 실제 소유자 — buffer(등록/해제) 보다 먼저 살아있어야 한다
-		RegisteredBuffer buffer;            // storage 전체를 한 번에 등록(선언 순서상 storage 보다 나중에 소멸 = 먼저 해제)
+		std::vector<ne::byte_t> storage; // 등록된 region 의 실제 소유자 — buffer(등록/해제) 보다 먼저 살아있어야 한다
+		RegisteredBuffer buffer;         // storage 전체를 한 번에 등록(선언 순서상 storage 보다 나중에 소멸 = 먼저 해제)
 		std::size_t slotSize{ 0 };
 		std::size_t totalSlots{ 0 };
 		std::vector<std::size_t> freeSlots; // 대여 가능한 슬롯 인덱스 스택

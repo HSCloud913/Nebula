@@ -36,8 +36,16 @@ BEGIN_NS(ne::io)
 
 			for (const auto& segment : segments)
 			{
-				if (remaining == 0) { result.Append(segment); continue; }
-				if (remaining >= segment.length) { remaining -= segment.length; continue; }
+				if (remaining == 0)
+				{
+					result.Append(segment);
+					continue;
+				}
+				if (remaining >= segment.length)
+				{
+					remaining -= segment.length;
+					continue;
+				}
 
 				result.Append(segment.Slice(remaining, segment.length - remaining));
 				remaining = 0;

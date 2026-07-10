@@ -22,7 +22,7 @@ BEGIN_NS(ne::crypto)
 	{
 		enum class KeySize
 		{
-			RSA512 = 512,
+			RSA512  = 512,
 			RSA1024 = 1024,
 			RSA2048 = 2048
 		};

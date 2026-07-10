@@ -11,11 +11,16 @@ BEGIN_NS(ne::io)
 	// Context()/What() 및 Result<T, IoError> 와 그대로 맞물린다(OsError/HttpError 와 동형).
 	enum class IoErrorKind : byte_t
 	{
-		UNSUPPORTED,               // 엔진이 해당 capability 미지원 (예: epoll 에 RegisteredIo)
-		REGISTRATION_LIMIT_EXCEEDED, // RIO / io_uring 버퍼 등록 한도 초과
-		INVALID_BUFFER,             // 미등록 버퍼이거나 등록 영역 밖 sub-view
-		QUEUE_FULL,                 // RIO_RQ/RIO_CQ 또는 SQ 용량 초과
-		OS_FAILURE,                 // 하위 syscall 실패 — Code() 유효
+		UNSUPPORTED,
+		// 엔진이 해당 capability 미지원 (예: epoll 에 RegisteredIo)
+		REGISTRATION_LIMIT_EXCEEDED,
+		// RIO / io_uring 버퍼 등록 한도 초과
+		INVALID_BUFFER,
+		// 미등록 버퍼이거나 등록 영역 밖 sub-view
+		QUEUE_FULL,
+		// RIO_RQ/RIO_CQ 또는 SQ 용량 초과
+		OS_FAILURE,
+		// 하위 syscall 실패 — Code() 유효
 	};
 
 	class IoError :public ne::Error
@@ -50,11 +55,16 @@ BEGIN_NS(ne::io)
 		{
 			switch (_kind)
 			{
-			case IoErrorKind::UNSUPPORTED: return "capability not supported by this engine";
-			case IoErrorKind::REGISTRATION_LIMIT_EXCEEDED: return "registered buffer limit exceeded";
-			case IoErrorKind::INVALID_BUFFER: return "invalid or unregistered buffer";
-			case IoErrorKind::QUEUE_FULL: return "request/completion queue full";
-			case IoErrorKind::OS_FAILURE: return "os failure";
+				case IoErrorKind::UNSUPPORTED:
+					return "capability not supported by this engine";
+				case IoErrorKind::REGISTRATION_LIMIT_EXCEEDED:
+					return "registered buffer limit exceeded";
+				case IoErrorKind::INVALID_BUFFER:
+					return "invalid or unregistered buffer";
+				case IoErrorKind::QUEUE_FULL:
+					return "request/completion queue full";
+				case IoErrorKind::OS_FAILURE:
+					return "os failure";
 			}
 
 			return "unknown io error";

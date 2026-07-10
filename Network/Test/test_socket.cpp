@@ -29,37 +29,28 @@ namespace
 	T RunSync(ne::Task<T> _task)
 	{
 		_task.Resume();
-		while (!_task.IsReady())
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		while (!_task.IsReady()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		return _task.await_resume();
 	}
 
-	ne::Result<Socket, ne::OsError> CreateTcp(const AddressFamily _family = AddressFamily::IPv4)
-	{
-		return Socket::Create(_family, SOCK_STREAM, IPPROTO_TCP);
-	}
+	ne::Result<Socket, ne::OsError> CreateTcp(const AddressFamily _family = AddressFamily::IPv4) { return Socket::Create(_family, SOCK_STREAM, IPPROTO_TCP); }
 
-	ne::Result<Socket, ne::OsError> CreateUdp(const AddressFamily _family = AddressFamily::IPv4)
-	{
-		return Socket::Create(_family, SOCK_DGRAM, IPPROTO_UDP);
-	}
+	ne::Result<Socket, ne::OsError> CreateUdp(const AddressFamily _family = AddressFamily::IPv4) { return Socket::Create(_family, SOCK_DGRAM, IPPROTO_UDP); }
 
-#if defined(IS_POSIX)
+	#if defined(IS_POSIX)
 	using TestEngine = ne::io::EpollEngine;
-#elif defined(_WIN32)
+	#elif defined(_WIN32)
 	using TestEngine = ne::io::IocpEngine;
-#endif
+	#endif
 
 	// Connect(host,port,engine) 은 완료 통지를 RunOnce() 스레드로만 전달하므로 직접 구동해야 한다.
 	template <typename T>
-	T RunSyncWithEngine(ne::io::IIoEngine& _engine, ne::Task<T> _task,
-	                     std::chrono::milliseconds _timeout = std::chrono::seconds(5))
+	T RunSyncWithEngine(ne::io::IIoEngine& _engine, ne::Task<T> _task, std::chrono::milliseconds _timeout = std::chrono::seconds(5))
 	{
 		_task.Resume();
 
 		const auto deadline = std::chrono::steady_clock::now() + _timeout;
-		while (!_task.IsReady() && std::chrono::steady_clock::now() < deadline)
-			_engine.RunOnce(10);
+		while (!_task.IsReady() && std::chrono::steady_clock::now() < deadline) _engine.RunOnce(10);
 
 		// 미완료 Task 를 await_resume() 하면 빈 optional 역참조(UB)이고, 그대로 반환해
 		// Task 를 소멸시키면 진행 중 I/O 가 참조하는 코루틴 프레임이 파괴돼 UAF 가 된다.
@@ -82,8 +73,7 @@ namespace
 
 		sockaddr_in addr{};
 		socklen_t addrLen = sizeof(addr);
-		if (::getsockname(_listener.Handle(), reinterpret_cast<sockaddr*>(&addr), &addrLen) != 0)
-			return ne::Result<uint16_t, ne::OsError>::Error(ne::OsError{ ne::LastOsError() });
+		if (::getsockname(_listener.Handle(), reinterpret_cast<sockaddr*>(&addr), &addrLen) != 0) return ne::Result<uint16_t, ne::OsError>::Error(ne::OsError{ ne::LastOsError() });
 
 		return ne::Result<uint16_t, ne::OsError>::Ok(::ntohs(addr.sin_port));
 	}

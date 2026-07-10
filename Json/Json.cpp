@@ -19,10 +19,7 @@ BEGIN_NS(ne)
 
 	bool_t Json::SkipWhitespace(lpcstr_t* _data)
 	{
-		while (**_data != 0 && (**_data == ' ' || **_data == '\t' || **_data == '\r' || **_data == '\n'))
-		{
-			(*_data)++;
-		}
+		while (**_data != 0 && (**_data == ' ' || **_data == '\t' || **_data == '\r' || **_data == '\n')) { (*_data)++; }
 
 		return **_data != 0;
 	}

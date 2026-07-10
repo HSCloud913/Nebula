@@ -16,27 +16,52 @@ BEGIN_NS(ne::io)
 	//   오버헤드 제거(복사는 여전히 있음), 후자만 진짜 recv zero-copy(mmap 기반).
 	enum class Capability : uint_t
 	{
-		SendFileZeroCopy,    // 파일→소켓 진짜 zero-copy (TransmitFile / sendfile / splice / SEND_ZC)
-		SendMemZeroCopy,     // 메모리→소켓 진짜 zero-copy (RIO / MSG_ZEROCOPY / SEND_ZC)
-		RecvOverheadReduced, // registered buffer — 복사는 있으나 pin/validate 오버헤드 감소 (RIO / io_uring Fixed Buffer)
-		RecvTrueZeroCopy,    // 진짜 recv zero-copy (mmap 기반 — TCP_ZEROCOPY_RECEIVE)
+		SendFileZeroCopy,
+		// 파일→소켓 진짜 zero-copy (TransmitFile / sendfile / splice / SEND_ZC)
+		SendMemZeroCopy,
+		// 메모리→소켓 진짜 zero-copy (RIO / MSG_ZEROCOPY / SEND_ZC)
+		RecvOverheadReduced,
+		// registered buffer — 복사는 있으나 pin/validate 오버헤드 감소 (RIO / io_uring Fixed Buffer)
+		RecvTrueZeroCopy,
+		// 진짜 recv zero-copy (mmap 기반 — TCP_ZEROCOPY_RECEIVE)
 	};
 
 	// 제출할 I/O 연산 종류. 규칙 2에 따라 Recv 대신 Receive 로 명명한다.
 	enum class OpCode : uint_t
 	{
-		Read,         // 파일 read (offset 사용)
-		Write,        // 파일 write (offset 사용)
-		Receive,      // 소켓 수신
-		Send,         // 소켓 송신
-		Accept,       // 소켓 accept
-		Connect,      // 소켓 connect
-		ReadFixed,    // 등록 버퍼 read  (Level 3.5)
-		WriteFixed,   // 등록 버퍼 write (Level 3.5)
-		SendZeroCopy, // 메모리→소켓 zero-copy send (Level 3.5)
-		SendFile,     // 파일→소켓 zero-copy 전송  (Level 3.5)
-		SendTo,       // 비연결형(UDP 등) 송신 — address/addressLength 가 매 호출 목적지
-		ReceiveFrom,  // 비연결형(UDP 등) 수신 — fromAddress/fromAddressLength 에 발신자 주소를 채움
+		Read,
+		// 파일 read (offset 사용)
+		Write,
+		// 파일 write (offset 사용)
+		Receive,
+		// 소켓 수신
+		Send,
+		// 소켓 송신
+		Accept,
+		// 소켓 accept
+		Connect,
+		// 소켓 connect
+		ReadFixed,
+		// 등록 버퍼 read  (Level 3.5)
+		WriteFixed,
+		// 등록 버퍼 write (Level 3.5)
+		SendZeroCopy,
+		// 메모리→소켓 zero-copy send (Level 3.5)
+		SendFile,
+		// 파일→소켓 zero-copy 전송  (Level 3.5)
+		SendTo,
+		// 비연결형(UDP 등) 송신 — address/addressLength 가 매 호출 목적지
+		ReceiveFrom,
+		// 비연결형(UDP 등) 수신 — fromAddress/fromAddressLength 에 발신자 주소를 채움
+
+		// readiness 대기(데이터를 옮기지 않고 "읽기/쓰기 가능"까지만 대기) — libssh2 등 readiness(reactor)
+		// 모델 라이브러리를 completion 엔진 위에서 구동하기 위한 프리미티브. reactor(Epoll/WsaPoll)와
+		// io_uring(POLL_ADD)은 native, IOCP 는 WaitReadable=0-byte WSARecv 로 근사(WaitWritable 은 근사 불가라
+		// 즉시 ready 로 처리 — 아래 IocpEngine 주석 참조).
+		WaitReadable,
+		// handle 소켓이 읽기 가능해질 때까지 대기(완료 result 0 = ready)
+		WaitWritable,
+		// handle 소켓이 쓰기 가능해질 때까지 대기
 	};
 
 	// 엔진에 제출하는 단일 I/O 요청 (값 기반).
@@ -52,10 +77,10 @@ BEGIN_NS(ne::io)
 		void_t* buffer{ nullptr };
 		std::size_t length{ 0 };
 		ulonglong_t offset{ 0 };
-		ulonglong_t bufferId{ 0 };                            // 등록 버퍼 handle 값(BufferHandle.value) / io_uring buf_index (Level 3.5, 0 = 미사용)
+		ulonglong_t bufferId{ 0 };        // 등록 버퍼 handle 값(BufferHandle.value) / io_uring buf_index (Level 3.5, 0 = 미사용)
 		const void_t* address{ nullptr }; // Connect 대상 sockaddr (Accept/Connect 전용)
 		int_t addressLength{ 0 };
-		ulonglong_t auxHandle{ 0 };                           // SendFile 전용 — 원본 파일(handle 은 Send 계열과 동일하게 목적지 소켓)
+		ulonglong_t auxHandle{ 0 };          // SendFile 전용 — 원본 파일(handle 은 Send 계열과 동일하게 목적지 소켓)
 		const BufferChain* chain{ nullptr }; // 지정 시 buffer/length 대신 이 체인으로 scatter/gather 수행
 
 		// ReceiveFrom 전용 — 호출자가 마련한 sockaddr_storage(fromAddress)와 그 용량/실채움길이
@@ -63,6 +88,10 @@ BEGIN_NS(ne::io)
 		// 길이)를 넘긴다. 완료까지 두 포인터가 가리키는 메모리가 살아있어야 한다(buffer 와 동일 계약).
 		void_t* fromAddress{ nullptr };
 		int_t* fromAddressLength{ nullptr };
+
+		// Accept 전용(Windows) — true 면 엔진이 accept 소켓을 WSA_FLAG_REGISTERED_IO 로 생성한다
+		// (RIO/SendZeroCopy 용). POSIX 엔진은 accept 가 fd 를 그대로 돌려주므로 이 값을 무시한다.
+		bool_t isRegisteredIo{ false };
 	};
 
 	// 엔진이 돌려주는 단일 완료 결과 (값 기반).

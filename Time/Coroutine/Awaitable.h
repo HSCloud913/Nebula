@@ -20,28 +20,19 @@ BEGIN_NS(ne::time)
 		// 코루틴 프레임이 타이머 만료 전에 파괴되면(취소/타임아웃/예외로 상위 Task 폐기), 스케줄된 콜백이
 		// 이미 파괴된 handle 을 resume 해 use-after-free 가 된다. 소멸 시 예약 타이머를 취소해 콜백이
 		// 절대 실행되지 않게 한다. 이미 발화됐다면 Cancel 은 no-op(그 id 는 Tick 이 live 에서 이미 제거).
-		~Awaitable()
-		{
-			if (timerId != 0) wheel.Cancel(timerId);
-		}
+		~Awaitable() { if (timerId != 0) wheel.Cancel(timerId); }
 
 		NEBULA_NON_COPYABLE_MOVABLE(Awaitable)
 
 	private:
 		TimerWheel& wheel;
 		std::chrono::milliseconds duration;
-		uint64_t timerId{0};
+		uint64_t timerId{ 0 };
 
 	public:
-		[[nodiscard]] bool_t await_ready() const noexcept
-		{
-			return duration.count() <= 0;
-		}
+		[[nodiscard]] bool_t await_ready() const noexcept { return duration.count() <= 0; }
 
-		void_t await_suspend(std::coroutine_handle<> _handle)
-		{
-			timerId = wheel.Schedule(duration, [_handle]() mutable { _handle.resume(); });
-		}
+		void_t await_suspend(std::coroutine_handle<> _handle) { timerId = wheel.Schedule(duration, [_handle]() mutable { _handle.resume(); }); }
 
 		void_t await_resume() const noexcept {}
 	};

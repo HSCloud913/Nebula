@@ -18,6 +18,7 @@ IIoEngine::Watch(static_cast<ne::network::socket_t>(handle), IoEvent::Read, cb)
 - **approach (a) 적용 가능, 추가 인프라 불필요**
 
 구현 예상 코드:
+
 ```cpp
 // 제안 인터페이스 (후속 작업)
 [[nodiscard]] ne::Task<ne::Result<std::vector<std::byte>, ne::OsError>>
@@ -31,6 +32,7 @@ IIoEngine::Watch(static_cast<ne::network::socket_t>(handle), IoEvent::Read, cb)
 현재 `PIPE_TYPE_BYTE | PIPE_WAIT`이므로 IOCP 연동이 불가능함.
 
 비동기화하려면:
+
 1. `CreateNamedPipeW` 에 `FILE_FLAG_OVERLAPPED` 추가
 2. `ConnectNamedPipe`도 OVERLAPPED 방식으로 변경
 3. `ReadFile/WriteFile`에 OVERLAPPED 구조체 사용
@@ -43,10 +45,10 @@ OVERLAPPED 방식(approach a)을 권장하나 기존 `Listen()/Connect()` 인터
 
 ## 결론
 
-| 플랫폼  | 방식          | 난이도 | 비고                            |
-|---------|---------------|--------|---------------------------------|
-| Linux   | approach (a)  | 낮음   | AF_UNIX socket fd → epoll 직접  |
-| Windows | approach (a)  | 중간   | FILE_FLAG_OVERLAPPED 재설계 필요 |
-| Windows | approach (b)  | 낮음   | bridge 스레드, 스레드 비용 있음 |
+| 플랫폼     | 방식           | 난이도 | 비고                           |
+|---------|--------------|-----|------------------------------|
+| Linux   | approach (a) | 낮음  | AF_UNIX socket fd → epoll 직접 |
+| Windows | approach (a) | 중간  | FILE_FLAG_OVERLAPPED 재설계 필요  |
+| Windows | approach (b) | 낮음  | bridge 스레드, 스레드 비용 있음        |
 
 이번 작업(작업 5)에서는 namespace 변경만 적용, 실제 비동기화는 후속 작업으로 분리.

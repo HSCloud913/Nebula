@@ -25,18 +25,17 @@ BEGIN_NS(ne::crypto)
 		// BCRYPT_USE_SYSTEM_PREFERRED_RNG: 알고리즘 핸들 없이 시스템 CSPRNG 사용.
 		(void_t)::BCryptGenRandom(nullptr, static_cast<PUCHAR>(_buffer), static_cast<ULONG>(_length), BCRYPT_USE_SYSTEM_PREFERRED_RNG);
 #elif defined(IS_POSIX)
-		auto* out = static_cast<ne::byte_t*>(_buffer);
-		std::size_t filled = 0;
-
-		while (filled < _length)
+		auto* out = static_cast<ne::byte_t*>(_buffer); std::size_t filled = 0; while (filled < _length)
 		{
 			const ssize_t n = ::getrandom(out + filled, _length - filled, 0);
-			if (n > 0) { filled += static_cast<std::size_t>(n); continue; }
+			if (n > 0)
+			{
+				filled += static_cast<std::size_t>(n);
+				continue;
+			}
 			if (n < 0 && errno == EINTR) continue;
 			break; // getrandom 미지원/실패 — /dev/urandom 폴백
-		}
-
-		if (filled < _length)
+		} if (filled < _length)
 		{
 			const int_t fd = ::open("/dev/urandom", O_RDONLY);
 			if (fd >= 0)
@@ -44,7 +43,11 @@ BEGIN_NS(ne::crypto)
 				while (filled < _length)
 				{
 					const ssize_t n = ::read(fd, out + filled, _length - filled);
-					if (n > 0) { filled += static_cast<std::size_t>(n); continue; }
+					if (n > 0)
+					{
+						filled += static_cast<std::size_t>(n);
+						continue;
+					}
 					if (n < 0 && errno == EINTR) continue;
 					break;
 				}

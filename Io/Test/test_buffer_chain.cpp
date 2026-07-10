@@ -10,10 +10,7 @@ using namespace ne::io;
 
 namespace
 {
-	BufferView MakeView(ne::byte_t* _ptr, const std::size_t _length)
-	{
-		return { _ptr, _length };
-	}
+	BufferView MakeView(ne::byte_t* _ptr, const std::size_t _length) { return { _ptr, _length }; }
 }
 
 TEST(BufferChainTest, SuffixZeroReturnsSameContent)

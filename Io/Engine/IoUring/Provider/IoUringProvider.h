@@ -27,7 +27,8 @@ BEGIN_NS(ne::io)
 	class IoUringProvider final :public IRegisteredBufferProvider
 	{
 	public:
-		explicit IoUringProvider(io_uring* _ring) noexcept : ring(_ring) {}
+		explicit IoUringProvider(io_uring* _ring) noexcept
+			: ring(_ring) {}
 		virtual ~IoUringProvider() override = default;
 
 		NEBULA_NON_COPYABLE_MOVABLE(IoUringProvider)
@@ -55,6 +56,7 @@ BEGIN_NS(ne::io)
 		// lazy: 최초 RegisterBuffer 호출 때 sparse 테이블 예약. mutex 를 이미 쥔 상태로 호출.
 		[[nodiscard]] bool_t EnsureSparseRegisteredLocked() noexcept;
 	};
+
 END_NS
 
 #endif // IS_POSIX

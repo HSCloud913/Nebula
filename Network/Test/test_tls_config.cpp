@@ -25,9 +25,9 @@ TEST(TlsConfigTest, DefaultFieldsAreEmpty)
 TEST(TlsConfigTest, AssignFields)
 {
 	TlsConfig config;
-	config.verifyPeer  = false;
-	config.caFile      = "ca.pem";
-	config.certFile    = "cert.pfx";
+	config.verifyPeer = false;
+	config.caFile = "ca.pem";
+	config.certFile = "cert.pfx";
 	config.pfxPassword = "secret";
 
 	EXPECT_FALSE(config.verifyPeer);

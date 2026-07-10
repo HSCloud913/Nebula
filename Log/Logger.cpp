@@ -69,10 +69,7 @@ BEGIN_NS(ne)
 			if (!fs::exists(path.parent_path())) fs::create_directories(path.parent_path());
 
 			os.open(path, std::ios_base::out | std::ios_base::app | std::ios_base::binary);
-		} catch (const fs::filesystem_error&)
-		{
-			return false;
-		}
+		} catch (const fs::filesystem_error&) { return false; }
 
 		return os.is_open();
 	}
@@ -91,10 +88,7 @@ BEGIN_NS(ne)
 			if (!fs::exists(path.parent_path())) fs::create_directories(path.parent_path());
 
 			os.open(path, std::ios_base::out | std::ios_base::app | std::ios_base::binary);
-		} catch (const fs::filesystem_error&)
-		{
-			return false;
-		}
+		} catch (const fs::filesystem_error&) { return false; }
 
 		return os.is_open();
 	}
@@ -114,7 +108,7 @@ BEGIN_NS(ne)
 	{
 		if (_logLevel < logLevel.load(std::memory_order_relaxed)) return;
 
-		queue.Enqueue(LogRecord{_logLevel, _message, std::chrono::system_clock::now()});
+		queue.Enqueue(LogRecord{ _logLevel, _message, std::chrono::system_clock::now() });
 		// Enqueue 완료 후 pending 세팅 → 백엔드가 놓쳐도(false-empty) 다음 wait 술어에서 재드레인.
 		pending.store(true, std::memory_order_release);
 		wake.notify_one();
@@ -126,8 +120,7 @@ BEGIN_NS(ne)
 
 		if (!os.is_open()) return;
 
-		os << std::format("{} {} {}", GetDateTime(_record.timestamp), LogLevelToString(_record.level), _record.message)
-		<< '\n';
+		os << std::format("{} {} {}", GetDateTime(_record.timestamp), LogLevelToString(_record.level), _record.message) << '\n';
 
 		if (_record.level >= LogLevel::NE_FATAL) os.flush();
 	}
@@ -139,10 +132,7 @@ BEGIN_NS(ne)
 			// 유휴 시 스핀(1ms 폴링) 대신 condvar 로 블록. pending.exchange 로 lost-wakeup 을 흡수한다.
 			{
 				std::unique_lock<std::mutex> lock(wakeMutex);
-				wake.wait(lock, [this]
-				{
-					return !running.load(std::memory_order_relaxed) || pending.exchange(false, std::memory_order_acq_rel);
-				});
+				wake.wait(lock, [this] { return !running.load(std::memory_order_relaxed) || pending.exchange(false, std::memory_order_acq_rel); });
 			}
 
 			LogRecord record;
@@ -162,13 +152,20 @@ BEGIN_NS(ne)
 	{
 		switch (_logLevel)
 		{
-		case LogLevel::NE_TRACE: return "[TRACE]";
-		case LogLevel::NE_DEBUG: return "[DEBUG]";
-		case LogLevel::NE_INFO: return "[INFO]";
-		case LogLevel::NE_WARNING: return "[WARNING]";
-		case LogLevel::NE_ERROR: return "[ERROR]";
-		case LogLevel::NE_FATAL: return "[FATAL]";
-		default: return "";
+			case LogLevel::NE_TRACE:
+				return "[TRACE]";
+			case LogLevel::NE_DEBUG:
+				return "[DEBUG]";
+			case LogLevel::NE_INFO:
+				return "[INFO]";
+			case LogLevel::NE_WARNING:
+				return "[WARNING]";
+			case LogLevel::NE_ERROR:
+				return "[ERROR]";
+			case LogLevel::NE_FATAL:
+				return "[FATAL]";
+			default:
+				return "";
 		}
 	}
 
@@ -185,8 +182,7 @@ BEGIN_NS(ne)
 #endif
 
 		std::ostringstream oss;
-		oss << "[" << std::put_time(&tm, "%Y-%m-%d %H:%M:%S")
-		<< ":" << std::setw(3) << std::setfill('0') << millisecond.count() << "]";
+		oss << "[" << std::put_time(&tm, "%Y-%m-%d %H:%M:%S") << ":" << std::setw(3) << std::setfill('0') << millisecond.count() << "]";
 
 		return oss.str();
 	}

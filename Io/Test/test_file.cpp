@@ -20,8 +20,7 @@ namespace
 	{
 		_task.Resume();
 		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-		while (!_task.IsReady() && std::chrono::steady_clock::now() < deadline)
-			(void_t)_context.RunOnce(std::chrono::milliseconds{ 50 });
+		while (!_task.IsReady() && std::chrono::steady_clock::now() < deadline) (void_t)_context.RunOnce(std::chrono::milliseconds{ 50 });
 		return _task.await_resume();
 	}
 }
@@ -103,7 +102,6 @@ TEST(FileTest, WritevThenReadvRoundTrip)
 	EXPECT_TRUE(file.Close().IsOk());
 	::DeleteFileA(path);
 }
-
 TEST(FileTest, OpenNonExistentFails)
 {
 	IocpEngine engine;

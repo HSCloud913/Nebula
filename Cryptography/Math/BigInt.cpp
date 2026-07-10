@@ -24,10 +24,7 @@ BEGIN_NS(ne::crypto)
 	{
 		if (d.size() != _other.d.size()) return d.size() < _other.d.size();
 
-		for (int_t i = static_cast<int_t>(d.size()) - 1; i >= 0; --i)
-		{
-			if (d[i] != _other.d[i]) return d[i] < _other.d[i];
-		}
+		for (int_t i = static_cast<int_t>(d.size()) - 1; i >= 0; --i) { if (d[i] != _other.d[i]) return d[i] < _other.d[i]; }
 
 		return false;
 	}
@@ -76,10 +73,7 @@ BEGIN_NS(ne::crypto)
 				diff += (static_cast<longlong_t>(1) << 32);
 				borrow = 1;
 			}
-			else
-			{
-				borrow = 0;
-			}
+			else { borrow = 0; }
 
 			result.d[i] = static_cast<uint_t>(diff);
 		}
@@ -104,8 +98,7 @@ BEGIN_NS(ne::crypto)
 			ulonglong_t carry = 0;
 			for (size_t j = 0; j < _other.d.size(); ++j)
 			{
-				const ulonglong_t cur = static_cast<ulonglong_t>(d[i]) * _other.d[j]
-										+ result.d[i + j] + carry;
+				const ulonglong_t cur = static_cast<ulonglong_t>(d[i]) * _other.d[j] + result.d[i + j] + carry;
 				result.d[i + j] = static_cast<uint_t>(cur & 0xFFFFFFFFu);
 				carry = cur >> 32;
 			}
@@ -163,10 +156,7 @@ BEGIN_NS(ne::crypto)
 		BigInt result;
 		result.d.resize(std::min(d.size(), _other.d.size()), 0u);
 
-		for (size_t i = 0; i < result.d.size(); ++i)
-		{
-			result.d[i] = d[i] & _other.d[i];
-		}
+		for (size_t i = 0; i < result.d.size(); ++i) { result.d[i] = d[i] & _other.d[i]; }
 
 		result.Trim();
 
@@ -175,10 +165,7 @@ BEGIN_NS(ne::crypto)
 
 
 
-	void_t BigInt::Trim()
-	{
-		while (d.size() > 1 && d.back() == 0) d.pop_back();
-	}
+	void_t BigInt::Trim() { while (d.size() > 1 && d.back() == 0) d.pop_back(); }
 
 
 	string_t BigInt::ToHex() const

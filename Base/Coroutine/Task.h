@@ -69,10 +69,7 @@ BEGIN_NS(ne)
 			std::coroutine_handle<> continuation;
 
 		public:
-			Task get_return_object() noexcept
-			{
-				return Task{ std::coroutine_handle<promise_type>::from_promise(*this) };
-			}
+			Task get_return_object() noexcept { return Task{ std::coroutine_handle<promise_type>::from_promise(*this) }; }
 
 			std::suspend_always initial_suspend() noexcept { return {}; }
 			FinalAwaiter final_suspend() noexcept { return {}; }
@@ -98,10 +95,7 @@ BEGIN_NS(ne)
 
 		[[nodiscard]] T await_resume() noexcept { return handle.promise().TakeResult(); }
 
-		void_t Resume() noexcept
-		{
-			if (handle && !handle.done()) handle.resume();
-		}
+		void_t Resume() noexcept { if (handle && !handle.done()) handle.resume(); }
 
 	public:
 		[[nodiscard]] bool_t IsReady() const noexcept { return !handle || handle.done(); }
@@ -160,10 +154,7 @@ BEGIN_NS(ne)
 			std::coroutine_handle<> continuation;
 
 		public:
-			Task get_return_object() noexcept
-			{
-				return Task{ std::coroutine_handle<promise_type>::from_promise(*this) };
-			}
+			Task get_return_object() noexcept { return Task{ std::coroutine_handle<promise_type>::from_promise(*this) }; }
 
 			std::suspend_always initial_suspend() noexcept { return {}; }
 			FinalAwaiter final_suspend() noexcept { return {}; }
@@ -188,10 +179,7 @@ BEGIN_NS(ne)
 
 		void_t await_resume() const noexcept {}
 
-		void_t Resume() noexcept
-		{
-			if (handle && !handle.done()) handle.resume();
-		}
+		void_t Resume() noexcept { if (handle && !handle.done()) handle.resume(); }
 
 	public:
 		[[nodiscard]] bool_t IsReady() const noexcept { return !handle || handle.done(); }

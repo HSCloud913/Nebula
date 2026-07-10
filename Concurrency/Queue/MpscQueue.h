@@ -17,7 +17,8 @@ BEGIN_NS(ne::concurrency)
 		struct Node
 		{
 			Node() = default;
-			explicit Node(T _val) : value(std::move(_val)) {}
+			explicit Node(T _val)
+				: value(std::move(_val)) {}
 
 			std::atomic<Node*> next{ nullptr };
 			T value{};
@@ -72,4 +73,5 @@ BEGIN_NS(ne::concurrency)
 			return headNode->next.load(std::memory_order_acquire) == nullptr;
 		}
 	};
+
 END_NS

@@ -1,13 +1,14 @@
 # IoEngine Io 모듈 통합 작업
 
 ## 작업 환경
+
 - 저장소: https://github.com/HSCloud913/Nebula (main 브랜치)
 - 언어: C++23 / CMake 3.28
 - 플랫폼: Linux(epoll / io_uring) / Windows(IOCP)
 - 예외 금지(-fno-exceptions), RTTI 금지
 - 코드 스타일: 기존 Nebula 스타일 유지
   (PascalCase 메서드, _camelCase 매개변수, BEGIN_NS/END_NS,
-   [[nodiscard]], NEBULA_NON_COPYABLE_MOVABLE 등)
+  [[nodiscard]], NEBULA_NON_COPYABLE_MOVABLE 등)
 
 ---
 
@@ -38,6 +39,7 @@ Network 모듈은 엔진 구현체를 더 이상 소유하지 않고, `ne::io::I
 ```
 
 의존 방향:
+
 ```
 Network → Io → Base
 ```
@@ -86,10 +88,12 @@ Network/Test/test_timer_engine_integration.cpp → EpollEngine/IocpEngine 직접
 ## Step 1 — Io/Engine/IIoEngine.h 신규 작성
 
 ### 목적
+
 소켓 이벤트(Watch/Unwatch/RunOnce)와 파일 I/O 완료(파일 엔진 통합)를
 모두 처리할 수 있는 통합 인터페이스를 `ne::io` 네임스페이스에 정의한다.
 
 ### 신규 파일
+
 `Io/Engine/IIoEngine.h`
 
 ### 내용
@@ -157,6 +161,7 @@ Network/NetworkType.h의 socket_t 정의와 동일하게 맞춘다.
 ```
 
 ### 완료 기준
+
 - [ ] `Io/Engine/IIoEngine.h` 작성 완료
 - [ ] `ne::io::IIoEngine` 인터페이스가 `ne::network::IIoEngine`과 동일한 API 보유
 - [ ] `Io/IoType.h`에 socket_t 추가
@@ -166,10 +171,12 @@ Network/NetworkType.h의 socket_t 정의와 동일하게 맞춘다.
 ## Step 2 — EpollEngine을 Io/Engine/Epoll/로 이동
 
 ### 목적
+
 `Network/IoEngine/Epoll/EpollEngine`을 `Io/Engine/Epoll/`로 이동하고
 `ne::io::IIoEngine`을 상속하도록 변경한다.
 
 ### 파일 이동
+
 ```
 Network/IoEngine/Epoll/EpollEngine.h  →  Io/Engine/Epoll/EpollEngine.h
 Network/IoEngine/Epoll/EpollEngine.cpp → Io/Engine/Epoll/EpollEngine.cpp
@@ -204,6 +211,7 @@ END_NS
 - 내부 구현 로직은 변경 없음
 
 ### 완료 기준
+
 - [ ] `Io/Engine/Epoll/EpollEngine.h/.cpp` 작성
 - [ ] `ne::io::EpollEngine`이 `ne::io::IIoEngine` 상속
 - [ ] `Network/IoEngine/Epoll/` 디렉토리 삭제
@@ -213,6 +221,7 @@ END_NS
 ## Step 3 — IoUringEngine을 IIoEngine 상속으로 개편
 
 ### 목적
+
 기존 `Io/Engine/IoUring/IoUringEngine`은 파일 전용 독자 인터페이스였다.
 `ne::io::IIoEngine`을 상속하고 소켓 이벤트(Watch/Unwatch/RunOnce)도
 처리할 수 있는 통합 엔진으로 확장한다.
@@ -221,6 +230,7 @@ END_NS
 eventfd를 통해 이벤트 루프(RunOnce) 스레드에서만 resume이 발생하도록 한다.
 
 ### 수정 파일
+
 - `Io/Engine/IoUring/IoUringEngine.h`
 - `Io/Engine/IoUring/IoUringEngine.cpp`
 
@@ -323,6 +333,7 @@ END_NS
 #### IoUringEngine.cpp 핵심 변경 포인트
 
 생성자에서 epoll_fd와 completionEventFd 초기화:
+
 ```cpp
 epollFd = EpollFdHandle(::epoll_create1(EPOLL_CLOEXEC));
 completionEventFd = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
@@ -335,12 +346,14 @@ ev.data.fd = completionEventFd;
 ```
 
 Watch / Unwatch:
+
 ```cpp
 // EpollEngine.cpp의 Watch/Unwatch 로직을 그대로 이식
 // epollFd를 사용해 소켓 fd 등록/해제
 ```
 
 RunOnce:
+
 ```cpp
 ne::Result<void, ne::OsError> IoUringEngine::RunOnce(const int_t _timeoutMs)
 {
@@ -375,6 +388,7 @@ ne::Result<void, ne::OsError> IoUringEngine::RunOnce(const int_t _timeoutMs)
 ```
 
 ThreadLoop (io_uring 전용 스레드):
+
 ```cpp
 // io_uring CQE 완료 시 ctx->handle.resume() 대신 큐에 push + eventfd 신호
 completionQueue.Enqueue(ctx->handle);
@@ -383,6 +397,7 @@ uint64_t val = 1;
 ```
 
 DrainCompletions:
+
 ```cpp
 void IoUringEngine::DrainCompletions() noexcept
 {
@@ -396,6 +411,7 @@ void IoUringEngine::DrainCompletions() noexcept
 ```
 
 ### 완료 기준
+
 - [ ] `IoUringEngine`이 `ne::io::IIoEngine` 상속
 - [ ] Watch/Unwatch/RunOnce 구현 (소켓 이벤트 처리)
 - [ ] 파일 I/O 완료 resume이 RunOnce 스레드에서만 발생
@@ -406,7 +422,9 @@ void IoUringEngine::DrainCompletions() noexcept
 ## Step 4 — IocpEngine 통합 (Windows)
 
 ### 목적
+
 현재 Windows에는 엔진이 두 개다.
+
 - `Network/IoEngine/Iocp/IocpEngine` — 소켓 전용
 - `Io/Engine/Iocp/IocpEngine(FileIocpEngine)` — 파일 전용
 
@@ -414,6 +432,7 @@ void IoUringEngine::DrainCompletions() noexcept
 소켓 핸들과 파일 핸들 모두 같은 완료 포트에 등록해서 처리한다.
 
 ### 파일 처리
+
 ```
 Network/IoEngine/Iocp/IocpEngine.h/.cpp  삭제 (통합됨)
 Io/Engine/Iocp/IocpEngine.h/.cpp         전면 재작성 (통합본)
@@ -491,6 +510,7 @@ END_NS
 ```
 
 RunOnce에서 소켓 완료와 파일 완료를 completionKey로 구분:
+
 ```cpp
 ne::Result<void, ne::OsError> IocpEngine::RunOnce(const int_t _timeoutMs)
 {
@@ -531,6 +551,7 @@ GetQueuedCompletionStatus에서 처리되어 자연스럽게 이벤트 루프
 RunOnce에서 FileCompletionKey 처리만으로 충분하다.
 
 ### 완료 기준
+
 - [ ] `Io/Engine/Iocp/IocpEngine`이 `ne::io::IIoEngine` 상속
 - [ ] 소켓 이벤트(Watch/Unwatch/RunOnce)와 파일 I/O(SubmitRead/Write) 통합
 - [ ] `Network/IoEngine/Iocp/` 디렉토리 삭제
@@ -541,13 +562,16 @@ RunOnce에서 FileCompletionKey 처리만으로 충분하다.
 ## Step 5 — Io/Engine/Awaitable.h 통합
 
 ### 목적
+
 현재 두 곳에 Awaitable이 나뉘어 있다.
+
 - `Network/IoEngine/Awaitable.h` — RecvAwaitable / SendAwaitable (소켓)
 - `Io/Engine/Awaitable.h` — FileReadAwaitable / FileWriteAwaitable (파일)
 
 모두 `Io/Engine/Awaitable.h` 하나로 통합한다.
 
 ### 수정 파일
+
 `Io/Engine/Awaitable.h` (기존 파일 확장)
 
 ### 내용
@@ -602,6 +626,7 @@ END_NS
 `Network/IoEngine/Awaitable.h` 파일은 삭제한다.
 
 ### 완료 기준
+
 - [ ] `Io/Engine/Awaitable.h`에 RecvAwaitable / SendAwaitable 포함
 - [ ] `Network/IoEngine/Awaitable.h` 삭제
 - [ ] 네임스페이스가 `ne::io`로 통일됨
@@ -611,10 +636,12 @@ END_NS
 ## Step 6 — Network 모듈에서 IoEngine 제거 및 참조 교체
 
 ### 목적
+
 Network 모듈에서 IIoEngine 정의를 제거하고
 `Io/Engine/IIoEngine.h`의 `ne::io::IIoEngine`을 참조하도록 전환한다.
 
 ### 삭제 파일
+
 ```
 Network/IoEngine/IIoEngine.h         삭제
 Network/IoEngine/Awaitable.h         삭제 (Step 5에서 처리)
@@ -639,6 +666,7 @@ ne::network::SendAwaitable           → ne::io::SendAwaitable
 ```
 
 대상 파일:
+
 - `Network/Stream/PlainStream.h/.cpp`
 - `Network/Stream/Tls/TlsStream.h/.cpp`
 - `Network/Stream/Ssh/SshStream.h/.cpp`
@@ -688,6 +716,7 @@ target_link_libraries(NebulaIo PUBLIC
 ```
 
 ### 완료 기준
+
 - [ ] Network 모듈 내 `Network/IoEngine/` 디렉토리 완전 삭제
 - [ ] Network 전체 빌드 통과 (ne::io::IIoEngine 참조)
 - [ ] 기존 테스트 전체 회귀 없음
@@ -697,20 +726,24 @@ target_link_libraries(NebulaIo PUBLIC
 ## Step 7 — 테스트 정비 및 통합 검증
 
 ### Network/Test/test_timer_engine_integration.cpp 수정
+
 - `ne::network::EpollEngine` → `ne::io::EpollEngine`
 - `ne::network::IocpEngine` → `ne::io::IocpEngine`
 - include 경로 수정
 
 ### 신규 통합 테스트 작성
+
 `Io/Test/test_engine_integration.cpp`
 
 검증 시나리오:
+
 1. `EpollEngine` (또는 `IoUringEngine`)으로 소켓 이벤트와 파일 I/O를 동시에 처리
 2. `co_await AsyncFile::Read()` 완료 후 같은 코루틴에서 `co_await RecvAwaitable`을
    호출해도 race condition이 없음을 `thread_id` 비교로 검증
 3. 모든 `handle.resume()`이 `RunOnce()` 호출 스레드에서 발생함을 확인
 
 ### 완료 기준
+
 - [ ] 모든 기존 테스트 통과
 - [ ] 통합 테스트에서 resume 스레드 ID가 이벤트 루프 스레드와 일치
 - [ ] Linux: EpollEngine / IoUringEngine 양쪽 검증

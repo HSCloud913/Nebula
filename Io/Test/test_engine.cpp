@@ -23,8 +23,7 @@ namespace
 		{
 			Completion completions[8];
 			const int_t count = _engine.WaitCompletions(completions, 8, std::chrono::milliseconds(50));
-			for (int_t i = 0; i < count; ++i)
-				if (completions[i].userData == _tag) return completions[i].result;
+			for (int_t i = 0; i < count; ++i) if (completions[i].userData == _tag) return completions[i].result;
 		}
 
 		return -1;
@@ -42,9 +41,7 @@ namespace
 		address.sin_port = 0;
 
 		int_t length = static_cast<int_t>(sizeof(address));
-		if (::bind(listener, reinterpret_cast<sockaddr*>(&address), length) != 0 ||
-			::getsockname(listener, reinterpret_cast<sockaddr*>(&address), &length) != 0 ||
-			::listen(listener, 1) != 0)
+		if (::bind(listener, reinterpret_cast<sockaddr*>(&address), length) != 0 || ::getsockname(listener, reinterpret_cast<sockaddr*>(&address), &length) != 0 || ::listen(listener, 1) != 0)
 		{
 			::closesocket(listener);
 			return false;
@@ -65,7 +62,11 @@ namespace
 
 	struct WsaScope
 	{
-		WsaScope() noexcept { WSADATA data; ::WSAStartup(MAKEWORD(2, 2), &data); }
+		WsaScope() noexcept
+		{
+			WSADATA data;
+			::WSAStartup(MAKEWORD(2, 2), &data);
+		}
 		~WsaScope() noexcept { ::WSACleanup(); }
 	};
 }
@@ -84,15 +85,13 @@ TEST(IoEngineTest, FileWriteThenReadRoundTrip)
 	const std::size_t length = sizeof(payload) - 1;
 
 	int_t writeTag = 0;
-	Request write{ .op = OpCode::Write, .userData = &writeTag, .handle = reinterpret_cast<ulonglong_t>(file),
-	                 .buffer = const_cast<lpstr_t>(payload), .length = length, .offset = 0 };
+	Request write{ .op = OpCode::Write, .userData = &writeTag, .handle = reinterpret_cast<ulonglong_t>(file), .buffer = const_cast<lpstr_t>(payload), .length = length, .offset = 0 };
 	engine.Submit(write);
 	EXPECT_EQ(WaitFor(engine, &writeTag), static_cast<longlong_t>(length));
 
 	char readBuffer[64]{};
 	int_t readTag = 0;
-	Request read{ .op = OpCode::Read, .userData = &readTag, .handle = reinterpret_cast<ulonglong_t>(file),
-	                .buffer = readBuffer, .length = length, .offset = 0 };
+	Request read{ .op = OpCode::Read, .userData = &readTag, .handle = reinterpret_cast<ulonglong_t>(file), .buffer = readBuffer, .length = length, .offset = 0 };
 	engine.Submit(read);
 	EXPECT_EQ(WaitFor(engine, &readTag), static_cast<longlong_t>(length));
 	EXPECT_EQ(std::memcmp(readBuffer, payload, length), 0);
@@ -116,15 +115,13 @@ TEST(IoEngineTest, SocketSendThenReceiveRoundTrip)
 	const std::size_t length = sizeof(payload) - 1;
 
 	int_t sendTag = 0;
-	Request send{ .op = OpCode::Send, .userData = &sendTag, .handle = static_cast<ulonglong_t>(a),
-	                .buffer = const_cast<lpstr_t>(payload), .length = length };
+	Request send{ .op = OpCode::Send, .userData = &sendTag, .handle = static_cast<ulonglong_t>(a), .buffer = const_cast<lpstr_t>(payload), .length = length };
 	engine.Submit(send);
 	EXPECT_EQ(WaitFor(engine, &sendTag), static_cast<longlong_t>(length));
 
 	char receiveBuffer[64]{};
 	int_t receiveTag = 0;
-	Request receive{ .op = OpCode::Receive, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b),
-	                   .buffer = receiveBuffer, .length = length };
+	Request receive{ .op = OpCode::Receive, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b), .buffer = receiveBuffer, .length = length };
 	engine.Submit(receive);
 	EXPECT_EQ(WaitFor(engine, &receiveTag), static_cast<longlong_t>(length));
 	EXPECT_EQ(std::memcmp(receiveBuffer, payload, length), 0);
@@ -159,15 +156,13 @@ TEST(IoEngineTest, SendFileZeroCopyRoundTrip)
 	ASSERT_TRUE(MakeConnectedPair(a, b));
 
 	int_t sendFileTag = 0;
-	Request sendFile{ .op = OpCode::SendFile, .userData = &sendFileTag, .handle = static_cast<ulonglong_t>(a),
-	                    .length = length, .offset = 0, .auxHandle = reinterpret_cast<ulonglong_t>(sourceFile) };
+	Request sendFile{ .op = OpCode::SendFile, .userData = &sendFileTag, .handle = static_cast<ulonglong_t>(a), .length = length, .offset = 0, .auxHandle = reinterpret_cast<ulonglong_t>(sourceFile) };
 	engine.Submit(sendFile);
 	EXPECT_EQ(WaitFor(engine, &sendFileTag), static_cast<longlong_t>(length));
 
 	char receiveBuffer[64]{};
 	int_t receiveTag = 0;
-	Request receive{ .op = OpCode::Receive, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b),
-	                   .buffer = receiveBuffer, .length = length };
+	Request receive{ .op = OpCode::Receive, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b), .buffer = receiveBuffer, .length = length };
 	engine.Submit(receive);
 	EXPECT_EQ(WaitFor(engine, &receiveTag), static_cast<longlong_t>(length));
 	EXPECT_EQ(std::memcmp(receiveBuffer, payload, length), 0);
@@ -215,15 +210,13 @@ TEST(IoEngineTest, SendZeroCopyRegisteredBufferRoundTrip)
 	::closesocket(listener);
 
 	int_t sendTag = 0;
-	Request send{ .op = OpCode::SendZeroCopy, .userData = &sendTag, .handle = static_cast<ulonglong_t>(a),
-	                .buffer = region, .length = length, .bufferId = handle.value };
+	Request send{ .op = OpCode::SendZeroCopy, .userData = &sendTag, .handle = static_cast<ulonglong_t>(a), .buffer = region, .length = length, .bufferId = handle.value };
 	engine.Submit(send);
 	EXPECT_EQ(WaitFor(engine, &sendTag), static_cast<longlong_t>(length));
 
 	char receiveBuffer[64]{};
 	int_t receiveTag = 0;
-	Request receive{ .op = OpCode::Receive, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b),
-	                   .buffer = receiveBuffer, .length = length };
+	Request receive{ .op = OpCode::Receive, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b), .buffer = receiveBuffer, .length = length };
 	engine.Submit(receive);
 	EXPECT_EQ(WaitFor(engine, &receiveTag), static_cast<longlong_t>(length));
 	EXPECT_EQ(std::memcmp(receiveBuffer, region, length), 0);
@@ -256,8 +249,8 @@ TEST(IoEngineTest, WakeUnblocksWait)
 	const int_t count = engine.WaitCompletions(completions, 4, std::chrono::seconds(5));
 	const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
 
-	EXPECT_EQ(count, 0);                 // Wake 는 완료를 만들지 않는다(대기만 해제)
-	EXPECT_LT(elapsed, 1000);            // 5s 타임아웃까지 블록하지 않고 즉시 풀려야 한다
+	EXPECT_EQ(count, 0);      // Wake 는 완료를 만들지 않는다(대기만 해제)
+	EXPECT_LT(elapsed, 1000); // 5s 타임아웃까지 블록하지 않고 즉시 풀려야 한다
 }
 
 #elif defined(IS_POSIX)
@@ -270,10 +263,7 @@ TEST(IoEngineTest, WakeUnblocksWait)
 #include "Io/Engine/Epoll/EpollEngine.h"
 #include "Io/Engine/IoUring/IoUringEngine.h"
 
-using namespace ne;
-using namespace ne::io;
-
-namespace
+using namespace ne;using namespace ne::io;namespace
 {
 	longlong_t WaitFor(IEngine& _engine, void_t* _tag, const std::chrono::milliseconds _timeout = std::chrono::seconds(5))
 	{
@@ -282,8 +272,7 @@ namespace
 		{
 			Completion completions[8];
 			const int_t count = _engine.WaitCompletions(completions, 8, std::chrono::milliseconds(50));
-			for (int_t i = 0; i < count; ++i)
-				if (completions[i].userData == _tag) return completions[i].result;
+			for (int_t i = 0; i < count; ++i) if (completions[i].userData == _tag) return completions[i].result;
 		}
 		return -1;
 	}
@@ -299,15 +288,13 @@ namespace
 		const std::size_t length = sizeof(payload) - 1;
 
 		int_t writeTag = 0;
-		Request write{ .op = OpCode::Write, .userData = &writeTag, .handle = static_cast<ulonglong_t>(fd),
-		                 .buffer = const_cast<char*>(payload), .length = length, .offset = 0 };
+		Request write{ .op = OpCode::Write, .userData = &writeTag, .handle = static_cast<ulonglong_t>(fd), .buffer = const_cast<char*>(payload), .length = length, .offset = 0 };
 		_engine.Submit(write);
 		EXPECT_EQ(WaitFor(_engine, &writeTag), static_cast<longlong_t>(length));
 
 		char buffer[64]{};
 		int_t readTag = 0;
-		Request read{ .op = OpCode::Read, .userData = &readTag, .handle = static_cast<ulonglong_t>(fd),
-		                .buffer = buffer, .length = length, .offset = 0 };
+		Request read{ .op = OpCode::Read, .userData = &readTag, .handle = static_cast<ulonglong_t>(fd), .buffer = buffer, .length = length, .offset = 0 };
 		_engine.Submit(read);
 		EXPECT_EQ(WaitFor(_engine, &readTag), static_cast<longlong_t>(length));
 		EXPECT_EQ(std::memcmp(buffer, payload, length), 0);
@@ -328,15 +315,13 @@ namespace
 		const std::size_t length = sizeof(payload) - 1;
 
 		int_t sendTag = 0;
-		Request send{ .op = OpCode::Send, .userData = &sendTag, .handle = static_cast<ulonglong_t>(pair[0]),
-		                .buffer = const_cast<char*>(payload), .length = length };
+		Request send{ .op = OpCode::Send, .userData = &sendTag, .handle = static_cast<ulonglong_t>(pair[0]), .buffer = const_cast<char*>(payload), .length = length };
 		_engine.Submit(send);
 		EXPECT_EQ(WaitFor(_engine, &sendTag), static_cast<longlong_t>(length));
 
 		char buffer[64]{};
 		int_t receiveTag = 0;
-		Request receive{ .op = OpCode::Receive, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(pair[1]),
-		                   .buffer = buffer, .length = length };
+		Request receive{ .op = OpCode::Receive, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(pair[1]), .buffer = buffer, .length = length };
 		_engine.Submit(receive);
 		EXPECT_EQ(WaitFor(_engine, &receiveTag), static_cast<longlong_t>(length));
 		EXPECT_EQ(std::memcmp(buffer, payload, length), 0);
@@ -344,23 +329,39 @@ namespace
 		::close(pair[0]);
 		::close(pair[1]);
 	}
-}
-
-TEST(EpollEngineTest, FileRoundTrip)   { EpollEngine engine;   ASSERT_TRUE(engine.IsValid()); RunFileRoundTrip(engine); }
-TEST(EpollEngineTest, SocketRoundTrip) { EpollEngine engine;   ASSERT_TRUE(engine.IsValid()); RunSocketRoundTrip(engine); }
-TEST(EpollEngineTest, Supports)
+}TEST(EpollEngineTest, FileRoundTrip)
+{
+	EpollEngine engine;
+	ASSERT_TRUE(engine.IsValid());
+	RunFileRoundTrip(engine);
+}TEST(EpollEngineTest, SocketRoundTrip)
+{
+	EpollEngine engine;
+	ASSERT_TRUE(engine.IsValid());
+	RunSocketRoundTrip(engine);
+}TEST(EpollEngineTest, Supports)
 {
 	const EpollEngine engine;
 	EXPECT_TRUE(engine.Supports(Capability::SendFileZeroCopy));
-	EXPECT_TRUE(engine.Supports(Capability::SendMemZeroCopy)); // MSG_ZEROCOPY
+	EXPECT_TRUE(engine.Supports(Capability::SendMemZeroCopy));      // MSG_ZEROCOPY
 	EXPECT_FALSE(engine.Supports(Capability::RecvOverheadReduced)); // 등록 버퍼 없음(plain epoll)
 	EXPECT_FALSE(engine.Supports(Capability::RecvTrueZeroCopy));
 }
 
 // io_uring 은 커널(<5.1)/컨테이너 seccomp 로 막힐 수 있다 — 그 경우 SKIP(EpollEngine 폴백이 담당).
 // 전체 io_uring 런타임 검증은 `docker run --security-opt seccomp=unconfined` 로.
-TEST(IoUringEngineTest, FileRoundTrip)   { IoUringEngine engine; if (!engine.IsValid()) GTEST_SKIP() << "io_uring unavailable"; RunFileRoundTrip(engine); }
-TEST(IoUringEngineTest, SocketRoundTrip) { IoUringEngine engine; if (!engine.IsValid()) GTEST_SKIP() << "io_uring unavailable"; RunSocketRoundTrip(engine); }
+TEST(IoUringEngineTest, FileRoundTrip)
+{
+	IoUringEngine engine;
+	if (!engine.IsValid())
+		GTEST_SKIP() << "io_uring unavailable";
+	RunFileRoundTrip(engine);
+}TEST(IoUringEngineTest, SocketRoundTrip)
+{
+	IoUringEngine engine;
+	if (!engine.IsValid())
+		GTEST_SKIP() << "io_uring unavailable";
+	RunSocketRoundTrip(engine);
+}
 
 #endif // platform
-

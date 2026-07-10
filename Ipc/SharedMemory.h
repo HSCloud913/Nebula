@@ -10,25 +10,26 @@
 
 #include "Base/Type.h"
 
-BEGIN_NS(ne::ipc)
-	class SharedMemory final
-	{
-	public:
-		SharedMemory(string_view_t _name, std::size_t _size);
-		~SharedMemory();
+BEGIN_NS (ne::ipc)
 
-		SharedMemory(SharedMemory&&) noexcept;
-		SharedMemory& operator=(SharedMemory&&) noexcept;
+class SharedMemory final
+{
+public:
+	SharedMemory(string_view_t _name, std::size_t _size);
+	~SharedMemory();
 
-		NEBULA_NON_COPYABLE(SharedMemory)
+	SharedMemory(SharedMemory&&) noexcept;
+	SharedMemory& operator=(SharedMemory&&) noexcept;
 
-	private:
-		class Impl;
-		std::unique_ptr<Impl> impl;
+	NEBULA_NON_COPYABLE(SharedMemory)
 
-	public:
-		[[nodiscard]] std::span<std::byte> GetView() const noexcept;
-	};
+private:
+	class Impl;
+	std::unique_ptr<Impl> impl;
+
+public:
+	[[nodiscard]] std::span<std::byte> GetView() const noexcept;
+};
 
 END_NS
 

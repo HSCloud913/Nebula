@@ -15,14 +15,8 @@ private:
 	int value = 0;
 
 public:
-	[[nodiscard]] int GetValue() const
-	{
-		return value;
-	}
-	void SetValue(const int _value)
-	{
-		value = _value;
-	}
+	[[nodiscard]] int GetValue() const { return value; }
+	void SetValue(const int _value) { value = _value; }
 };
 
 
@@ -62,21 +56,12 @@ TEST(NebulaSingletonTest, ThreadSafe)
 	std::vector<std::thread> threads;
 	std::vector<ConcreteSingleton*> instances(count);
 
-	for (int i = 0; i < count; ++i)
-	{
-		threads.emplace_back([&, i]()
-		{
-			instances[i] = &ConcreteSingleton::GetInstance();
-		});
-	}
+	for (int i = 0; i < count; ++i) { threads.emplace_back([&, i]() { instances[i] = &ConcreteSingleton::GetInstance(); }); }
 
 	for (auto& thread : threads) thread.join();
 
 	// 모든 스레드가 동일한 인스턴스를 얻었는지 확인
-	for (int i = 1; i < count; ++i)
-	{
-		EXPECT_EQ(instances[i], instances[0]);
-	}
+	for (int i = 1; i < count; ++i) { EXPECT_EQ(instances[i], instances[0]); }
 }
 
 TEST(NebulaSingletonTest, ThreadSafeValue)

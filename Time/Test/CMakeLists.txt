@@ -6,8 +6,8 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(${PROJECT_NAME}
-        test.cpp
-        test_timerwheel.cpp
+               test.cpp
+               test_timerwheel.cpp
 )
 target_link_libraries(${PROJECT_NAME} PRIVATE NebulaBase NebulaTime GTest::gtest_main)
 

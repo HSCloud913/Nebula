@@ -61,15 +61,21 @@ BEGIN_NS(ne::io)
 		void_t await_resume() const noexcept {}
 	};
 
+	// 승리한 레이서가 outer(Timeout)를 깨우는 방법: 인라인 resume 이 아니라 반드시 Post 로 미룬다.
+	// 인라인으로 outer.resume() 하면 Timeout 이 그 자리에서 co_return 하며 지역변수인 이 racer
+	// Task(ioRacer/timerRacer)를 소멸(handle.destroy())시키는데, 그 racer 는 지금 이 스택에서
+	// 실행 중이므로(resume() 호출이 아직 반환 전) 복귀 시 이미 해제된 프레임을 건드려 use-after-free
+	// (힙 손상)가 된다. Post 는 outer 를 루프 큐에 넣어, 이 racer 스택이 완전히 풀린 뒤 다음
+	// DrainPosted 에서 안전하게 재개하게 한다 — 그때 racer 는 final_suspend 상태라 파괴가 안전하다.
 	template <typename T>
-	ne::Task<void_t> RaceIo(ne::Task<T> _task, RaceState& _state, std::optional<T>& _result)
+	ne::Task<void_t> RaceIo(Context& _context, ne::Task<T> _task, RaceState& _state, std::optional<T>& _result)
 	{
 		auto value = co_await std::move(_task);
 		if (!_state.isDecided)
 		{
 			_state.isDecided = true;
 			_result.emplace(std::move(value));
-			if (_state.outer) _state.outer.resume();
+			if (_state.outer) _context.Post(_state.outer);
 		}
 	}
 
@@ -79,8 +85,8 @@ BEGIN_NS(ne::io)
 		if (!_state.isDecided)
 		{
 			_state.isDecided = true;
-			_source.request_stop(); // I/O 쪽 stop_token 이 살아있으면 진행 중인 op 을 커널 취소 요청
-			if (_state.outer) _state.outer.resume();
+			_source.request_stop();                       // I/O 쪽 stop_token 이 살아있으면 진행 중인 op 을 커널 취소 요청
+			if (_state.outer) _context.Post(_state.outer); // 인라인 resume 금지 — 위 RaceIo 주석의 UAF 이유와 동일
 		}
 	}
 
@@ -89,8 +95,7 @@ BEGIN_NS(ne::io)
 	// _makeTask 는 값으로 받는다(코루틴 프레임에 참조를 남기면 안 되므로) — 람다가 캡처한
 	// 참조(소켓/버퍼 등)의 수명은 호출자가 이 Timeout() 완료까지 보장해야 한다.
 	template <typename Fn>
-	[[nodiscard]] ne::Task<std::optional<typename TaskValueType<std::invoke_result_t<Fn, std::stop_token>>::type>>
-	Timeout(Context& _context, std::chrono::milliseconds _duration, Fn _makeTask)
+	[[nodiscard]] ne::Task<std::optional<typename TaskValueType<std::invoke_result_t<Fn, std::stop_token>>::type>> Timeout(Context& _context, std::chrono::milliseconds _duration, Fn _makeTask)
 	{
 		using T = typename TaskValueType<std::invoke_result_t<Fn, std::stop_token>>::type;
 
@@ -98,7 +103,7 @@ BEGIN_NS(ne::io)
 		RaceState state{};
 		std::optional<T> result;
 
-		auto ioRacer = RaceIo<T>(_makeTask(source.get_token()), state, result);
+		auto ioRacer = RaceIo<T>(_context, _makeTask(source.get_token()), state, result);
 		ioRacer.Resume(); // I/O 제출까지 진행(첫 suspend 지점까지) — 동기 완료면 여기서 이미 decided=true
 
 		// 타이머는 I/O 가 이미 동기 완료된 게 아닐 때만 등록한다(불필요한 스케줄/취소 방지).

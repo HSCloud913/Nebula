@@ -9,28 +9,28 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 
 set(SOURCES
-        Pipe.cpp
-        SharedMemory.cpp
-        MessageQueue.cpp
-        Semaphore.cpp
+    Pipe.cpp
+    SharedMemory.cpp
+    MessageQueue.cpp
+    Semaphore.cpp
 )
 
 add_library(${PROJECT_NAME} STATIC ${SOURCES})
 target_include_directories(${PROJECT_NAME} PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}
-        ${CMAKE_SOURCE_DIR}/Base
-        ${CMAKE_SOURCE_DIR}/Util
-        ${CMAKE_SOURCE_DIR}/Io)
+                           ${CMAKE_CURRENT_SOURCE_DIR}
+                           ${CMAKE_SOURCE_DIR}/Base
+                           ${CMAKE_SOURCE_DIR}/Util
+                           ${CMAKE_SOURCE_DIR}/Io)
 target_link_libraries(${PROJECT_NAME} PUBLIC NebulaBase NebulaUtil NebulaIo)
 
 if (WIN32)
-    target_link_libraries(${PROJECT_NAME} PRIVATE Ws2_32 crypt32 bcrypt)
+	target_link_libraries(${PROJECT_NAME} PRIVATE Ws2_32 crypt32 bcrypt)
 else ()
-    find_package(OpenSSL REQUIRED)
-    target_link_libraries(${PROJECT_NAME} PRIVATE pthread rt)
+	find_package(OpenSSL REQUIRED)
+	target_link_libraries(${PROJECT_NAME} PRIVATE pthread rt)
 endif ()
 
 
-if(TARGET GTest::gtest_main AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Test)
-    add_subdirectory(Test)
-endif()
+if (TARGET GTest::gtest_main AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Test)
+	add_subdirectory(Test)
+endif ()

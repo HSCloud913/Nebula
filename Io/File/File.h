@@ -21,9 +21,12 @@ BEGIN_NS(ne::io)
 
 	enum class OpenMode : uint_t
 	{
-		Read,      // 기존 파일 읽기 전용 (OPEN_EXISTING / O_RDONLY)
-		Write,     // 생성·트렁케이트 후 쓰기 (CREATE_ALWAYS / O_WRONLY|O_CREAT|O_TRUNC)
-		ReadWrite, // 없으면 생성, 읽기+쓰기 (OPEN_ALWAYS / O_RDWR|O_CREAT)
+		Read,
+		// 기존 파일 읽기 전용 (OPEN_EXISTING / O_RDONLY)
+		Write,
+		// 생성·트렁케이트 후 쓰기 (CREATE_ALWAYS / O_WRONLY|O_CREAT|O_TRUNC)
+		ReadWrite,
+		// 없으면 생성, 읽기+쓰기 (OPEN_ALWAYS / O_RDWR|O_CREAT)
 	};
 
 	class File
@@ -32,7 +35,7 @@ BEGIN_NS(ne::io)
 #if defined(_WIN32)
 		using FileHandle = ne::Handle<file_t, decltype([](const file_t _handle) { ::CloseHandle(_handle); })>;
 #elif defined(IS_POSIX)
-		using FileHandle = ne::Handle<file_t, decltype([](const file_t _handle) { ::close(_handle); }), -1>;          // 무효값 = -1
+		using FileHandle = ne::Handle<file_t, decltype([](const file_t _handle) { ::close(_handle); }), -1>; // 무효값 = -1
 #endif
 
 	private:
@@ -45,8 +48,8 @@ BEGIN_NS(ne::io)
 		NEBULA_DEFAULT_MOVE(File)
 
 	private:
-		FileHandle  handle;
-		Context*  context;
+		FileHandle handle;
+		Context* context;
 
 	public:
 		[[nodiscard]] static IoResult<File> Open(Context& _context, string_view_t _path, OpenMode _mode);

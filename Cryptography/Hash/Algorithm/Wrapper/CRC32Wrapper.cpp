@@ -23,10 +23,7 @@ BEGIN_NS(ne::crypto)
 		do
 		{
 			bufferLength = fread(buffer, 1, 1024, _file);
-			if (bufferLength > 0)
-			{
-				crc32->AddBuffer(buffer, bufferLength);
-			}
+			if (bufferLength > 0) { crc32->AddBuffer(buffer, bufferLength); }
 		} while (bufferLength);
 
 		return std::move(StringFormat::Upper(crc32->Get()));

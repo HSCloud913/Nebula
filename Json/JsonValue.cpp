@@ -11,10 +11,7 @@ inline ne::bool_t strchk(ne::lpcstr_t _string, size_t _count)
 {
 	if (_count == 0) return false;
 
-	while (_count-- > 0)
-	{
-		if (*(_string++) == 0) return false;
-	}
+	while (_count-- > 0) { if (*(_string++) == 0) return false; }
 
 	return true;
 }
@@ -27,10 +24,7 @@ BEGIN_NS(ne)
 		if (!IsObject()) return {};
 
 		std::vector<string_t> keys;
-		for (const auto& value : AsObject())
-		{
-			keys.push_back(value.first);
-		}
+		for (const auto& value : AsObject()) { keys.push_back(value.first); }
 
 		return keys;
 	}
@@ -63,9 +57,7 @@ BEGIN_NS(ne)
 		{
 			(*_data) += 4;
 			return JsonValue(JsonType::NULL_DATA);
-		}
-
-		if ((strchk(*_data, 4) && strncasecmp(*_data, "true", 4) == 0) || (strchk(*_data, 5) && strncasecmp(*_data, "false", 5) == 0))
+		} if ((strchk(*_data, 4) && strncasecmp(*_data, "true", 4) == 0) || (strchk(*_data, 5) && strncasecmp(*_data, "false", 5) == 0))
 		{
 			bool_t isTrue = strncasecmp(*_data, "true", 4) == 0;
 			(*_data) += isTrue ? 4 : 5;
@@ -124,10 +116,7 @@ BEGIN_NS(ne)
 				if (**_data < '0' || **_data > '9') return {};
 
 				ulonglong_t exponential = ParseNumber(_data, isOverflow);
-				for (ulonglong_t i = 0; i < exponential; i++)
-				{
-					real = isNegativeExponential ? (real / 10.0) : (real * 10.0);
-				}
+				for (ulonglong_t i = 0; i < exponential; i++) { real = isNegativeExponential ? (real / 10.0) : (real * 10.0); }
 			}
 
 			if (isOverflow) return JsonValue("The value is out of range.");
@@ -270,56 +259,62 @@ BEGIN_NS(ne)
 
 				switch (**_data)
 				{
-				case '"': c = '"';
-					break;
-				case '\\': c = '\\';
-					break;
-				case '/': c = '/';
-					break;
-				case 'b': c = '\b';
-					break;
-				case 'f': c = '\f';
-					break;
-				case 'n': c = '\n';
-					break;
-				case 'r': c = '\r';
-					break;
-				case 't': c = '\t';
-					break;
-				case 'u':
-				{
-					if (!strchk(*_data, 5)) return false;
-
-					uint32_t codepoint = 0;
-					for (int_t i = 0; i < 4; i++)
+					case '"':
+						c = '"';
+						break;
+					case '\\':
+						c = '\\';
+						break;
+					case '/':
+						c = '/';
+						break;
+					case 'b':
+						c = '\b';
+						break;
+					case 'f':
+						c = '\f';
+						break;
+					case 'n':
+						c = '\n';
+						break;
+					case 'r':
+						c = '\r';
+						break;
+					case 't':
+						c = '\t';
+						break;
+					case 'u':
 					{
+						if (!strchk(*_data, 5)) return false;
+
+						uint32_t codepoint = 0;
+						for (int_t i = 0; i < 4; i++)
+						{
+							(*_data)++;
+							codepoint <<= 4;
+							if (**_data >= '0' && **_data <= '9') codepoint |= (**_data - '0');
+							else if (**_data >= 'A' && **_data <= 'F') codepoint |= 10 + (**_data - 'A');
+							else if (**_data >= 'a' && **_data <= 'f') codepoint |= 10 + (**_data - 'a');
+							else return false;
+						}
 						(*_data)++;
-						codepoint <<= 4;
-						if (**_data >= '0' && **_data <= '9') codepoint |= (**_data - '0');
-						else if (**_data >= 'A' && **_data <= 'F') codepoint |= 10 + (**_data - 'A');
-						else if (**_data >= 'a' && **_data <= 'f') codepoint |= 10 + (**_data - 'a');
-						else return false;
-					}
-					(*_data)++;
 
-					if (codepoint <= 0x7F)
-					{
-						_str += static_cast<char_t>(codepoint);
+						if (codepoint <= 0x7F) { _str += static_cast<char_t>(codepoint); }
+						else if (codepoint <= 0x7FF)
+						{
+							_str += static_cast<char_t>(0xC0 | (codepoint >> 6));
+							_str += static_cast<char_t>(0x80 | (codepoint & 0x3F));
+						}
+						else
+						{
+							_str += static_cast<char_t>(0xE0 | (codepoint >> 12));
+							_str += static_cast<char_t>(0x80 | ((codepoint >> 6) & 0x3F));
+							_str += static_cast<char_t>(0x80 | (codepoint & 0x3F));
+						}
+						continue;
 					}
-					else if (codepoint <= 0x7FF)
-					{
-						_str += static_cast<char_t>(0xC0 | (codepoint >> 6));
-						_str += static_cast<char_t>(0x80 | (codepoint & 0x3F));
-					}
-					else
-					{
-						_str += static_cast<char_t>(0xE0 | (codepoint >> 12));
-						_str += static_cast<char_t>(0x80 | ((codepoint >> 6) & 0x3F));
-						_str += static_cast<char_t>(0x80 | (codepoint & 0x3F));
-					}
-					continue;
-				}
-				default: return false;
+					default:
+						return false;
 				}
 			}
 			else if (c == '"')
@@ -327,10 +322,7 @@ BEGIN_NS(ne)
 				(*_data)++;
 				return true;
 			}
-			else if (static_cast<unsigned char>(c) < 0x20 && c != '\t')
-			{
-				return false;
-			}
+			else if (static_cast<unsigned char>(c) < 0x20 && c != '\t') { return false; }
 
 			_str += c;
 			(*_data)++;
@@ -341,10 +333,7 @@ BEGIN_NS(ne)
 
 
 
-	string_t JsonValue::Stringify(const bool_t _isPrettyPrint) const
-	{
-		return OnStringify(_isPrettyPrint ? 1 : 0);
-	}
+	string_t JsonValue::Stringify(const bool_t _isPrettyPrint) const { return OnStringify(_isPrettyPrint ? 1 : 0); }
 
 
 
@@ -381,10 +370,7 @@ BEGIN_NS(ne)
 				result += hex[(chr >> 4) & 0xF];
 				result += hex[chr & 0xF];
 			}
-			else
-			{
-				result += ch;
-			}
+			else { result += ch; }
 		}
 
 		result += "\"";
@@ -398,59 +384,67 @@ BEGIN_NS(ne)
 		const string_t indentStr = Indent(_indentDepth);
 		const string_t indentStr1 = Indent(indentDepth1);
 
- 		switch (type)
+		switch (type)
 		{
- 		case JsonType::INVALID: return "";
-		case JsonType::NULL_DATA: return "null";
-		case JsonType::BOOLEAN: return AsBool() ? "true" : "false";
-		case JsonType::STRING: return StringifyString(*AsString());
-		case JsonType::NUMBER: return std::to_string(AsNumber());
-		case JsonType::POSITIVE_NUMBER: return std::to_string(AsPositiveNumber());
-		case JsonType::LARGE_NUMBER: return std::to_string(AsLargeNumber());
-		case JsonType::POSITIVE_LARGE_NUMBER: return std::to_string(AsPositiveLargeNumber());
-		case JsonType::REAL:
-		{
-			if (std::isinf(AsReal()) || std::isnan(AsReal())) return "null";
-
-			std::stringstream ss;
-			ss.precision(15);
-			ss << AsReal();
-			return ss.str();
-		}
-
-		case JsonType::ARRAY:
-		{
-			auto result = _indentDepth ? "[\n" + indentStr1 : "[";
-
-			auto& array = AsArray();
-			for (auto iter = array.begin(); iter != array.end();)
+			case JsonType::INVALID:
+				return "";
+			case JsonType::NULL_DATA:
+				return "null";
+			case JsonType::BOOLEAN:
+				return AsBool() ? "true" : "false";
+			case JsonType::STRING:
+				return StringifyString(*AsString());
+			case JsonType::NUMBER:
+				return std::to_string(AsNumber());
+			case JsonType::POSITIVE_NUMBER:
+				return std::to_string(AsPositiveNumber());
+			case JsonType::LARGE_NUMBER:
+				return std::to_string(AsLargeNumber());
+			case JsonType::POSITIVE_LARGE_NUMBER:
+				return std::to_string(AsPositiveLargeNumber());
+			case JsonType::REAL:
 			{
-				result += (*iter).OnStringify(indentDepth1);
+				if (std::isinf(AsReal()) || std::isnan(AsReal())) return "null";
 
-				if (++iter != array.end()) result += ",";
+				std::stringstream ss;
+				ss.precision(15);
+				ss << AsReal();
+				return ss.str();
 			}
-			result += _indentDepth ? "\n" + indentStr + "]" : "]";
 
-			return result;
-		}
-
-		case JsonType::OBJECT:
-		{
-			auto result = _indentDepth ? "{\n" + indentStr1 : "{";
-
-			auto& object = AsObject();
-			for (auto iter = object.begin(); iter != object.end();)
+			case JsonType::ARRAY:
 			{
-				result += StringifyString((*iter).first);
-				result += ":";
-				result += (*iter).second.OnStringify(indentDepth1);
+				auto result = _indentDepth ? "[\n" + indentStr1 : "[";
 
-				if (++iter != object.end()) result += ",";
+				auto& array = AsArray();
+				for (auto iter = array.begin(); iter != array.end();)
+				{
+					result += (*iter).OnStringify(indentDepth1);
+
+					if (++iter != array.end()) result += ",";
+				}
+				result += _indentDepth ? "\n" + indentStr + "]" : "]";
+
+				return result;
 			}
-			result += _indentDepth ? "\n" + indentStr + "}" : "}";
 
-			return result;
-		}
+			case JsonType::OBJECT:
+			{
+				auto result = _indentDepth ? "{\n" + indentStr1 : "{";
+
+				auto& object = AsObject();
+				for (auto iter = object.begin(); iter != object.end();)
+				{
+					result += StringifyString((*iter).first);
+					result += ":";
+					result += (*iter).second.OnStringify(indentDepth1);
+
+					if (++iter != object.end()) result += ",";
+				}
+				result += _indentDepth ? "\n" + indentStr + "}" : "}";
+
+				return result;
+			}
 		}
 
 		return "";

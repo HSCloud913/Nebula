@@ -8,18 +8,9 @@ inline ne::uint_t SHA1_F1(const ne::uint_t _b, const ne::uint_t _c, const ne::ui
 {
 	return _d ^ (_b & (_c ^ _d)); // original: f = (b & c) | ((~b) & d);
 }
-inline ne::uint_t SHA1_F2(const ne::uint_t _b, const ne::uint_t _c, const ne::uint_t _d)
-{
-	return _b ^ _c ^ _d;
-}
-inline ne::uint_t SHA1_F3(const ne::uint_t _b, const ne::uint_t _c, const ne::uint_t _d)
-{
-	return (_b & _c) | (_b & _d) | (_c & _d);
-}
-inline ne::uint_t SHA1_Rotate(const ne::uint_t _a, const ne::uint_t _c)
-{
-	return (_a << _c) | (_a >> (32 - _c));
-}
+inline ne::uint_t SHA1_F2(const ne::uint_t _b, const ne::uint_t _c, const ne::uint_t _d) { return _b ^ _c ^ _d; }
+inline ne::uint_t SHA1_F3(const ne::uint_t _b, const ne::uint_t _c, const ne::uint_t _d) { return (_b & _c) | (_b & _d) | (_c & _d); }
+inline ne::uint_t SHA1_Rotate(const ne::uint_t _a, const ne::uint_t _c) { return (_a << _c) | (_a >> (32 - _c)); }
 
 
 
@@ -108,59 +99,29 @@ BEGIN_NS(ne::crypto)
 		paddedLength++;
 
 		size_t lower11Bits = paddedLength & 511;
-		if (lower11Bits <= 448)
-		{
-			paddedLength += 448 - lower11Bits;
-		}
-		else
-		{
-			paddedLength += 512 + 448 - lower11Bits;
-		}
+		if (lower11Bits <= 448) { paddedLength += 448 - lower11Bits; }
+		else { paddedLength += 512 + 448 - lower11Bits; }
 		paddedLength /= 8;
 
 		byte_t extra[Sha1BlockSize];
-		if (bufferSize < Sha1BlockSize)
-		{
-			buffer[bufferSize] = 128;
-		}
-		else
-		{
-			extra[0] = 128;
-		}
+		if (bufferSize < Sha1BlockSize) { buffer[bufferSize] = 128; }
+		else { extra[0] = 128; }
 
 		size_t i;
-		for (i = bufferSize + 1; i < Sha1BlockSize; i++)
-		{
-			buffer[i] = 0;
-		}
-		for (; i < paddedLength; i++)
-		{
-			extra[i - Sha1BlockSize] = 0;
-		}
+		for (i = bufferSize + 1; i < Sha1BlockSize; i++) { buffer[i] = 0; }
+		for (; i < paddedLength; i++) { extra[i - Sha1BlockSize] = 0; }
 
 		byte_t* addLength;
-		if (paddedLength < Sha1BlockSize)
-		{
-			addLength = buffer + paddedLength;
-		}
-		else
-		{
-			addLength = extra + paddedLength - Sha1BlockSize;
-		}
+		if (paddedLength < Sha1BlockSize) { addLength = buffer + paddedLength; }
+		else { addLength = extra + paddedLength - Sha1BlockSize; }
 
 		const ulonglong_t msgBits = 8 * (length + bufferSize);
-		for (int_t a = 0; a < 7; a++)
-		{
-			*addLength++ = static_cast<byte_t>((msgBits >> (56 - (a * 8))) & 0xFF);
-		}
+		for (int_t a = 0; a < 7; a++) { *addLength++ = static_cast<byte_t>((msgBits >> (56 - (a * 8))) & 0xFF); }
 
 		*addLength = static_cast<byte_t>(msgBits & 0xFF);
 
 		ProcessBlock(buffer);
-		if (paddedLength > Sha1BlockSize)
-		{
-			ProcessBlock(extra);
-		}
+		if (paddedLength > Sha1BlockSize) { ProcessBlock(extra); }
 	}
 
 	void_t SHA1::ProcessBlock(const void_t* _data)
@@ -168,15 +129,9 @@ BEGIN_NS(ne::crypto)
 		const auto data = static_cast<const uint_t*>(_data);
 		uint_t words[80] = { 0, };
 
-		for (int_t i = 0; i < 16; i++)
-		{
-			words[i] = (data[i] >> 24) | ((data[i] >> 8) & 0x0000FF00) | ((data[i] << 8) & 0x00FF0000) | (data[i] << 24);
-		}
+		for (int_t i = 0; i < 16; i++) { words[i] = (data[i] >> 24) | ((data[i] >> 8) & 0x0000FF00) | ((data[i] << 8) & 0x00FF0000) | (data[i] << 24); }
 
-		for (int_t i = 16; i < 80; i++)
-		{
-			words[i] = SHA1_Rotate(words[i - 3] ^ words[i - 8] ^ words[i - 14] ^ words[i - 16], 1);
-		}
+		for (int_t i = 16; i < 80; i++) { words[i] = SHA1_Rotate(words[i - 3] ^ words[i - 8] ^ words[i - 14] ^ words[i - 16], 1); }
 
 		uint_t a = sha1Value[0];
 		uint_t b = sha1Value[1];

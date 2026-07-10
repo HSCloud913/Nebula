@@ -14,45 +14,43 @@
 #include "Base/Error.h"
 #include "Base/Type.h"
 
-BEGIN_NS(ne::network::http_2)
-	enum class StreamState : uint8_t
-	{
-		Idle,
-		Open,
-		HalfClosedLocal,
-		HalfClosedRemote,
-		Closed,
-	};
+BEGIN_NS (ne::network::http_2)
 
-	// HTTP/2 스트림. IStream 위에서 동작하며 하나의 요청/응답 교환을 표현.
-	class Http2Stream
-	{
-	public:
-		explicit Http2Stream(uint32_t _id, ne::network::IStream& _transport) noexcept;
-		Http2Stream(Http2Stream&&) noexcept = default;
-		Http2Stream& operator=(Http2Stream&&) noexcept = default;
-		~Http2Stream() = default;
+enum class StreamState : uint8_t
+{
+	Idle,
+	Open,
+	HalfClosedLocal,
+	HalfClosedRemote,
+	Closed,
+};
 
-		NEBULA_NON_COPYABLE(Http2Stream)
+// HTTP/2 스트림. IStream 위에서 동작하며 하나의 요청/응답 교환을 표현.
+class Http2Stream
+{
+public:
+	explicit Http2Stream(uint32_t _id, ne::network::IStream& _transport) noexcept;
+	Http2Stream(Http2Stream&&) noexcept = default;
+	Http2Stream& operator=(Http2Stream&&) noexcept = default;
+	~Http2Stream() = default;
 
-	private:
-		uint32_t              streamId;
-		StreamState           state{ StreamState::Idle };
-		ne::network::IStream* transport;
+	NEBULA_NON_COPYABLE(Http2Stream)
 
-	public:
-		[[nodiscard]] uint32_t    Id()    const noexcept { return streamId; }
-		[[nodiscard]] StreamState State() const noexcept { return state; }
+private:
+	uint32_t streamId;
+	StreamState state{ StreamState::Idle };
+	ne::network::IStream* transport;
 
-	public:
-		[[nodiscard]] ne::Task<ne::Result<void, ne::HttpError>>
-		SendHeaders(const ne::network::HttpHeaders& _headers, bool_t _endStream,
-		            const std::vector<ne::byte_t>& _hpackBlock);
+public:
+	[[nodiscard]] uint32_t Id() const noexcept { return streamId; }
+	[[nodiscard]] StreamState State() const noexcept { return state; }
 
-		[[nodiscard]] ne::Task<ne::Result<void, ne::HttpError>>
-		SendData(std::span<const ne::byte_t> _data, bool_t _endStream);
+public:
+	[[nodiscard]] ne::Task<ne::Result<void, ne::HttpError>> SendHeaders(const ne::network::HttpHeaders& _headers, bool_t _endStream, const std::vector<ne::byte_t>& _hpackBlock);
 
-		[[nodiscard]] ne::Task<ne::Result<ne::network::HttpResponse, ne::HttpError>>
-		ReceiveResponse(const ne::network::HttpHeaders& _responseHeaders);
-	};
+	[[nodiscard]] ne::Task<ne::Result<void, ne::HttpError>> SendData(std::span<const ne::byte_t> _data, bool_t _endStream);
+
+	[[nodiscard]] ne::Task<ne::Result<ne::network::HttpResponse, ne::HttpError>> ReceiveResponse(const ne::network::HttpHeaders& _responseHeaders);
+};
+
 END_NS

@@ -7,7 +7,7 @@
 
 
 
-class NebulaJsonValueTest : public ::testing::Test
+class NebulaJsonValueTest :public ::testing::Test
 {
 protected:
 	ne::JsonValue jsonValue; // 테스트를 위한 JsonValue 객체
@@ -28,7 +28,8 @@ TEST_F(NebulaJsonValueTest, SerializeJson)
 	object["string_value"] = "Test string";
 
 	auto string = ne::Json::Stringify(object);
-	EXPECT_EQ(string, R"({"bool_value":false,"large_number_value":9223372036854775807,"number_value":-1,"positive_large_number_value":18446744073709551615,"positive_number_value":4294967295,"real_value":0.123456791043282,"string_value":"Test string"})");
+	EXPECT_EQ(string,
+			R"({"bool_value":false,"large_number_value":9223372036854775807,"number_value":-1,"positive_large_number_value":18446744073709551615,"positive_number_value":4294967295,"real_value":0.123456791043282,"string_value":"Test string"})");
 }
 
 // 유효한 JSON parse
@@ -61,7 +62,8 @@ TEST_F(NebulaJsonValueTest, SerializeAndParseJson)
 	object["string_value"] = "Test string";
 
 	auto string = ne::Json::Stringify(object);
-	EXPECT_EQ(string, R"({"bool_value":false,"large_number_value":9223372036854775807,"number_value":-1,"positive_large_number_value":18446744073709551615,"positive_number_value":4294967295,"real_value":0.123456791043282,"string_value":"Test string"})");
+	EXPECT_EQ(string,
+			R"({"bool_value":false,"large_number_value":9223372036854775807,"number_value":-1,"positive_large_number_value":18446744073709551615,"positive_number_value":4294967295,"real_value":0.123456791043282,"string_value":"Test string"})");
 
 	auto root = ne::Json::Parse(string.c_str());
 	EXPECT_TRUE(root.IsObject());
@@ -102,10 +104,7 @@ TEST_F(NebulaJsonValueTest, AddValue)
 	subObject["sub4"] = "Test sub string";
 
 	ne::JsonArray subArray;
-	for (ne::int_t i = 0; i < 3; i++)
-	{
-		subArray.emplace_back(subObject);
-	}
+	for (ne::int_t i = 0; i < 3; i++) { subArray.emplace_back(subObject); }
 
 	ne::JsonObject object;
 	object["bool_value"] = false;
@@ -199,7 +198,7 @@ TEST_F(NebulaJsonValueTest, Whitespace)
 
 	auto& subObject = parseObject["sub_object"].AsObject();
 	EXPECT_EQ(*subObject.at("foo").AsString(), "abc");
-	EXPECT_EQ(subObject.at("bar").AsReal(),  1.35e2);
+	EXPECT_EQ(subObject.at("bar").AsReal(), 1.35e2);
 
 	auto blahObject = subObject.at("blah").AsObject();
 	EXPECT_EQ(*blahObject.at("a").AsString(), "A");

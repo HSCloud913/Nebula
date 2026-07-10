@@ -56,88 +56,40 @@ BEGIN_NS(ne)
 
 
 
-	inline int_t Ascii::Properties(const int_t _value)
-	{
-		return (static_cast<uint_t>(_value) < 128 ? CharProperties[_value] : 0);
-	}
+	inline int_t Ascii::Properties(const int_t _value) { return (static_cast<uint_t>(_value) < 128 ? CharProperties[_value] : 0); }
 
-	inline bool_t Ascii::HasProperties(const int_t _value, const int_t _properties)
-	{
-		return (Properties(_value) & _properties) == _properties;
-	}
+	inline bool_t Ascii::HasProperties(const int_t _value, const int_t _properties) { return (Properties(_value) & _properties) == _properties; }
 
 
 
-	inline bool_t Ascii::IsAscii(const int_t _value)
-	{
-		return (static_cast<uint_t>(_value) < 128);
-	}
+	inline bool_t Ascii::IsAscii(const int_t _value) { return (static_cast<uint_t>(_value) < 128); }
 
-	inline bool_t Ascii::IsSpace(const int_t _value)
-	{
-		return HasProperties(_value, ACP_SPACE);
-	}
+	inline bool_t Ascii::IsSpace(const int_t _value) { return HasProperties(_value, ACP_SPACE); }
 
-	inline bool_t Ascii::IsPunct(const int_t _value)
-	{
-		return HasProperties(_value, ACP_PUNCT);
-	}
+	inline bool_t Ascii::IsPunct(const int_t _value) { return HasProperties(_value, ACP_PUNCT); }
 
-	inline bool_t Ascii::IsDigit(const int_t _value)
-	{
-		return HasProperties(_value, ACP_DIGIT);
-	}
+	inline bool_t Ascii::IsDigit(const int_t _value) { return HasProperties(_value, ACP_DIGIT); }
 
-	inline bool_t Ascii::IsHexDigit(const int_t _value)
-	{
-		return HasProperties(_value, ACP_HEXDIGIT);
-	}
+	inline bool_t Ascii::IsHexDigit(const int_t _value) { return HasProperties(_value, ACP_HEXDIGIT); }
 
-	inline bool_t Ascii::IsAlpha(const int_t _value)
-	{
-		return HasProperties(_value, ACP_ALPHA);
-	}
+	inline bool_t Ascii::IsAlpha(const int_t _value) { return HasProperties(_value, ACP_ALPHA); }
 
-	inline bool_t Ascii::IsAlphaNumeric(const int_t _value)
-	{
-		return (Properties(_value) & (ACP_ALPHA | ACP_DIGIT)) != 0;
-	}
+	inline bool_t Ascii::IsAlphaNumeric(const int_t _value) { return (Properties(_value) & (ACP_ALPHA | ACP_DIGIT)) != 0; }
 
-	inline bool_t Ascii::IsLower(const int_t _value)
-	{
-		return HasProperties(_value, ACP_LOWER);
-	}
+	inline bool_t Ascii::IsLower(const int_t _value) { return HasProperties(_value, ACP_LOWER); }
 
-	inline bool_t Ascii::IsUpper(const int_t _value)
-	{
-		return HasProperties(_value, ACP_UPPER);
-	}
+	inline bool_t Ascii::IsUpper(const int_t _value) { return HasProperties(_value, ACP_UPPER); }
 
-	inline bool_t Ascii::IsControl(const int_t _value)
-	{
-		return HasProperties(_value, ACP_CONTROL);
-	}
+	inline bool_t Ascii::IsControl(const int_t _value) { return HasProperties(_value, ACP_CONTROL); }
 
-	inline bool_t Ascii::IsGraph(const int_t _value)
-	{
-		return HasProperties(_value, ACP_GRAPH);
-	}
+	inline bool_t Ascii::IsGraph(const int_t _value) { return HasProperties(_value, ACP_GRAPH); }
 
-	inline bool_t Ascii::IsPrint(const int_t _value)
-	{
-		return HasProperties(_value, ACP_PRINT);
-	}
+	inline bool_t Ascii::IsPrint(const int_t _value) { return HasProperties(_value, ACP_PRINT); }
 
 
 
-	inline int_t Ascii::Lower(const int_t _value)
-	{
-		return IsUpper(_value) ? _value + 32 : _value;
-	}
+	inline int_t Ascii::Lower(const int_t _value) { return IsUpper(_value) ? _value + 32 : _value; }
 
-	inline int_t Ascii::Upper(const int_t _value)
-	{
-		return IsLower(_value) ? _value - 32 : _value;
-	}
+	inline int_t Ascii::Upper(const int_t _value) { return IsLower(_value) ? _value - 32 : _value; }
 
 END_NS

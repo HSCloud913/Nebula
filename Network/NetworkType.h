@@ -9,10 +9,7 @@
 #   include <winsock2.h>
 #   include <ws2tcpip.h>
 
-    BEGIN_NS(ne::network)
-        using socket_t = SOCKET;
-        inline constexpr socket_t InvalidSocket = INVALID_SOCKET;
-    END_NS
+BEGIN_NS (ne::network) using socket_t = SOCKET; inline constexpr socket_t InvalidSocket = INVALID_SOCKET; END_NS
 
 #elif defined(IS_POSIX)
 #   include <sys/socket.h>
@@ -22,9 +19,6 @@
 #   include <unistd.h>
 #   include <fcntl.h>
 
-    BEGIN_NS(ne::network)
-        using socket_t = int_t;
-        inline constexpr socket_t InvalidSocket = -1;
-    END_NS
+BEGIN_NS (ne::network) using socket_t = int_t; inline constexpr socket_t InvalidSocket = -1; END_NS
 
 #endif

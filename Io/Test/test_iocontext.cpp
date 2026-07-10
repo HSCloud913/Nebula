@@ -21,8 +21,8 @@ namespace
 	// (정식 Level 2 awaitable 은 이후 Phase 에서 도입. 여기선 Level 1 디스패치만 검증.)
 	struct SubmitAwaitable
 	{
-		Context&          context;
-		Request           request;
+		Context& context;
+		Request request;
 		CompletionHandler handler{};
 
 		[[nodiscard]] bool_t await_ready() const noexcept { return false; }
@@ -37,10 +37,7 @@ namespace
 		[[nodiscard]] longlong_t await_resume() const noexcept { return handler.result; }
 	};
 
-	ne::Task<longlong_t> SubmitOp(Context& _context, Request _request)
-	{
-		co_return co_await SubmitAwaitable{ _context, _request };
-	}
+	ne::Task<longlong_t> SubmitOp(Context& _context, Request _request) { co_return co_await SubmitAwaitable{ _context, _request }; }
 
 	// 자기 자신을 Post 해 루프에서 재개되는지 검증.
 	struct PostSelfAwaitable
@@ -63,8 +60,7 @@ namespace
 	{
 		_task.Resume();
 		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-		while (!_task.IsReady() && std::chrono::steady_clock::now() < deadline)
-			(void_t)_context.RunOnce(std::chrono::milliseconds{ 50 });
+		while (!_task.IsReady() && std::chrono::steady_clock::now() < deadline) (void_t)_context.RunOnce(std::chrono::milliseconds{ 50 });
 		return _task.await_resume();
 	}
 }
@@ -83,14 +79,12 @@ TEST(IoContextTest, DispatchesCompletionToCoroutine)
 	const char payload[] = "level1-iocontext-dispatch";
 	const std::size_t length = sizeof(payload) - 1;
 
-	Request write{ .op = OpCode::Write, .handle = reinterpret_cast<ulonglong_t>(file),
-	                 .buffer = const_cast<lpstr_t>(payload), .length = length, .offset = 0 };
+	Request write{ .op = OpCode::Write, .handle = reinterpret_cast<ulonglong_t>(file), .buffer = const_cast<lpstr_t>(payload), .length = length, .offset = 0 };
 	auto writeTask = SubmitOp(context, write);
 	EXPECT_EQ(DriveUntilReady(context, writeTask), static_cast<longlong_t>(length));
 
 	char buffer[64]{};
-	Request read{ .op = OpCode::Read, .handle = reinterpret_cast<ulonglong_t>(file),
-	                .buffer = buffer, .length = length, .offset = 0 };
+	Request read{ .op = OpCode::Read, .handle = reinterpret_cast<ulonglong_t>(file), .buffer = buffer, .length = length, .offset = 0 };
 	auto readTask = SubmitOp(context, read);
 	EXPECT_EQ(DriveUntilReady(context, readTask), static_cast<longlong_t>(length));
 	EXPECT_EQ(std::memcmp(buffer, payload, length), 0);
@@ -121,8 +115,7 @@ TEST(IoContextTest, TimerWheelIntegration)
 	(void_t)wheel.Schedule(std::chrono::milliseconds{ 50 }, [&] { fired.store(true, std::memory_order_release); });
 
 	const auto start = std::chrono::steady_clock::now();
-	while (!fired.load(std::memory_order_acquire) && std::chrono::steady_clock::now() - start < std::chrono::seconds(2))
-		(void_t)context.RunOnce(std::chrono::milliseconds{ -1 }); // 타이머가 유효 타임아웃을 만든다
+	while (!fired.load(std::memory_order_acquire) && std::chrono::steady_clock::now() - start < std::chrono::seconds(2)) (void_t)context.RunOnce(std::chrono::milliseconds{ -1 }); // 타이머가 유효 타임아웃을 만든다
 
 	EXPECT_TRUE(fired.load());
 	const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();

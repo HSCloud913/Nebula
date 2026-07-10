@@ -28,13 +28,7 @@ BEGIN_NS(ne)
 				arrayOutput[2] = ((arrayInput[1] & 0x0f) << 2) + ((arrayInput[2] & 0xc0) >> 6);
 				arrayOutput[3] = arrayInput[2] & 0x3f;
 
-				for (i = 0; (i < 4); i++)
-				{
-					if (pos < _bufferSize)
-					{
-						_buffer[pos++] = Base64String[arrayOutput[i]];
-					}
-				}
+				for (i = 0; (i < 4); i++) { if (pos < _bufferSize) { _buffer[pos++] = Base64String[arrayOutput[i]]; } }
 
 				i = 0;
 			}
@@ -42,31 +36,16 @@ BEGIN_NS(ne)
 
 		if (i)
 		{
-			for (int_t j = i; j < 3; j++)
-			{
-				arrayInput[j] = '\0';
-			}
+			for (int_t j = i; j < 3; j++) { arrayInput[j] = '\0'; }
 
 			arrayOutput[0] = (arrayInput[0] & 0xfc) >> 2;
 			arrayOutput[1] = ((arrayInput[0] & 0x03) << 4) + ((arrayInput[1] & 0xf0) >> 4);
 			arrayOutput[2] = ((arrayInput[1] & 0x0f) << 2) + ((arrayInput[2] & 0xc0) >> 6);
 			arrayOutput[3] = arrayInput[2] & 0x3f;
 
-			for (int_t j = 0; j < (i + 1); j++)
-			{
-				if (pos < _bufferSize)
-				{
-					_buffer[pos++] = Base64String[arrayOutput[j]];
-				}
-			}
+			for (int_t j = 0; j < (i + 1); j++) { if (pos < _bufferSize) { _buffer[pos++] = Base64String[arrayOutput[j]]; } }
 
-			while ((i++ < 3))
-			{
-				if (pos < _bufferSize)
-				{
-					_buffer[pos++] = '=';
-				}
-			}
+			while ((i++ < 3)) { if (pos < _bufferSize) { _buffer[pos++] = '='; } }
 		}
 	}
 
@@ -85,22 +64,13 @@ BEGIN_NS(ne)
 
 			if (i == 4)
 			{
-				for (i = 0; i < 4; i++)
-				{
-					arrayInput[i] = static_cast<byte_t>(Base64String.find(arrayInput[i]));
-				}
+				for (i = 0; i < 4; i++) { arrayInput[i] = static_cast<byte_t>(Base64String.find(arrayInput[i])); }
 
 				arrayOutput[0] = (arrayInput[0] << 2) + ((arrayInput[1] & 0x30) >> 4);
 				arrayOutput[1] = ((arrayInput[1] & 0xf) << 4) + ((arrayInput[2] & 0x3c) >> 2);
 				arrayOutput[2] = ((arrayInput[2] & 0x3) << 6) + arrayInput[3];
 
-				for (i = 0; (i < 3); i++)
-				{
-					if (pos < _bufferSize)
-					{
-						_buffer[pos++] = arrayOutput[i];
-					}
-				}
+				for (i = 0; (i < 3); i++) { if (pos < _bufferSize) { _buffer[pos++] = arrayOutput[i]; } }
 
 				i = 0;
 			}
@@ -108,27 +78,15 @@ BEGIN_NS(ne)
 
 		if (i)
 		{
-			for (size_t j = i; j < 4; j++)
-			{
-				arrayInput[j] = 0;
-			}
+			for (size_t j = i; j < 4; j++) { arrayInput[j] = 0; }
 
-			for (size_t j = 0; j < 4; j++)
-			{
-				arrayInput[j] = static_cast<byte_t>(Base64String.find(arrayInput[j]));
-			}
+			for (size_t j = 0; j < 4; j++) { arrayInput[j] = static_cast<byte_t>(Base64String.find(arrayInput[j])); }
 
 			arrayOutput[0] = (arrayInput[0] << 2) + ((arrayInput[1] & 0x30) >> 4);
 			arrayOutput[1] = ((arrayInput[1] & 0xf) << 4) + ((arrayInput[2] & 0x3c) >> 2);
 			arrayOutput[2] = ((arrayInput[2] & 0x3) << 6) + arrayInput[3];
 
-			for (size_t j = 0; j < (i - 1); j++)
-			{
-				if (pos < _bufferSize)
-				{
-					_buffer[pos++] = arrayOutput[j];
-				}
-			}
+			for (size_t j = 0; j < (i - 1); j++) { if (pos < _bufferSize) { _buffer[pos++] = arrayOutput[j]; } }
 		}
 	}
 
@@ -155,10 +113,7 @@ BEGIN_NS(ne)
 				arrayOutput[2] = ((arrayInput[1] & 0x0f) << 2) + ((arrayInput[2] & 0xc0) >> 6);
 				arrayOutput[3] = arrayInput[2] & 0x3f;
 
-				for (i = 0; (i < 4); i++)
-				{
-					encodeString += Base64String[arrayOutput[i]];
-				}
+				for (i = 0; (i < 4); i++) { encodeString += Base64String[arrayOutput[i]]; }
 
 				i = 0;
 			}
@@ -166,25 +121,16 @@ BEGIN_NS(ne)
 
 		if (i)
 		{
-			for (int_t j = i; j < 3; j++)
-			{
-				arrayInput[j] = '\0';
-			}
+			for (int_t j = i; j < 3; j++) { arrayInput[j] = '\0'; }
 
 			arrayOutput[0] = (arrayInput[0] & 0xfc) >> 2;
 			arrayOutput[1] = ((arrayInput[0] & 0x03) << 4) + ((arrayInput[1] & 0xf0) >> 4);
 			arrayOutput[2] = ((arrayInput[1] & 0x0f) << 2) + ((arrayInput[2] & 0xc0) >> 6);
 			arrayOutput[3] = arrayInput[2] & 0x3f;
 
-			for (int_t j = 0; j < (i + 1); j++)
-			{
-				encodeString += Base64String[arrayOutput[j]];
-			}
+			for (int_t j = 0; j < (i + 1); j++) { encodeString += Base64String[arrayOutput[j]]; }
 
-			while ((i++ < 3))
-			{
-				encodeString += '=';
-			}
+			while ((i++ < 3)) { encodeString += '='; }
 		}
 
 		return encodeString;
@@ -206,19 +152,13 @@ BEGIN_NS(ne)
 
 			if (i == 4)
 			{
-				for (i = 0; i < 4; i++)
-				{
-					byArrayInput[i] = static_cast<byte_t>(Base64String.find(byArrayInput[i]));
-				}
+				for (i = 0; i < 4; i++) { byArrayInput[i] = static_cast<byte_t>(Base64String.find(byArrayInput[i])); }
 
 				byArrayOutput[0] = (byArrayInput[0] << 2) + ((byArrayInput[1] & 0x30) >> 4);
 				byArrayOutput[1] = ((byArrayInput[1] & 0xf) << 4) + ((byArrayInput[2] & 0x3c) >> 2);
 				byArrayOutput[2] = ((byArrayInput[2] & 0x3) << 6) + byArrayInput[3];
 
-				for (i = 0; (i < 3); i++)
-				{
-					generalString += byArrayOutput[i];
-				}
+				for (i = 0; (i < 3); i++) { generalString += byArrayOutput[i]; }
 
 				i = 0;
 			}
@@ -226,24 +166,15 @@ BEGIN_NS(ne)
 
 		if (i)
 		{
-			for (size_t j = i; j < 4; j++)
-			{
-				byArrayInput[j] = 0;
-			}
+			for (size_t j = i; j < 4; j++) { byArrayInput[j] = 0; }
 
-			for (size_t j = 0; j < 4; j++)
-			{
-				byArrayInput[j] = static_cast<byte_t>(Base64String.find(byArrayInput[j]));
-			}
+			for (size_t j = 0; j < 4; j++) { byArrayInput[j] = static_cast<byte_t>(Base64String.find(byArrayInput[j])); }
 
 			byArrayOutput[0] = (byArrayInput[0] << 2) + ((byArrayInput[1] & 0x30) >> 4);
 			byArrayOutput[1] = ((byArrayInput[1] & 0xf) << 4) + ((byArrayInput[2] & 0x3c) >> 2);
 			byArrayOutput[2] = ((byArrayInput[2] & 0x3) << 6) + byArrayInput[3];
 
-			for (size_t j = 0; j < (i - 1); j++)
-			{
-				generalString += byArrayOutput[j];
-			}
+			for (size_t j = 0; j < (i - 1); j++) { generalString += byArrayOutput[j]; }
 		}
 
 		return generalString;

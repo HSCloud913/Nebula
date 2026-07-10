@@ -8,13 +8,19 @@ inline size_t GetBlockSize(const ne::crypto::HashType _type)
 {
 	switch (_type)
 	{
-	case ne::crypto::HashType::SHA2_384:
-	case ne::crypto::HashType::SHA2_512: return 128;
-	case ne::crypto::HashType::SHA3_224: return 144;
-	case ne::crypto::HashType::SHA3_256: return 136;
-	case ne::crypto::HashType::SHA3_384: return 104;
-	case ne::crypto::HashType::SHA3_512: return 72;
-	default: return 64;
+		case ne::crypto::HashType::SHA2_384:
+		case ne::crypto::HashType::SHA2_512:
+			return 128;
+		case ne::crypto::HashType::SHA3_224:
+			return 144;
+		case ne::crypto::HashType::SHA3_256:
+			return 136;
+		case ne::crypto::HashType::SHA3_384:
+			return 104;
+		case ne::crypto::HashType::SHA3_512:
+			return 72;
+		default:
+			return 64;
 	}
 }
 

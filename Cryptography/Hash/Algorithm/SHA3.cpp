@@ -4,26 +4,13 @@
 
 
 
-constexpr ne::ulonglong_t XorMasks[24] =
-{
-	0x0000000000000001ULL, 0x0000000000008082ULL, 0x800000000000808aULL,
-	0x8000000080008000ULL, 0x000000000000808bULL, 0x0000000080000001ULL,
-	0x8000000080008081ULL, 0x8000000000008009ULL, 0x000000000000008aULL,
-	0x0000000000000088ULL, 0x0000000080008009ULL, 0x000000008000000aULL,
-	0x000000008000808bULL, 0x800000000000008bULL, 0x8000000000008089ULL,
-	0x8000000000008003ULL, 0x8000000000008002ULL, 0x8000000000000080ULL,
-	0x000000000000800aULL, 0x800000008000000aULL, 0x8000000080008081ULL,
-	0x8000000000008080ULL, 0x0000000080000001ULL, 0x8000000080008008ULL
-};
+constexpr ne::ulonglong_t XorMasks[24] = { 0x0000000000000001ULL, 0x0000000000008082ULL, 0x800000000000808aULL, 0x8000000080008000ULL, 0x000000000000808bULL, 0x0000000080000001ULL,
+											0x8000000080008081ULL, 0x8000000000008009ULL, 0x000000000000008aULL, 0x0000000000000088ULL, 0x0000000080008009ULL, 0x000000008000000aULL,
+											0x000000008000808bULL, 0x800000000000008bULL, 0x8000000000008089ULL, 0x8000000000008003ULL, 0x8000000000008002ULL, 0x8000000000000080ULL,
+											0x000000000000800aULL, 0x800000008000000aULL, 0x8000000080008081ULL, 0x8000000000008080ULL, 0x0000000080000001ULL, 0x8000000080008008ULL };
 
-inline ne::ulonglong_t RotateLeft(const ne::ulonglong_t _x, const ne::byte_t _numBits)
-{
-	return (_x << _numBits) | (_x >> (64 - _numBits));
-}
-inline ne::uint_t Mod5(const ne::uint_t _x)
-{
-	return (_x < 5) ? _x : _x - 5;
-}
+inline ne::ulonglong_t RotateLeft(const ne::ulonglong_t _x, const ne::byte_t _numBits) { return (_x << _numBits) | (_x >> (64 - _numBits)); }
+inline ne::uint_t Mod5(const ne::uint_t _x) { return (_x < 5) ? _x : _x - 5; }
 
 
 
@@ -115,10 +102,7 @@ BEGIN_NS(ne::crypto)
 		size_t offset = bufferSize;
 		buffer[offset++] = 0x06;
 
-		while (offset < blockSize)
-		{
-			buffer[offset++] = 0;
-		}
+		while (offset < blockSize) { buffer[offset++] = 0; }
 
 		buffer[offset - 1] |= 0x80;
 
@@ -128,18 +112,12 @@ BEGIN_NS(ne::crypto)
 	void_t SHA3::ProcessBlock(const void_t* _data)
 	{
 		const auto data = static_cast<const ulonglong_t*>(_data);
-		for (uint_t i = 0; i < blockSize / 8; i++)
-		{
-			sha3Value[i] ^= data[i];
-		}
+		for (uint_t i = 0; i < blockSize / 8; i++) { sha3Value[i] ^= data[i]; }
 
 		for (uint_t round = 0; round < 24; round++)
 		{
 			ulonglong_t coefficients[5];
-			for (uint_t i = 0; i < 5; i++)
-			{
-				coefficients[i] = sha3Value[i] ^ sha3Value[i + 5] ^ sha3Value[i + 10] ^ sha3Value[i + 15] ^ sha3Value[i + 20];
-			}
+			for (uint_t i = 0; i < 5; i++) { coefficients[i] = sha3Value[i] ^ sha3Value[i + 5] ^ sha3Value[i + 10] ^ sha3Value[i + 15] ^ sha3Value[i + 20]; }
 
 			for (uint_t i = 0; i < 5; i++)
 			{
