@@ -24,7 +24,7 @@ BEGIN_NS(ne)
 
 		std::condition_variable conditionVariable;
 		std::mutex mutex;
-		bool_t isShutdown;
+		bool_t isShutdown{ false };
 
 	public:
 		template <typename F>

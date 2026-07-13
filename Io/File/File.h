@@ -21,11 +21,11 @@ BEGIN_NS(ne::io)
 
 	enum class OpenMode : uint_t
 	{
-		Read,
+		READ,
 		// 기존 파일 읽기 전용 (OPEN_EXISTING / O_RDONLY)
-		Write,
+		WRITE,
 		// 생성·트렁케이트 후 쓰기 (CREATE_ALWAYS / O_WRONLY|O_CREAT|O_TRUNC)
-		ReadWrite,
+		READ_WRITE,
 		// 없으면 생성, 읽기+쓰기 (OPEN_ALWAYS / O_RDWR|O_CREAT)
 	};
 

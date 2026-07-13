@@ -90,13 +90,13 @@ TEST(WsaPollEngineTest, FileWriteThenReadRoundTrip)
 	const std::size_t length = sizeof(payload) - 1;
 
 	int_t writeTag = 0;
-	Request write{ .op = OpCode::Write, .userData = &writeTag, .handle = reinterpret_cast<ulonglong_t>(file), .buffer = const_cast<lpstr_t>(payload), .length = length, .offset = 0 };
+	Request write{ .op = OpCode::WRITE, .userData = &writeTag, .handle = reinterpret_cast<ulonglong_t>(file), .buffer = const_cast<lpstr_t>(payload), .length = length, .offset = 0 };
 	engine.Submit(write);
 	EXPECT_EQ(WaitFor(engine, &writeTag), static_cast<longlong_t>(length));
 
 	char readBuffer[64]{};
 	int_t readTag = 0;
-	Request read{ .op = OpCode::Read, .userData = &readTag, .handle = reinterpret_cast<ulonglong_t>(file), .buffer = readBuffer, .length = length, .offset = 0 };
+	Request read{ .op = OpCode::READ, .userData = &readTag, .handle = reinterpret_cast<ulonglong_t>(file), .buffer = readBuffer, .length = length, .offset = 0 };
 	engine.Submit(read);
 	EXPECT_EQ(WaitFor(engine, &readTag), static_cast<longlong_t>(length));
 	EXPECT_EQ(std::memcmp(readBuffer, payload, length), 0);
@@ -120,13 +120,13 @@ TEST(WsaPollEngineTest, SocketSendThenReceiveRoundTrip)
 	const std::size_t length = sizeof(payload) - 1;
 
 	int_t sendTag = 0;
-	Request send{ .op = OpCode::Send, .userData = &sendTag, .handle = static_cast<ulonglong_t>(a), .buffer = const_cast<lpstr_t>(payload), .length = length };
+	Request send{ .op = OpCode::SEND, .userData = &sendTag, .handle = static_cast<ulonglong_t>(a), .buffer = const_cast<lpstr_t>(payload), .length = length };
 	engine.Submit(send);
 	EXPECT_EQ(WaitFor(engine, &sendTag), static_cast<longlong_t>(length));
 
 	char receiveBuffer[64]{};
 	int_t receiveTag = 0;
-	Request receive{ .op = OpCode::Receive, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b), .buffer = receiveBuffer, .length = length };
+	Request receive{ .op = OpCode::RECEIVE, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b), .buffer = receiveBuffer, .length = length };
 	engine.Submit(receive);
 	EXPECT_EQ(WaitFor(engine, &receiveTag), static_cast<longlong_t>(length));
 	EXPECT_EQ(std::memcmp(receiveBuffer, payload, length), 0);
@@ -161,13 +161,13 @@ TEST(WsaPollEngineTest, SendFileZeroCopyRoundTrip)
 	ASSERT_TRUE(MakeConnectedPair(a, b));
 
 	int_t sendFileTag = 0;
-	Request sendFile{ .op = OpCode::SendFile, .userData = &sendFileTag, .handle = static_cast<ulonglong_t>(a), .length = length, .offset = 0, .auxHandle = reinterpret_cast<ulonglong_t>(sourceFile) };
+	Request sendFile{ .op = OpCode::SEND_FILE, .userData = &sendFileTag, .handle = static_cast<ulonglong_t>(a), .length = length, .offset = 0, .auxHandle = reinterpret_cast<ulonglong_t>(sourceFile) };
 	engine.Submit(sendFile);
 	EXPECT_EQ(WaitFor(engine, &sendFileTag), static_cast<longlong_t>(length));
 
 	char receiveBuffer[64]{};
 	int_t receiveTag = 0;
-	Request receive{ .op = OpCode::Receive, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b), .buffer = receiveBuffer, .length = length };
+	Request receive{ .op = OpCode::RECEIVE, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b), .buffer = receiveBuffer, .length = length };
 	engine.Submit(receive);
 	EXPECT_EQ(WaitFor(engine, &receiveTag), static_cast<longlong_t>(length));
 	EXPECT_EQ(std::memcmp(receiveBuffer, payload, length), 0);
@@ -196,7 +196,7 @@ TEST(WsaPollEngineTest, AcceptConnectRoundTrip)
 	ASSERT_EQ(::bind(listener, reinterpret_cast<sockaddr*>(&address), addressLength), 0);
 	ASSERT_EQ(::getsockname(listener, reinterpret_cast<sockaddr*>(&address), &addressLength), 0);
 	ASSERT_EQ(::listen(listener, 1), 0);
-	// Perform() 의 OpCode::Accept 는 그대로 ::accept() 를 호출한다 — listener 가 블로킹 상태면
+	// Perform() 의 OpCode::ACCEPT 는 그대로 ::accept() 를 호출한다 — listener 가 블로킹 상태면
 	// 연결이 들어올 때까지 Submit() 안에서 동기 블록되어(테스트 스레드가 아직 Connect 도
 	// 제출하지 못한 시점) 데드락에 빠진다. epoll/io_uring 도 동일 계약이라 논블로킹 소켓
 	// 사용은 상위(Socket/AsyncListener) 계층의 책임 — 엔진 직접 테스트에서도 재현해야 한다.
@@ -209,11 +209,11 @@ TEST(WsaPollEngineTest, AcceptConnectRoundTrip)
 	::ioctlsocket(client, FIONBIO, &nonBlocking);
 
 	int_t acceptTag = 0;
-	Request accept{ .op = OpCode::Accept, .userData = &acceptTag, .handle = static_cast<ulonglong_t>(listener) };
+	Request accept{ .op = OpCode::ACCEPT, .userData = &acceptTag, .handle = static_cast<ulonglong_t>(listener) };
 	engine.Submit(accept);
 
 	int_t connectTag = 0;
-	Request connect{ .op = OpCode::Connect, .userData = &connectTag, .handle = static_cast<ulonglong_t>(client), .address = &address, .addressLength = addressLength };
+	Request connect{ .op = OpCode::CONNECT, .userData = &connectTag, .handle = static_cast<ulonglong_t>(client), .address = &address, .addressLength = addressLength };
 	engine.Submit(connect);
 
 	// accept/connect 는 동시에 제출돼 같은 WaitCompletions 배치에서 함께 완료될 수 있다 —
@@ -254,10 +254,10 @@ TEST(WsaPollEngineTest, AcceptConnectRoundTrip)
 TEST(WsaPollEngineTest, SupportsMatrix)
 {
 	const WsaPollEngine engine;
-	EXPECT_TRUE(engine.Supports(Capability::SendFileZeroCopy));
-	EXPECT_FALSE(engine.Supports(Capability::SendMemZeroCopy));
-	EXPECT_FALSE(engine.Supports(Capability::RecvOverheadReduced));
-	EXPECT_FALSE(engine.Supports(Capability::RecvTrueZeroCopy));
+	EXPECT_TRUE(engine.Supports(Capability::SEND_FILE_ZERO_COPY));
+	EXPECT_FALSE(engine.Supports(Capability::SEND_MEM_ZERO_COPY));
+	EXPECT_FALSE(engine.Supports(Capability::RECEIVE_OVERHEAD_REDUCED));
+	EXPECT_FALSE(engine.Supports(Capability::RECEIVE_TRUE_ZERO_COPY));
 }
 
 // ── Wake 가 완료 없이도 대기를 즉시 해제 ──

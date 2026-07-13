@@ -47,7 +47,7 @@ TEST(RSATest, BigIntPrimality)
 
 TEST(RSATest, RoundTrip_RSA512)
 {
-	auto kp = crypto::RSAKeyPair::Generate(crypto::RSAKeyPair::KeySize::RSA512);
+	auto kp = crypto::RSAKeyPair::Generate(crypto::RSAKeyPair::KeySize::RSA_512);
 	const ne::string_t msg = "Hello RSA";
 
 	ne::string_t ct = kp.publicKey.Encrypt(ne::string_t(msg));
@@ -58,7 +58,7 @@ TEST(RSATest, RoundTrip_RSA512)
 
 TEST(RSATest, DISABLED_RoundTrip_RSA1024)
 {
-	auto kp = crypto::RSAKeyPair::Generate(crypto::RSAKeyPair::KeySize::RSA1024);
+	auto kp = crypto::RSAKeyPair::Generate(crypto::RSAKeyPair::KeySize::RSA_1024);
 	const ne::string_t msg = "Nebula RSA-1024 test message.";
 
 	ne::string_t ct = kp.publicKey.Encrypt(ne::string_t(msg));
@@ -69,13 +69,13 @@ TEST(RSATest, DISABLED_RoundTrip_RSA1024)
 
 TEST(RSATest, KeyPairHasExpectedExponent)
 {
-	auto kp = crypto::RSAKeyPair::Generate(crypto::RSAKeyPair::KeySize::RSA512);
+	auto kp = crypto::RSAKeyPair::Generate(crypto::RSAKeyPair::KeySize::RSA_512);
 	EXPECT_EQ(kp.publicKey.e, "10001");
 }
 
 TEST(RSATest, EncryptDifferentEachTime)
 {
-	auto kp = crypto::RSAKeyPair::Generate(crypto::RSAKeyPair::KeySize::RSA512);
+	auto kp = crypto::RSAKeyPair::Generate(crypto::RSAKeyPair::KeySize::RSA_512);
 	const ne::string_t msg = "test";
 
 	ne::string_t ct1 = kp.publicKey.Encrypt(ne::string_t(msg));

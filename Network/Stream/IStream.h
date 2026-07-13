@@ -20,16 +20,17 @@ BEGIN_NS (ne::network)
 class IStream
 {
 public:
+	IStream() = default;
 	virtual ~IStream() = default;
 
 	NEBULA_NON_COPYABLE_MOVABLE(IStream)
 
 public:
 	virtual Task<ne::io::IoResult<void_t>> Handshake(std::stop_token = {}) = 0;
-	virtual Task<ne::io::IoResult<size_t>> Send(ne::io::BufferView, std::stop_token = {}) = 0;
-	virtual Task<ne::io::IoResult<size_t>> Sendv(const ne::io::BufferChain&, std::stop_token = {}) = 0;
 	virtual Task<ne::io::IoResult<size_t>> Receive(ne::io::BufferView, std::stop_token = {}) = 0;
 	virtual Task<ne::io::IoResult<size_t>> Receivev(const ne::io::BufferChain&, std::stop_token = {}) = 0;
+	virtual Task<ne::io::IoResult<size_t>> Send(ne::io::BufferView, std::stop_token = {}) = 0;
+	virtual Task<ne::io::IoResult<size_t>> Sendv(const ne::io::BufferChain&, std::stop_token = {}) = 0;
 	virtual Task<ne::io::IoResult<void_t>> Shutdown() = 0;
 	virtual Result<void_t, ne::io::IoError> Close() = 0;
 

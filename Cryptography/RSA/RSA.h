@@ -22,15 +22,15 @@ BEGIN_NS(ne::crypto)
 	{
 		enum class KeySize
 		{
-			RSA512  = 512,
-			RSA1024 = 1024,
-			RSA2048 = 2048
+			RSA_512  = 512,
+			RSA_1024 = 1024,
+			RSA_2048 = 2048
 		};
 
 		RSAPublicKey publicKey;
 		RSAPrivateKey privateKey;
 
-		[[nodiscard]] static RSAKeyPair Generate(KeySize _keySize = KeySize::RSA2048);
+		[[nodiscard]] static RSAKeyPair Generate(KeySize _keySize = KeySize::RSA_2048);
 	};
 
 END_NS

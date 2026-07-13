@@ -16,8 +16,8 @@ BEGIN_NS (ne::network::ftp)
 
 enum class TransferType : uint8_t
 {
-	Ascii,
-	Binary
+	ASCII,
+	BINARY
 };
 
 struct FtpEntry

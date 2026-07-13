@@ -230,13 +230,13 @@ BEGIN_NS(ne::io)
 	{
 		switch (_capability)
 		{
-			case Capability::SendFileZeroCopy:
+			case Capability::SEND_FILE_ZERO_COPY:
 				return true; // TransmitFile(SendFile) — RIO 없이도 가능
-			case Capability::SendMemZeroCopy:
+			case Capability::SEND_MEM_ZERO_COPY:
 				return false; // RIO 는 IOCP 완료 모델 전제라 reactor 폴백에서 불가
-			case Capability::RecvOverheadReduced:
+			case Capability::RECEIVE_OVERHEAD_REDUCED:
 				return false; // 등록 버퍼 없음
-			case Capability::RecvTrueZeroCopy:
+			case Capability::RECEIVE_TRUE_ZERO_COPY:
 				return false;
 		}
 
@@ -246,7 +246,7 @@ BEGIN_NS(ne::io)
 	{
 		// 파일 scatter/gather — IocpEngine 과 동일한 이유(임의 크기 세그먼트는 ReadFileScatter/
 		// WriteFileGather 의 페이지 정렬 요구를 못 맞춤)로 세그먼트별 순차 동기 처리 후 합산한다.
-		if (_request.chain != nullptr && (_request.op == OpCode::Read || _request.op == OpCode::Write))
+		if (_request.chain != nullptr && (_request.op == OpCode::READ || _request.op == OpCode::WRITE))
 		{
 			const HANDLE handle = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(_request.handle));
 			longlong_t total = 0;
@@ -259,7 +259,7 @@ BEGIN_NS(ne::io)
 				overlapped.OffsetHigh = static_cast<ulong_t>(currentOffset >> 32);
 
 				ulong_t transferred = 0;
-				bool_t isOk = (_request.op == OpCode::Read) ? ::ReadFile(handle, segment.ptr, static_cast<ulong_t>(segment.length), &transferred, &overlapped) :
+				bool_t isOk = (_request.op == OpCode::READ) ? ::ReadFile(handle, segment.ptr, static_cast<ulong_t>(segment.length), &transferred, &overlapped) :
 								::WriteFile(handle, segment.ptr, static_cast<ulong_t>(segment.length), &transferred, &overlapped);
 				if (!isOk && ::GetLastError() == ERROR_IO_PENDING) { isOk = ::GetOverlappedResult(handle, &overlapped, &transferred, TRUE); }
 
@@ -281,7 +281,7 @@ BEGIN_NS(ne::io)
 
 		switch (_request.op)
 		{
-			case OpCode::Read:
+			case OpCode::READ:
 			{
 				const HANDLE handle = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(_request.handle));
 
@@ -307,7 +307,7 @@ BEGIN_NS(ne::io)
 				}
 				break;
 			}
-			case OpCode::Write:
+			case OpCode::WRITE:
 			{
 				const HANDLE handle = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(_request.handle));
 
@@ -333,7 +333,7 @@ BEGIN_NS(ne::io)
 				}
 				break;
 			}
-			case OpCode::Receive:
+			case OpCode::RECEIVE:
 			{
 				const SOCKET socket = _request.handle;
 
@@ -361,7 +361,7 @@ BEGIN_NS(ne::io)
 				}
 				break;
 			}
-			case OpCode::Send:
+			case OpCode::SEND:
 			{
 				const SOCKET socket = _request.handle;
 
@@ -388,7 +388,7 @@ BEGIN_NS(ne::io)
 				}
 				break;
 			}
-			case OpCode::SendTo: // 비연결형(UDP) 송신 — address/addressLength 가 매 호출 목적지
+			case OpCode::SEND_TO: // 비연결형(UDP) 송신 — address/addressLength 가 매 호출 목적지
 			{
 				const SOCKET socket = _request.handle;
 				const int_t bytes = ::sendto(socket,
@@ -404,7 +404,7 @@ BEGIN_NS(ne::io)
 				}
 				break;
 			}
-			case OpCode::ReceiveFrom: // 비연결형(UDP) 수신 — fromAddress/fromAddressLength 에 발신자 주소를 채움
+			case OpCode::RECEIVE_FROM: // 비연결형(UDP) 수신 — fromAddress/fromAddressLength 에 발신자 주소를 채움
 			{
 				const SOCKET socket = _request.handle;
 				const int_t bytes = ::recvfrom(socket,
@@ -420,15 +420,15 @@ BEGIN_NS(ne::io)
 				}
 				break;
 			}
-			case OpCode::WaitReadable:
-			case OpCode::WaitWritable:
+			case OpCode::WAIT_READABLE:
+			case OpCode::WAIT_WRITABLE:
 				// readiness 대기 — 실제 recv/send 없이 POLLRDNORM/POLLWRNORM(IsWriteDirection 이 방향 결정)만
 				// 기다린다. 첫 호출은 미준비로 등록(false), WSAPoll 이 준비를 알린 재수행에서 ready(result 0)로 완료.
 				if (!_isRetry) return false;
 				_result = 0;
 				return true;
 
-			case OpCode::Accept:
+			case OpCode::ACCEPT:
 			{
 				const SOCKET socket = _request.handle;
 
@@ -440,7 +440,7 @@ BEGIN_NS(ne::io)
 				}
 				break;
 			}
-			case OpCode::Connect:
+			case OpCode::CONNECT:
 			{
 				const SOCKET socket = _request.handle;
 
@@ -462,7 +462,7 @@ BEGIN_NS(ne::io)
 				if (::WSAGetLastError() == WSAEWOULDBLOCK) return false; // POLLOUT 대기
 				break;
 			}
-			case OpCode::SendFile: // handle=목적지 소켓(Send 계열과 동일), auxHandle=원본 파일.
+			case OpCode::SEND_FILE: // handle=목적지 소켓(Send 계열과 동일), auxHandle=원본 파일.
 			{                      // IocpEngine 과 달리 여기엔 IOCP 가 없어 stray completion 위험이 없으므로
 				// 로컬 OVERLAPPED 로 바로 동기 완료시킬 수 있다(File Read/Write 와 동일 패턴).
 				const SOCKET destSocket = static_cast<SOCKET>(_request.handle);
@@ -489,7 +489,7 @@ BEGIN_NS(ne::io)
 				}
 				break;
 			}
-			case OpCode::ReadFixed: // Windows 에 파일 등록 버퍼 개념이 없다 — 일반 Read 와 동일, bufferId 무시
+			case OpCode::READ_FIXED: // Windows 에 파일 등록 버퍼 개념이 없다 — 일반 Read 와 동일, bufferId 무시
 			{
 				const HANDLE handle = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(_request.handle));
 
@@ -515,7 +515,7 @@ BEGIN_NS(ne::io)
 				}
 				break;
 			}
-			case OpCode::WriteFixed: // 위와 동일
+			case OpCode::WRITE_FIXED: // 위와 동일
 			{
 				const HANDLE handle = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(_request.handle));
 
@@ -555,7 +555,7 @@ BEGIN_NS(ne::io)
 	}
 	bool_t WsaPollEngine::IsWriteDirection(const OpCode _op) noexcept
 	{
-		return _op == OpCode::Write || _op == OpCode::Send || _op == OpCode::Connect || _op == OpCode::WriteFixed || _op == OpCode::SendFile || _op == OpCode::SendTo || _op == OpCode::WaitWritable;
+		return _op == OpCode::WRITE || _op == OpCode::SEND || _op == OpCode::CONNECT || _op == OpCode::WRITE_FIXED || _op == OpCode::SEND_FILE || _op == OpCode::SEND_TO || _op == OpCode::WAIT_WRITABLE;
 	}
 	void_t WsaPollEngine::ProcessCancels()
 	{

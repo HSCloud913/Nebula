@@ -58,6 +58,7 @@ BEGIN_NS(ne::io)
 		{
 			std::size_t total = 0;
 			for (const auto& [ptr, length] : segments) total += length;
+
 			return total;
 		}
 
@@ -67,6 +68,7 @@ BEGIN_NS(ne::io)
 			std::vector<iovec> v;
 			v.reserve(segments.size());
 			for (const auto& segment : segments) v.push_back({ segment.ptr, segment.length });
+
 			return v;
 		}
 #endif

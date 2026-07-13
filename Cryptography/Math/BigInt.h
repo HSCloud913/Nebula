@@ -36,7 +36,7 @@ BEGIN_NS(ne::crypto)
 		BigInt& operator-=(const BigInt& _other);
 
 	public:
-		void_t Trim();
+		void_t Trim() { while (d.size() > 1 && d.back() == 0) d.pop_back(); }
 
 		[[nodiscard]] string_t ToHex() const;
 		[[nodiscard]] string_t ToBytes(size_t _minLength = 0) const; // big-endian, zero-padded to minLen

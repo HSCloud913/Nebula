@@ -5,17 +5,18 @@
 #include "Io/Context/Context.h"
 
 #include <cassert>
-#include <limits>
 #include "Time/Timer/TimerWheel.h"
 
+
+
 BEGIN_NS(ne::io)
-	Context::Context(IEngine& _engine) noexcept
+	Context::Context(IEngine& _engine, ne::time::TimerWheel* _timerWheel) noexcept
 		: engine(_engine)
-		, timerWheel(static_cast<ne::time::TimerWheel*>(nullptr)) {}
+		, timerWheel(_timerWheel) {}
 
 
 
-	void_t Context::Run()
+	void_t Context::Start()
 	{
 		// Run() 이 실제로 이 줄에 도달하기 전에 다른 스레드가 이미 Stop() 을 호출했다면(예:
 		// ContextPool 이 워커 스레드를 스폰하자마자 곧바로 Stop() 하는 경합), 아래
@@ -28,6 +29,17 @@ BEGIN_NS(ne::io)
 		// 무기한 대기 — 완료/타이머/Post(Wake) 중 하나가 루프를 깨운다.
 		while (isRunning.load(std::memory_order_acquire)) (void_t)RunOnce(std::chrono::milliseconds{ -1 });
 	}
+
+	void_t Context::Stop() noexcept
+	{
+		// running 이 이미 false 였다면(즉 이 Stop() 이 Run() 보다 먼저 도착) stopRequested 를 세워
+		// 그 다음 Run() 진입이 곧바로 반환하게 한다 — 그렇지 않으면 평범한 실행 중 정지이므로
+		// running 을 내리는 것만으로 루프가 다음 iteration 에서 빠져나온다.
+		if (!isRunning.exchange(false, std::memory_order_acq_rel)) isStopRequested.store(true, std::memory_order_release);
+
+		engine.Wake();
+	}
+
 
 	bool_t Context::RunOnce(const std::chrono::milliseconds _timeout)
 	{
@@ -64,14 +76,12 @@ BEGIN_NS(ne::io)
 		engine.Wake(); // 대기 중인 루프를 깨워 DrainPosted 가 즉시 돌게 한다
 	}
 
-	void_t Context::Stop() noexcept
-	{
-		// running 이 이미 false 였다면(즉 이 Stop() 이 Run() 보다 먼저 도착) stopRequested 를 세워
-		// 그 다음 Run() 진입이 곧바로 반환하게 한다 — 그렇지 않으면 평범한 실행 중 정지이므로
-		// running 을 내리는 것만으로 루프가 다음 iteration 에서 빠져나온다.
-		if (!isRunning.exchange(false, std::memory_order_acq_rel)) isStopRequested.store(true, std::memory_order_release);
 
-		engine.Wake();
+
+	ne::time::Awaitable Context::SleepFor(const std::chrono::milliseconds _duration) const noexcept
+	{
+		assert(timerWheel != nullptr && "Context::SleepFor requires SetTimerWheel() before use");
+		return ne::time::SleepFor(*timerWheel, _duration);
 	}
 
 
@@ -89,12 +99,6 @@ BEGIN_NS(ne::io)
 		return _timeout;
 	}
 
-	ne::time::Awaitable Context::SleepFor(const std::chrono::milliseconds _duration) const noexcept
-	{
-		assert(timerWheel != nullptr && "Context::SleepFor requires SetTimerWheel() before use");
-		return ne::time::SleepFor(*timerWheel, _duration);
-	}
-
 	void_t Context::DrainPosted()
 	{
 		std::vector<std::coroutine_handle<>> pending;
@@ -103,7 +107,10 @@ BEGIN_NS(ne::io)
 			pending.swap(postedHandles);
 		}
 
-		for (const std::coroutine_handle<> handle : pending) if (handle && !handle.done()) handle.resume();
+		for (const std::coroutine_handle<> handle : pending)
+		{
+			if (handle && !handle.done()) handle.resume();
+		}
 	}
 
 END_NS

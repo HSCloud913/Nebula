@@ -25,10 +25,10 @@
 #include "Base/Type.h"
 #include "Io/Engine/IEngine.h"
 
-namespace ne::time
-{
+BEGIN_NS(ne::time)
 	class TimerWheel;
-}
+
+END_NS
 
 BEGIN_NS(ne::io)
 	class Context;
@@ -36,12 +36,12 @@ BEGIN_NS(ne::io)
 	class ContextPool
 	{
 	public:
-		NEBULA_NON_COPYABLE_MOVABLE(ContextPool)
-
 		// _size 워커 수. 0 이면 hardware_concurrency(그마저 0 이면 1)로 결정한다. 생성 시점에
 		// 워커별 엔진/Context/TimerWheel 을 만들어 두며, 스레드는 Start() 에서 스폰한다.
 		explicit ContextPool(std::size_t _size = 0);
 		~ContextPool();
+
+		NEBULA_NON_COPYABLE_MOVABLE(ContextPool)
 
 	private:
 		// 하나의 실행 단위. 멤버 선언 순서 = 파괴 역순 의존성: thread 가 가장 먼저 파괴돼야 하고
@@ -65,12 +65,11 @@ BEGIN_NS(ne::io)
 		// 모든 Context 를 Stop() 하고 워커 스레드를 join 한다. 이미 정지 상태면 no-op. 소멸자가 호출한다.
 		void_t Stop();
 
+	public:
 		// 다음 Context 를 round-robin 으로 고른다 — 새 연결을 워커에 고르게 배정하는 용도.
 		[[nodiscard]] Context& Acquire() noexcept;
 		// 인덱스로 특정 워커의 Context 를 얻는다(전용 acceptor 배치 등). _index < Size() 여야 한다.
-		[[nodiscard]] Context& At(std::size_t _index) noexcept;
-
-	public:
+		[[nodiscard]] Context& At(const std::size_t _index) const noexcept { return *workers[_index].context; }
 		[[nodiscard]] std::size_t Size() const noexcept { return workers.size(); }
 		[[nodiscard]] bool_t IsRunning() const noexcept { return isRunning; }
 	};

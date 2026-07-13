@@ -17,17 +17,17 @@ BEGIN_NS (ne::network)
 // 맞는 주소만 받아들인다 (BSD 소켓 API 자체가 socket() 호출 시 패밀리를 고정하기 때문).
 enum class AddressFamily : uint8_t
 {
-	IPv4,
-	IPv6,
+	IPV4,
+	IPV6,
 };
 
-// 소켓 생성 옵션 (비트플래그). 기본 None 은 현행 동작(::socket).
+// 소켓 생성 옵션 (비트플래그). 기본 NONE 은 현행 동작(::socket).
 enum class SocketCreateFlags : uint32_t
 {
-	None = 0,
+	NONE = 0,
 	// Windows: WSA_FLAG_REGISTERED_IO 로 생성해 RIO(RIORegisterBuffer/RIOCreateRequestQueue)를 쓸 수 있게 한다.
 	// POSIX: no-op — io_uring registered buffer 는 소켓 생성 플래그가 필요 없다.
-	RegisteredIo = 1u << 0,
+	REGISTERED_IO = 1u << 0,
 };
 
 [[nodiscard]] constexpr SocketCreateFlags operator|(const SocketCreateFlags _a, const SocketCreateFlags _b) noexcept { return static_cast<SocketCreateFlags>(static_cast<uint32_t>(_a) | static_cast<uint32_t>(_b)); }
@@ -56,12 +56,12 @@ private:
 	#endif
 
 	SocketHandle handle;
-	AddressFamily family{ AddressFamily::IPv4 };
+	AddressFamily family{ AddressFamily::IPV4 };
 	int_t type{};
 	int_t protocol{};
 
 public:
-	[[nodiscard]] static Result<Socket, OsError> Create(AddressFamily _family, int_t _type, int_t _protocol, SocketCreateFlags _flags = SocketCreateFlags::None);
+	[[nodiscard]] static Result<Socket, OsError> Create(AddressFamily _family, int_t _type, int_t _protocol, SocketCreateFlags _flags = SocketCreateFlags::NONE);
 
 	// _address 가 IPv4/IPv6 리터럴이면 파싱만으로, 호스트명이면 DNS 조회로 패밀리를 추정.
 	// Create 에 넘길 패밀리를 미리 정하는 용도 — 실제 주소 해석은 Bind/Connect 가
@@ -86,7 +86,7 @@ public: /* Client */
 	// non-blocking connect — 후보별로 SetNonBlocking(true) 후 connect() 를 시도하고,
 	// EINPROGRESS/WSAEWOULDBLOCK 이면 엔진의 Watch(Write|Error) 로 완료를 기다린 뒤
 	// SO_ERROR 로 성공/실패를 확정한다. DNS 워커 스레드를 connect 완료까지 붙잡지 않는다.
-	[[nodiscard]] ne::Task<ne::Result<void, ne::OsError>> Connect(string_view_t _address, uint16_t _port, ne::io::IIoEngine& _engine);
+	[[nodiscard]] ne::Task<ne::Result<void, ne::OsError>> Connect(string_view_t _address, uint16_t _port, ne::io::IEngine& _engine);
 
 public: /* Server */
 	[[nodiscard]] ne::Task<ne::Result<void, ne::OsError>> Bind(string_view_t _address, uint16_t _port);
@@ -111,7 +111,7 @@ private:
 	// candidates 를 순서대로 non-blocking connect 시도 — 각 후보에 대해 SetNonBlocking(true) 후
 	// connect() 를 걸고, EINPROGRESS/WSAEWOULDBLOCK 이면 _engine 으로 완료를 기다린 뒤
 	// SO_ERROR 로 성공/실패를 확정한다. 실패하면 다음 후보로(소켓 재생성) 넘어간다.
-	[[nodiscard]] ne::Task<ne::Result<void, ne::OsError>> ConnectResolvedAsync(const std::vector<sockaddr_storage>& _candidates, ne::io::IIoEngine& _engine);
+	[[nodiscard]] ne::Task<ne::Result<void, ne::OsError>> ConnectResolvedAsync(const std::vector<sockaddr_storage>& _candidates, ne::io::IEngine& _engine);
 
 public:
 	[[nodiscard]] socket_t Handle() const noexcept { return handle.Get(); }

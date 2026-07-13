@@ -179,13 +179,13 @@ BEGIN_NS(ne::io)
 	{
 		switch (_capability)
 		{
-			case Capability::SendFileZeroCopy:
+			case Capability::SEND_FILE_ZERO_COPY:
 				return true; // sendfile(2)
-			case Capability::SendMemZeroCopy:
+			case Capability::SEND_MEM_ZERO_COPY:
 				return true; // MSG_ZEROCOPY
-			case Capability::RecvOverheadReduced:
+			case Capability::RECEIVE_OVERHEAD_REDUCED:
 				return false; // 등록 버퍼 없음(plain epoll, io_uring 아님)
-			case Capability::RecvTrueZeroCopy:
+			case Capability::RECEIVE_TRUE_ZERO_COPY:
 				return false; // TCP_ZEROCOPY_RECEIVE 는 후속
 		}
 
@@ -193,8 +193,8 @@ BEGIN_NS(ne::io)
 	}
 	bool_t EpollEngine::IsWriteDirection(const OpCode _op) noexcept
 	{
-		return _op == OpCode::Write || _op == OpCode::Send || _op == OpCode::Connect || _op == OpCode::WriteFixed || _op == OpCode::SendZeroCopy || _op == OpCode::SendFile || _op == OpCode::SendTo ||
-				_op == OpCode::WaitWritable;
+		return _op == OpCode::WRITE || _op == OpCode::SEND || _op == OpCode::CONNECT || _op == OpCode::WRITE_FIXED || _op == OpCode::SEND_ZERO_COPY || _op == OpCode::SEND_FILE || _op == OpCode::SEND_TO ||
+				_op == OpCode::WAIT_WRITABLE;
 	}
 	bool_t EpollEngine::Perform(const Request& _request, const bool_t _isRetry, longlong_t& _result) noexcept
 	{
@@ -202,7 +202,7 @@ BEGIN_NS(ne::io)
 
 		switch (_request.op)
 		{
-			case OpCode::Read:
+			case OpCode::READ:
 			{
 				if (_request.chain != nullptr)
 				{
@@ -224,7 +224,7 @@ BEGIN_NS(ne::io)
 				}
 				break;
 			}
-			case OpCode::Write:
+			case OpCode::WRITE:
 			{
 				if (_request.chain != nullptr)
 				{
@@ -246,7 +246,7 @@ BEGIN_NS(ne::io)
 				}
 				break;
 			}
-			case OpCode::Receive:
+			case OpCode::RECEIVE:
 			{
 				if (_request.chain != nullptr)
 				{
@@ -273,7 +273,7 @@ BEGIN_NS(ne::io)
 				}
 				break;
 			}
-			case OpCode::Send:
+			case OpCode::SEND:
 			{
 				if (_request.chain != nullptr)
 				{
@@ -300,7 +300,7 @@ BEGIN_NS(ne::io)
 				}
 				break;
 			}
-			case OpCode::SendTo: // 비연결형(UDP) 송신 — address/addressLength 가 매 호출 목적지
+			case OpCode::SEND_TO: // 비연결형(UDP) 송신 — address/addressLength 가 매 호출 목적지
 			{
 				const ssize_t bytes = ::sendto(fd, _request.buffer, _request.length, 0, static_cast<const sockaddr*>(_request.address), static_cast<socklen_t>(_request.addressLength));
 				if (bytes >= 0)
@@ -310,7 +310,7 @@ BEGIN_NS(ne::io)
 				}
 				break;
 			}
-			case OpCode::ReceiveFrom: // 비연결형(UDP) 수신 — fromAddress/fromAddressLength 에 발신자 주소를 채움
+			case OpCode::RECEIVE_FROM: // 비연결형(UDP) 수신 — fromAddress/fromAddressLength 에 발신자 주소를 채움
 			{
 				socklen_t fromLength = _request.fromAddressLength ? static_cast<socklen_t>(*_request.fromAddressLength) : 0;
 				const ssize_t bytes = ::recvfrom(fd, _request.buffer, _request.length, 0, static_cast<sockaddr*>(_request.fromAddress), &fromLength);
@@ -322,7 +322,7 @@ BEGIN_NS(ne::io)
 				}
 				break;
 			}
-			case OpCode::ReadFixed: // 등록 버퍼 지원 없음(plain epoll) — 일반 read 로 폴백, bufferId 무시
+			case OpCode::READ_FIXED: // 등록 버퍼 지원 없음(plain epoll) — 일반 read 로 폴백, bufferId 무시
 			{
 				const ssize_t bytes = ::pread(fd, _request.buffer, _request.length, static_cast<off_t>(_request.offset));
 				if (bytes >= 0)
@@ -332,7 +332,7 @@ BEGIN_NS(ne::io)
 				}
 				break;
 			}
-			case OpCode::WriteFixed: // 위와 동일
+			case OpCode::WRITE_FIXED: // 위와 동일
 			{
 				const ssize_t bytes = ::pwrite(fd, _request.buffer, _request.length, static_cast<off_t>(_request.offset));
 				if (bytes >= 0)
@@ -342,7 +342,7 @@ BEGIN_NS(ne::io)
 				}
 				break;
 			}
-			case OpCode::SendZeroCopy: // MSG_ZEROCOPY — 버퍼 등록 불필요(opportunistic). 재사용 안전성(완료 통지)은
+			case OpCode::SEND_ZERO_COPY: // MSG_ZEROCOPY — 버퍼 등록 불필요(opportunistic). 재사용 안전성(완료 통지)은
 			{                          // 이 구현에서 추적하지 않음 — 호출자가 데이터가 실제 전송될 때까지 버퍼를 살려둘 것.
 				const ssize_t bytes = ::send(fd, _request.buffer, _request.length, MSG_ZEROCOPY);
 				if (bytes >= 0)
@@ -352,7 +352,7 @@ BEGIN_NS(ne::io)
 				}
 				break;
 			}
-			case OpCode::SendFile: // handle=목적지 소켓(Send 계열과 동일), auxHandle=원본 파일
+			case OpCode::SEND_FILE: // handle=목적지 소켓(Send 계열과 동일), auxHandle=원본 파일
 			{
 				off_t offset = static_cast<off_t>(_request.offset);
 
@@ -364,15 +364,15 @@ BEGIN_NS(ne::io)
 				}
 				break;
 			}
-			case OpCode::WaitReadable:
-			case OpCode::WaitWritable:
+			case OpCode::WAIT_READABLE:
+			case OpCode::WAIT_WRITABLE:
 				// readiness 대기 — 실제 read/write 없이 EPOLLIN/EPOLLOUT(IsWriteDirection 이 방향 결정)만 기다린다.
 				// 첫 호출은 미준비로 등록(false), epoll 이 준비를 알린 재수행에서 ready(result 0)로 완료.
 				if (!_isRetry) return false;
 				_result = 0;
 				return true;
 
-			case OpCode::Accept:
+			case OpCode::ACCEPT:
 			{
 				const int_t accepted = ::accept(fd, nullptr, nullptr);
 				if (accepted >= 0)
@@ -382,7 +382,7 @@ BEGIN_NS(ne::io)
 				}
 				break;
 			}
-			case OpCode::Connect:
+			case OpCode::CONNECT:
 			{
 				if (_isRetry)
 				{

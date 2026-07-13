@@ -24,25 +24,26 @@ BEGIN_NS(ne::io)
 	// BufferPool::Acquire() 가 돌려주는 슬롯 — 소멸 시 자동으로 풀에 반환된다(RAII).
 	class BufferPoolSlot
 	{
-	private:
 		friend class BufferPool;
-		BufferPoolSlot(BufferPool& _pool, const std::size_t _index, const BufferView _view) noexcept
+
+	private:
+		BufferPoolSlot(BufferPool& _pool, const BufferView _view, const std::size_t _index) noexcept
 			: pool(&_pool)
-			, index(_index)
-			, view(_view) {}
+			, view(_view)
+			, index(_index) {}
 
 	public:
 		~BufferPoolSlot();
 
-		NEBULA_NON_COPYABLE(BufferPoolSlot)
-
 		BufferPoolSlot(BufferPoolSlot&& _other) noexcept;
 		BufferPoolSlot& operator=(BufferPoolSlot&& _other) noexcept;
 
+		NEBULA_NON_COPYABLE(BufferPoolSlot)
+
 	private:
 		BufferPool* pool{ nullptr };
-		std::size_t index{ 0 };
 		BufferView view{};
+		std::size_t index{ 0 };
 
 	public:
 		[[nodiscard]] const BufferView& View() const noexcept { return view; }

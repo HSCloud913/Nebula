@@ -72,7 +72,7 @@ ne::Task<ne::Result<void, ne::HttpError>> Http2Client::SendSettings()
 {
 	// SETTINGS フレーム (payload 없음 — 기본값 사용)
 	std::array<ne::byte_t, kFrameHeaderSize> frame{};
-	BuildFrameHeader(frame.data(), 0, FrameType::Settings, 0, 0);
+	BuildFrameHeader(frame.data(), 0, FrameType::SETTINGS, 0, 0);
 
 	auto r = co_await stream->Send(ne::io::BufferView{ nullptr, frame.data(), frame.size() });
 	if (r.IsError())
@@ -83,7 +83,7 @@ ne::Task<ne::Result<void, ne::HttpError>> Http2Client::SendSettings()
 ne::Task<ne::Result<void, ne::HttpError>> Http2Client::SendWindowUpdate(uint32_t _streamId, int32_t _increment)
 {
 	std::array<ne::byte_t, kFrameHeaderSize + 4> frame{};
-	BuildFrameHeader(frame.data(), 4, FrameType::WindowUpdate, 0, _streamId);
+	BuildFrameHeader(frame.data(), 4, FrameType::WINDOW_UPDATE, 0, _streamId);
 	WriteU32(frame.data() + kFrameHeaderSize, static_cast<uint32_t>(_increment) & 0x7FFFFFFFu);
 
 	auto r = co_await stream->Send(ne::io::BufferView{ nullptr, frame.data(), frame.size() });
@@ -111,7 +111,7 @@ ne::Task<ne::Result<ne::network::HttpHeaders, ne::HttpError>> Http2Client::ReadH
 
 		const auto fh = FrameHeader::Parse(hbuf.data());
 
-		if (fh.type == FrameType::Headers)
+		if (fh.type == FrameType::HEADERS)
 		{
 			std::vector<ne::byte_t> block(fh.length);
 			std::size_t blockRead = 0;
@@ -135,11 +135,11 @@ ne::Task<ne::Result<ne::network::HttpHeaders, ne::HttpError>> Http2Client::ReadH
 			discarded += r.Value();
 		}
 
-		if (fh.type == FrameType::Settings && !(fh.flags & Flag::Ack))
+		if (fh.type == FrameType::SETTINGS && !(fh.flags & Flag::Ack))
 		{
 			// SETTINGS 에 ACK 응답
 			std::array<ne::byte_t, kFrameHeaderSize> ack{};
-			BuildFrameHeader(ack.data(), 0, FrameType::Settings, Flag::Ack, 0);
+			BuildFrameHeader(ack.data(), 0, FrameType::SETTINGS, Flag::Ack, 0);
 			(void)co_await stream->Send(ne::io::BufferView{ nullptr, ack.data(), ack.size() });
 		}
 	}

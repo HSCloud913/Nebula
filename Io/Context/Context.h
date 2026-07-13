@@ -36,7 +36,7 @@ BEGIN_NS(ne::io)
 	class Context
 	{
 	public:
-		explicit Context(IEngine& _engine) noexcept;
+		explicit Context(IEngine& _engine, ne::time::TimerWheel* _timerWheel = nullptr) noexcept;
 		~Context() = default;
 
 		NEBULA_NON_COPYABLE_MOVABLE(Context)
@@ -57,15 +57,15 @@ BEGIN_NS(ne::io)
 
 	public:
 		// 완료/타이머/Post 작업이 소진되도록 Stop() 까지 계속 루프한다.
-		void_t Run();
+		void_t Start();
+		// Start() 루프를 종료시킨다(다음 iteration 에서 빠져나옴).
+		void_t Stop() noexcept;
+
 		// 한 번의 루프: 완료를 _timeout 동안 대기·디스패치하고 타이머 Tick + Post 작업을 처리한다.
 		// 완료를 하나라도 디스패치했으면 true.
 		bool_t RunOnce(std::chrono::milliseconds _timeout);
 		// 다른 스레드(또는 콜백)에서 코루틴을 이 컨텍스트 루프에 재개 예약한다 — Wake() 로 루프를 깨운다.
 		void_t Post(std::coroutine_handle<> _handle);
-		// Run() 루프를 종료시킨다(다음 iteration 에서 빠져나옴).
-		void_t Stop() noexcept;
-		void_t SetTimerWheel(ne::time::TimerWheel* _timerWheel) noexcept { timerWheel = _timerWheel; }
 
 		// time::Awaitable(SleepFor) 을 감싸 wheel 핸들 관리를 감춘다 — co_await context.SleepFor(500ms).
 		// 선결조건: SetTimerWheel() 로 wheel 이 먼저 물려 있어야 한다(안 그러면 assert — 결선을 잊은

@@ -11,7 +11,7 @@ add_executable(${PROJECT_NAME}
                test.cpp
                test_socket.cpp
                test_tls_config.cpp
-               test_timer_engine_integration.cpp
+               test_tls_stream.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
@@ -20,5 +20,17 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 )
 
 target_link_libraries(${PROJECT_NAME} gtest gtest_main NebulaNetwork)
+
+if (WIN32)
+	target_link_libraries(${PROJECT_NAME} Ws2_32 Secur32 Crypt32)
+endif ()
+
+if (UNIX)
+	find_package(OpenSSL QUIET)
+	if (TARGET OpenSSL::SSL)
+		target_compile_definitions(${PROJECT_NAME} PRIVATE NEBULA_WITH_OPENSSL)
+		target_link_libraries(${PROJECT_NAME} OpenSSL::SSL OpenSSL::Crypto)
+	endif ()
+endif ()
 
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})

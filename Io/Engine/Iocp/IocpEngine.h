@@ -43,7 +43,7 @@ BEGIN_NS(ne::io)
 			OVERLAPPED overlapped{};
 			void_t* userData{ nullptr };
 			HANDLE handle{ nullptr };                // CancelIoEx 대상
-			OpCode op{ OpCode::Read };               // 완료 후처리 분기용(Accept/Connect)
+			OpCode op{ OpCode::READ };               // 완료 후처리 분기용(Accept/Connect)
 			socket_t acceptSocket{ InvalidSocket };  // Accept: AcceptEx 로 채워질 새 소켓
 			socket_t contextSocket{ InvalidSocket }; // Accept: listen 소켓 / Connect: 연결 소켓 (SO_UPDATE_*)
 			longlong_t syncResult{ 0 };              // 동기 제출 실패/완료 시 미리 계산한 결과(성공은 바이트수, 실패는 -에러). hasSyncResult 일 때만 유효.

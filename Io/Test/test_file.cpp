@@ -33,7 +33,7 @@ TEST(FileTest, WriteThenRead)
 	Context context{ engine };
 
 	const lpcstr_t path = "test_file_level3.bin";
-	auto opened = File::Open(context, path, OpenMode::ReadWrite);
+	auto opened = File::Open(context, path, OpenMode::READ_WRITE);
 	ASSERT_TRUE(opened.IsOk()) << opened.Error().What();
 	File file = std::move(opened.Value());
 
@@ -65,7 +65,7 @@ TEST(FileTest, WritevThenReadvRoundTrip)
 	Context context{ engine };
 
 	const lpcstr_t path = "test_file_level3_vectored.bin";
-	auto opened = File::Open(context, path, OpenMode::ReadWrite);
+	auto opened = File::Open(context, path, OpenMode::READ_WRITE);
 	ASSERT_TRUE(opened.IsOk()) << opened.Error().What();
 	File file = std::move(opened.Value());
 
@@ -107,7 +107,7 @@ TEST(FileTest, OpenNonExistentFails)
 	IocpEngine engine;
 	Context context{ engine };
 
-	auto opened = File::Open(context, "no_such_file_level3.bin", OpenMode::Read);
+	auto opened = File::Open(context, "no_such_file_level3.bin", OpenMode::READ);
 	EXPECT_TRUE(opened.IsError());
 }
 

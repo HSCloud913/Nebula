@@ -18,7 +18,7 @@ ne::Task<ne::Result<void, ne::HttpError>> Http2Stream::SendHeaders(const ne::net
 	std::array<ne::byte_t, kFrameHeaderSize> header{};
 	uint8_t flags = Flag::EndHeaders;
 	if (_endStream) flags |= Flag::EndStream;
-	BuildFrameHeader(header.data(), static_cast<uint32_t>(_hpackBlock.size()), FrameType::Headers, flags, streamId);
+	BuildFrameHeader(header.data(), static_cast<uint32_t>(_hpackBlock.size()), FrameType::HEADERS, flags, streamId);
 
 	auto r = co_await transport->Send(ne::io::BufferView{ nullptr, header.data(), header.size() });
 	if (r.IsError())
@@ -31,7 +31,7 @@ ne::Task<ne::Result<void, ne::HttpError>> Http2Stream::SendHeaders(const ne::net
 			co_return ne::Result<void, ne::HttpError>::Error(ne::HttpError{ r2.Error().What() }.Context("[Http2Stream/SendHeaders/Block]"));
 	}
 
-	state = _endStream ? StreamState::HalfClosedLocal : StreamState::Open;
+	state = _endStream ? StreamState::HALF_CLOSED_LOCAL : StreamState::OPEN;
 	co_return ne::Result<void, ne::HttpError>::Ok();
 }
 
@@ -39,7 +39,7 @@ ne::Task<ne::Result<void, ne::HttpError>> Http2Stream::SendData(std::span<const 
 {
 	std::array<ne::byte_t, kFrameHeaderSize> header{};
 	const uint8_t flags = _endStream ? Flag::EndStream : uint8_t{ 0 };
-	BuildFrameHeader(header.data(), static_cast<uint32_t>(_data.size()), FrameType::Data, flags, streamId);
+	BuildFrameHeader(header.data(), static_cast<uint32_t>(_data.size()), FrameType::DATA, flags, streamId);
 
 	auto r = co_await transport->Send(ne::io::BufferView{ nullptr, header.data(), header.size() });
 	if (r.IsError())
@@ -52,7 +52,7 @@ ne::Task<ne::Result<void, ne::HttpError>> Http2Stream::SendData(std::span<const 
 			co_return ne::Result<void, ne::HttpError>::Error(ne::HttpError{ r2.Error().What() }.Context("[Http2Stream/SendData/Payload]"));
 	}
 
-	if (_endStream) state = StreamState::HalfClosedLocal;
+	if (_endStream) state = StreamState::HALF_CLOSED_LOCAL;
 	co_return ne::Result<void, ne::HttpError>::Ok();
 }
 
@@ -71,7 +71,7 @@ ne::Task<ne::Result<ne::network::HttpResponse, ne::HttpError>> Http2Stream::Rece
 	}
 
 	// DATA 프레임 수집
-	while (state != StreamState::HalfClosedRemote && state != StreamState::Closed)
+	while (state != StreamState::HALF_CLOSED_REMOTE && state != StreamState::CLOSED)
 	{
 		std::array<ne::byte_t, kFrameHeaderSize> headerBuf{};
 		std::size_t total = 0;
@@ -86,7 +86,7 @@ ne::Task<ne::Result<ne::network::HttpResponse, ne::HttpError>> Http2Stream::Rece
 		}
 
 		const auto fh = FrameHeader::Parse(headerBuf.data());
-		if (fh.type == FrameType::Data)
+		if (fh.type == FrameType::DATA)
 		{
 			std::vector<ne::byte_t> payload(fh.length);
 			std::size_t read = 0;
@@ -100,13 +100,13 @@ ne::Task<ne::Result<ne::network::HttpResponse, ne::HttpError>> Http2Stream::Rece
 			resp.body.append(reinterpret_cast<const char*>(payload.data()), payload.size());
 			if (fh.flags & Flag::EndStream)
 			{
-				state = StreamState::HalfClosedRemote;
+				state = StreamState::HALF_CLOSED_REMOTE;
 				break;
 			}
 		}
-		else if (fh.type == FrameType::RstStream)
+		else if (fh.type == FrameType::RST_STREAM)
 		{
-			state = StreamState::Closed;
+			state = StreamState::CLOSED;
 			co_return ne::Result<ne::network::HttpResponse, ne::HttpError>::Error(ne::HttpError{ 0, "RST_STREAM received" }.Context("[Http2Stream/ReceiveResponse]"));
 		}
 		else
@@ -122,7 +122,7 @@ ne::Task<ne::Result<ne::network::HttpResponse, ne::HttpError>> Http2Stream::Rece
 			}
 			if (fh.flags & Flag::EndStream)
 			{
-				state = StreamState::HalfClosedRemote;
+				state = StreamState::HALF_CLOSED_REMOTE;
 				break;
 			}
 		}

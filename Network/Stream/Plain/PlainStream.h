@@ -4,101 +4,85 @@
 
 #pragma once
 #include <cstddef>
+#include <stop_token>
 #include "Network/Stream/IStream.h"
-#include "Network/Socket/Socket.h"
-#include "Io/Engine/IEngine.h"
-#include "Io/IoType.h"
+#include "Io/Socket/Socket.h"
+#include "Io/Context/Context.h"
+#include "Io/File/File.h"
+#include "Io/Buffer/RegisteredBuffer.h"
+#include "Memory/Allocator/IAllocator.h"
 
-BEGIN_NS (ne::network)
-// 소켓 I/O 모드 선택.
-//   Reactor  : Watch(poll) + recv/send  — 호환성 경로 (epoll 과 유사한 2단계)
-//   Proactor : SubmitRecv/SubmitSend    — 단일 syscall 경로 (IOCP·io_uring 최적)
-enum class IoMode : uint8_t
-{
-	Reactor,
-	Proactor
-};
+BEGIN_NS(ne::network)
+	// 암호화 없는 TCP/UDP 바이트 스트림 = ne::io::Socket 위의 얇은 IStream 어댑터(async-only).
+	// reactor/proactor 선택과 zero-copy 가용 여부는 Io 레이어(Socket/Engine)가 Capability 로 이미
+	// 판단하므로, 이 클래스엔 엔진별 분기가 없다 — Level 1 이상은 엔진을 몰라야 한다(스펙 2.1).
+	// TLS/SSH 스트림은 이 객체를 wire transport 로 보유(컴포지션)해 암복호화 계층만 얹는다.
+	class PlainStream final :public IStream
+	{
+	private:
+		explicit PlainStream(ne::io::Socket&& _socket, ne::io::Context& _context, ne::memory::IAllocator* _allocator) noexcept;
 
-// 암호화 없는 TCP 바이트 스트림 = 소켓 전송 코어 (async-only).
-// Socket + ne::io::IIoEngine 위에서 코루틴 기반 송수신과 zero-copy 파일 전송을 제공한다.
-// TLS/SSH 스트림은 이 객체를 wire transport 로 보유(컴포지션)해 암복호화 계층만 얹는다.
-//
-// 축:
-//   server/client    : Connect(client) / Accept(server) 팩토리 — 이후 송수신은 대칭
-//   reactor/proactor : IoMode 로 async 경로 내부 선택
-//   zero-copy S-G    : SendFile (head/tail scatter-gather, 파일 payload 는 DMA)
-class PlainStream final :public IStream
-{
-public:
-	PlainStream(PlainStream&& _other) noexcept;
-	PlainStream& operator=(PlainStream&& _other) noexcept;
-	virtual ~PlainStream() override = default;
+	public:
+		PlainStream(PlainStream&& _other) noexcept;
+		PlainStream& operator=(PlainStream&& _other) noexcept;
+		virtual ~PlainStream() override = default;
 
-	NEBULA_NON_COPYABLE(PlainStream)
+		NEBULA_NON_COPYABLE(PlainStream)
 
-private:
-	explicit PlainStream(Socket&& _socket, ne::io::IIoEngine& _engine, ne::memory::IAllocator* _allocator, IoMode _mode) noexcept;
+	private:
+		ne::io::Socket socket;
+		ne::io::Context* context;
+		ne::memory::IAllocator* allocator{ nullptr };
 
-public: /* 생성 — server/client 진입점 */
-	// client: 소켓 생성 + 연결까지 접어서 처리한다 (완료 후 non-blocking 으로 둔다).
-	[[nodiscard]] static ne::Task<ne::Result<PlainStream, ne::OsError>> Connect(string_view_t _host, uint16_t _port, ne::io::IIoEngine& _engine, IoMode _mode = IoMode::Reactor, ne::memory::IAllocator* _allocator = nullptr);
+	public: /* 생성 — server/client 진입점 */
+		// client: 호스트 해석(Network::Dns) + 소켓 생성 + 연결까지 접어서 처리한다. 후보(A/AAAA)를
+		// 순서대로 시도하며, io::Socket::Connect 가 이미 non-blocking connect + writable 대기 +
+		// SO_ERROR 확인을 담당하므로 여기선 후보 페일오버 루프만 있으면 된다.
+		[[nodiscard]] static ne::Task<ne::io::IoResult<PlainStream>> Connect(string_view_t _host, uint16_t _port, ne::io::Context& _context, std::stop_token _stopToken = {}, ne::memory::IAllocator* _allocator = nullptr);
 
-	// server: Accept 로 얻은 소켓을 감싼다 (non-blocking 으로 둔다).
-	[[nodiscard]] static ne::Result<PlainStream, ne::OsError> Accept(Socket&& _accepted, ne::io::IIoEngine& _engine, IoMode _mode = IoMode::Reactor, ne::memory::IAllocator* _allocator = nullptr);
+		// server: listen 소켓의 io::Socket::Accept() 로 이미 얻은(non-blocking, async-ready) 소켓을 감싼다.
+		[[nodiscard]] static ne::io::IoResult<PlainStream> Create(ne::io::Socket&& _socket, ne::io::Context& _context, ne::memory::IAllocator* _allocator = nullptr) noexcept;
 
-	// 저수준 진입점 — 블로킹 모드를 바꾸지 않는다.
-	// _mode = Reactor (기본): poll+recv/send 2단계 경로 (하위 호환)
-	// _mode = Proactor      : SubmitRecv/SubmitSend 단일 경로 (IOCP·io_uring 최적)
-	[[nodiscard]] static ne::Result<PlainStream, ne::OsError> Create(Socket&& _socket, ne::io::IIoEngine& _engine, ne::memory::IAllocator* _allocator = nullptr, IoMode _mode = IoMode::Reactor) noexcept;
+	public: /* IStream */
+		virtual ne::Task<ne::io::IoResult<void_t>> Handshake(std::stop_token _stopToken = {}) override { co_return ne::io::IoResult<void_t>::Ok(); }
+		virtual ne::Task<ne::io::IoResult<std::size_t>> Receive(ne::io::BufferView _data, std::stop_token _stopToken = {}) override;
+		virtual ne::Task<ne::io::IoResult<std::size_t>> Receivev(const ne::io::BufferChain& _chain, std::stop_token _stopToken = {}) override;
+		virtual ne::Task<ne::io::IoResult<std::size_t>> Send(ne::io::BufferView _data, std::stop_token _stopToken = {}) override;
+		virtual ne::Task<ne::io::IoResult<std::size_t>> Sendv(const ne::io::BufferChain& _chain, std::stop_token _stopToken = {}) override;
 
-private:
-	Socket socket;
-	ne::io::IIoEngine* engine;
-	ne::memory::IAllocator* allocator{ nullptr };
-	IoMode ioMode{ IoMode::Reactor };
+		virtual ne::Task<ne::io::IoResult<void_t>> Shutdown() override;
+		virtual ne::Result<void_t, ne::io::IoError> Close() override;
+		[[nodiscard]] virtual bool_t IsOpen() const noexcept override { return socket.IsValid(); }
 
-public: /* IStream override (non-blocking 소켓 전제) */
-	virtual ne::Task<ne::Result<void, ne::OsError>> Handshake() override { co_return ne::Result<void, ne::OsError>::Ok(); }
-	virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Send(ne::io::BufferView _data) override;
-	virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Sendv(const ne::io::BufferChain& _chain) override;
-	virtual ne::Task<ne::Result<std::size_t, ne::OsError>> Receive(ne::io::BufferView _data) override;
-	virtual ne::Task<ne::Result<void, ne::OsError>> Shutdown() override;
-	virtual ne::Result<void, ne::OsError> Close() override;
+	public: /* readiness 대기 — IStream 밖(Plain 전용). wire transport 로 감싸는 상위 스트림(TLS/SSH)이
+	        // 자기 자신의 동기 recv/send(EAGAIN/WANT_READ/WANT_WRITE 루프)를 이 completion 엔진 위에서
+	        // 구동하기 위해 재사용한다 — io::Socket::WaitReadable/WaitWritable 그대로 위임. */
+		[[nodiscard]] ne::Task<ne::io::IoResult<void_t>> WaitReadable(std::stop_token _stopToken = {});
+		[[nodiscard]] ne::Task<ne::io::IoResult<void_t>> WaitWritable(std::stop_token _stopToken = {});
 
-public: /* zero-copy scatter-gather — IStream 밖(Plain 전용). 파일 payload 는 CPU 복사 없이 DMA */
-	// 반환값: 실제 전송한 총 바이트 (head + file + tail).
-	// _head/_tail 은 BufferChain — 여러 세그먼트를 이어붙여 보낼 수 있다(예: HTTP 헤더를
-	// 여러 조각으로 구성). 비어 있으면(기본값 {}) 해당 구간은 생략.
-	//
-	// Linux 는 sendfile(2) 로 zero-copy(Reactor 경로). Windows 는 TransmitFile 로 zero-copy
-	// (Proactor 경로, IocpEngine::SubmitTransmitFile) — 다만 TRANSMIT_FILE_BUFFERS 가 head/tail
-	// 각각 연속된 버퍼 1개만 지원해서, 2개 이상의 세그먼트가 들어오면 Flatten() 으로 먼저
-	// 합친다(이 경우 _allocator 가 반드시 있어야 함).
-	[[nodiscard]] ne::Task<ne::Result<std::size_t, ne::OsError>> SendFile(ne::io::file_t _fileFd, std::size_t _offset, std::size_t _size, const ne::io::BufferChain& _head = {}, const ne::io::BufferChain& _tail = {});
+	public: /* zero-copy 파일 전송 — IStream 밖(Plain 전용) */
+		// head/file/tail 조합. head/tail 은 Sendv(BufferChain) 로, file 구간은 io::Socket::SendFile
+		// (엔진의 TransmitFile/sendfile zero-copy)로 처리한다 — 플랫폼 분기는 여기 없음.
+		[[nodiscard]] ne::Task<ne::io::IoResult<std::size_t>> SendFile(ne::io::file_t _file, ulonglong_t _offset, std::size_t _length, const ne::io::BufferChain& _head = {}, const ne::io::BufferChain& _tail = {}, std::stop_token _stopToken = {});
 
-	// zero-copy 소켓→파일 수신 (SendFile 의 대칭). 소켓에서 최대 _size 바이트를 받아 _fileFd
-	// 의 _offset 위치부터 기록한다. 반환값: 실제 기록한 총 바이트(상대가 _size 전에 닫으면 더 작음).
-	//   Linux   : splice(2) (소켓→파이프→파일) 로 유저공간을 거치지 않는 zero-copy.
-	//   Windows : 커널 소켓→파일 zero-copy primitive 가 없어 recv+write 폴백(비 zero-copy).
-	//             _fileFd 는 동기 핸들이어야 한다(FILE_FLAG_OVERLAPPED 아님).
-	[[nodiscard]] ne::Task<ne::Result<std::size_t, ne::OsError>> ReceiveFile(ne::io::file_t _fileFd, std::size_t _offset, std::size_t _size);
+		// 소켓→파일 수신(SendFile 대칭). [현재 v1] Io 레이어에 splice 류 zero-copy opcode가 없어
+		// Receive + io::File::Write 반복(non-zero-copy) 으로 구현한다 — zero-copy 가 필요해지면 Io
+		// 엔진에 전용 OpCode 를 추가하는 별도 작업으로 확장한다.
+		// _file 은 io::File::Write 로 비동기 기록해야 하므로 raw 핸들이 아니라 이미 열린 io::File 을
+		// 참조로 받는다(File 은 Open() 으로만 생성되는 소유 타입이라 raw handle 을 감쌀 방법이 없다).
+		// 완료까지 호출자가 _file 을 살려둬야 한다(다른 op 들과 동일 계약).
+		[[nodiscard]] ne::Task<ne::io::IoResult<std::size_t>> ReceiveFile(ne::io::File& _file, ulonglong_t _offset, std::size_t _length, std::stop_token _stopToken = {});
 
-public: /* 등록 버퍼 경로 — SendFile/ReceiveFile 과 같은 IStream 밖 Plain 전용 (transport 최적화) */
-	// 미리 등록한 버퍼(RegisteredBuffer)로 송수신한다. 엔진이 IoCapability::RegisteredIo 를
-	// 제공하면(RIO / io_uring fixed) 검증·lock 을 생략한 fast path 로 가고, 없으면 일반
-	// Send/Receive 로 **투명 폴백**한다 — 호출자는 플랫폼/등록 여부를 몰라도 된다(에러 타입도
-	// 일반 경로와 동일한 OsError 유지). 등록 자체는 Engine().AsRegisteredBufferProvider() 로
-	// 수행하며 그 경로만 IoError 를 쓴다.
-	[[nodiscard]] ne::Task<ne::Result<std::size_t, ne::OsError>> SendRegistered(const ne::io::RegisteredBuffer& _buffer);
-	[[nodiscard]] ne::Task<ne::Result<std::size_t, ne::OsError>> ReceiveRegistered(ne::io::RegisteredBuffer& _buffer);
+	public: /* 등록 버퍼(zero-copy) 송신 — io::Socket::SendZeroCopy 로 위임 */
+		// 대칭되는 수신 경로(ReceiveRegistered)는 아직 io::Socket 에 없다 — 필요해지면 Socket 쪽에
+		// 먼저 추가한 뒤 여기 반영한다.
+		[[nodiscard]] ne::Task<ne::io::IoResult<std::size_t>> SendRegistered(const ne::io::RegisteredBuffer& _buffer, std::stop_token _stopToken = {});
 
-public:
-	[[nodiscard]] socket_t Handle() const noexcept { return socket.Handle(); }
-	[[nodiscard]] IoMode Mode() const noexcept { return ioMode; }
-	// wire transport 로 감싸는 상위 스트림(TLS/SSH)이 자신의 readiness/버퍼 작업에 재사용한다.
-	[[nodiscard]] ne::io::IIoEngine& Engine() const noexcept { return *engine; }
-	[[nodiscard]] ne::memory::IAllocator* Allocator() const noexcept { return allocator; }
-	[[nodiscard]] virtual bool_t IsOpen() const noexcept override { return socket.IsValid(); }
-};
+	public:
+		[[nodiscard]] ne::io::socket_t Handle() const noexcept { return socket.Handle(); }
+		// wire transport 로 감싸는 상위 스트림(TLS/SSH)이 자신의 readiness/버퍼 작업에 재사용한다.
+		[[nodiscard]] ne::io::Context& Context() const noexcept { return *context; }
+		[[nodiscard]] ne::memory::IAllocator* Allocator() const noexcept { return allocator; }
+	};
 
 END_NS

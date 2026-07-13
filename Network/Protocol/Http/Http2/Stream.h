@@ -18,11 +18,11 @@ BEGIN_NS (ne::network::http_2)
 
 enum class StreamState : uint8_t
 {
-	Idle,
-	Open,
-	HalfClosedLocal,
-	HalfClosedRemote,
-	Closed,
+	IDLE,
+	OPEN,
+	HALF_CLOSED_LOCAL,
+	HALF_CLOSED_REMOTE,
+	CLOSED,
 };
 
 // HTTP/2 스트림. IStream 위에서 동작하며 하나의 요청/응답 교환을 표현.
@@ -38,7 +38,7 @@ public:
 
 private:
 	uint32_t streamId;
-	StreamState state{ StreamState::Idle };
+	StreamState state{ StreamState::IDLE };
 	ne::network::IStream* transport;
 
 public:

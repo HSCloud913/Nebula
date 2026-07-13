@@ -63,17 +63,17 @@ ne::Task<ne::Result<void, ne::HttpError>> Http2Server::Run()
 			pr += r.Value();
 		}
 
-		if (fh.type == FrameType::Settings && !(fh.flags & Flag::Ack))
+		if (fh.type == FrameType::SETTINGS && !(fh.flags & Flag::Ack))
 		{
 			std::array<ne::byte_t, kFrameHeaderSize> ack{};
-			BuildFrameHeader(ack.data(), 0, FrameType::Settings, Flag::Ack, 0);
+			BuildFrameHeader(ack.data(), 0, FrameType::SETTINGS, Flag::Ack, 0);
 			(void)co_await stream->Send(ne::io::BufferView{ nullptr, ack.data(), ack.size() });
 			continue;
 		}
 
-		if (fh.type == FrameType::GoAway) co_return ne::Result<void, ne::HttpError>::Ok();
+		if (fh.type == FrameType::GO_AWAY) co_return ne::Result<void, ne::HttpError>::Ok();
 
-		if (fh.type == FrameType::Headers)
+		if (fh.type == FrameType::HEADERS)
 		{
 			flowCtrl.InitStream(fh.streamId);
 			auto hdrs = Hpack::Decode(payload.data(), payload.size());
@@ -107,7 +107,7 @@ ne::Task<ne::Result<void, ne::HttpError>> Http2Server::SendPreface() { co_return
 ne::Task<ne::Result<void, ne::HttpError>> Http2Server::SendSettings()
 {
 	std::array<ne::byte_t, kFrameHeaderSize> frame{};
-	BuildFrameHeader(frame.data(), 0, FrameType::Settings, 0, 0);
+	BuildFrameHeader(frame.data(), 0, FrameType::SETTINGS, 0, 0);
 	auto r = co_await stream->Send(ne::io::BufferView{ nullptr, frame.data(), frame.size() });
 	if (r.IsError())
 		co_return ne::Result<void, ne::HttpError>::Error(ne::HttpError{ r.Error().What() }.Context("[Http2Server/SendSettings]"));
@@ -122,7 +122,7 @@ ne::Task<ne::Result<void, ne::HttpError>> Http2Server::SendHeaders(uint32_t _str
 	std::array<ne::byte_t, kFrameHeaderSize> hdr{};
 	uint8_t flags = Flag::EndHeaders;
 	if (!hasBody) flags |= Flag::EndStream;
-	BuildFrameHeader(hdr.data(), static_cast<uint32_t>(block.size()), FrameType::Headers, flags, _streamId);
+	BuildFrameHeader(hdr.data(), static_cast<uint32_t>(block.size()), FrameType::HEADERS, flags, _streamId);
 
 	auto r = co_await stream->Send(ne::io::BufferView{ nullptr, hdr.data(), hdr.size() });
 	if (r.IsError())
@@ -142,7 +142,7 @@ ne::Task<ne::Result<void, ne::HttpError>> Http2Server::SendData(uint32_t _stream
 {
 	const auto* body = reinterpret_cast<const ne::byte_t*>(_body.data());
 	std::array<ne::byte_t, kFrameHeaderSize> hdr{};
-	BuildFrameHeader(hdr.data(), static_cast<uint32_t>(_body.size()), FrameType::Data, Flag::EndStream, _streamId);
+	BuildFrameHeader(hdr.data(), static_cast<uint32_t>(_body.size()), FrameType::DATA, Flag::EndStream, _streamId);
 
 	auto r = co_await stream->Send(ne::io::BufferView{ nullptr, hdr.data(), hdr.size() });
 	if (r.IsError())

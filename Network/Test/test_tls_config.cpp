@@ -3,7 +3,7 @@
 //
 
 #include <gtest/gtest.h>
-#include "Network/Stream/TLS/TlsStream.h"
+#include "Network/Stream/Tls/TlsStream.h"
 
 using namespace ne::network;
 
@@ -20,6 +20,17 @@ TEST(TlsConfigTest, DefaultFieldsAreEmpty)
 	EXPECT_TRUE(config.certFile.empty());
 	EXPECT_TRUE(config.keyFile.empty());
 	EXPECT_TRUE(config.pfxPassword.empty());
+	EXPECT_TRUE(config.alpnProtocols.empty());
+}
+
+TEST(TlsConfigTest, AssignAlpnProtocols)
+{
+	TlsConfig config;
+	config.alpnProtocols = { "h2", "http/1.1" };
+
+	ASSERT_EQ(config.alpnProtocols.size(), 2u);
+	EXPECT_EQ(config.alpnProtocols[0], "h2");
+	EXPECT_EQ(config.alpnProtocols[1], "http/1.1");
 }
 
 TEST(TlsConfigTest, AssignFields)

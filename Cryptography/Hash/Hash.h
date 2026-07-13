@@ -19,4 +19,5 @@ BEGIN_NS(ne::crypto)
 
 	[[nodiscard]] string_t Hash(HashType _type, string_t&& _data);
 	[[nodiscard]] string_t HashFile(HashType _type, string_t&& _path);
+
 END_NS

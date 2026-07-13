@@ -72,7 +72,7 @@ BEGIN_NS(ne::io)
 	public:
 		// 이 소켓으로 비동기 연결(ConnectEx)한다 — Create()/Attach() 로 이미 만들어진 소켓 위에서
 		// 동작한다(Bind() 로 소스 포트를 먼저 고정해두는 것도 가능 — 엔진이 미리 bind 안 됐으면
-		// any:0 으로 자동 bind 하고, 이미 bind 돼 있으면 그 시도는 조용히 무시된다). OpCode::Connect
+		// any:0 으로 자동 bind 하고, 이미 bind 돼 있으면 그 시도는 조용히 무시된다). OpCode::CONNECT
 		// 는 엔진에서 ConnectEx(Windows, connection-oriented 소켓 전제)로 처리되므로 비TCP 계열은
 		// 엔진이 실패를 값으로 돌려줄 수 있다(예외 없음). _stopToken 이 stop 되면 진행 중인 ConnectEx
 		// 를 커널 취소한다(when_any/Timeout 콤비네이터가 타임아웃 경합에서 쓴다) — 기본값(빈 토큰)은

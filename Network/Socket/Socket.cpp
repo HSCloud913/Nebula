@@ -74,12 +74,12 @@ Socket::Socket(const socket_t _fd, const AddressFamily _family, const int_t _typ
 
 Result<Socket, OsError> Socket::Create(const AddressFamily _family, const int_t _type, const int_t _protocol, const SocketCreateFlags _flags)
 {
-	const int_t af = (_family == AddressFamily::IPv6) ? AF_INET6 : AF_INET;
+	const int_t af = (_family == AddressFamily::IPV6) ? AF_INET6 : AF_INET;
 
 	#if defined(_WIN32)
 	// RIO 소켓은 WSASocketW + WSA_FLAG_REGISTERED_IO 로 만들어야 RIORegisterBuffer/
 	// RIOCreateRequestQueue 가 성립한다. WSA_FLAG_OVERLAPPED 도 함께 줘 IOCP 완료 통지를 쓴다.
-	const socket_t fd = HasFlag(_flags, SocketCreateFlags::RegisteredIo) ? ::WSASocketW(af, _type, _protocol, nullptr, 0, WSA_FLAG_OVERLAPPED | WSA_FLAG_REGISTERED_IO) : ::socket(af, _type, _protocol);
+	const socket_t fd = HasFlag(_flags, SocketCreateFlags::REGISTERED_IO) ? ::WSASocketW(af, _type, _protocol, nullptr, 0, WSA_FLAG_OVERLAPPED | WSA_FLAG_REGISTERED_IO) : ::socket(af, _type, _protocol);
 	#elif defined(IS_POSIX)
 	(void)_flags; // RegisteredIo 는 POSIX 소켓 생성에 영향 없음(io_uring 등록버퍼는 소켓 플래그 불요).
 	const socket_t fd = ::socket(af, _type, _protocol);
@@ -97,10 +97,10 @@ ne::Result<AddressFamily, ne::OsError> Socket::ResolveFamilyBlocking(const strin
 	const ne::string_t addressString(_address);
 
 	in_addr v4{};
-	if (::inet_pton(AF_INET, addressString.c_str(), &v4) == 1) return ne::Result<AddressFamily, ne::OsError>::Ok(AddressFamily::IPv4);
+	if (::inet_pton(AF_INET, addressString.c_str(), &v4) == 1) return ne::Result<AddressFamily, ne::OsError>::Ok(AddressFamily::IPV4);
 
 	in6_addr v6{};
-	if (::inet_pton(AF_INET6, addressString.c_str(), &v6) == 1) return ne::Result<AddressFamily, ne::OsError>::Ok(AddressFamily::IPv6);
+	if (::inet_pton(AF_INET6, addressString.c_str(), &v6) == 1) return ne::Result<AddressFamily, ne::OsError>::Ok(AddressFamily::IPV6);
 
 	// 호스트 이름 — DNS 에게 우선순위를 맡기고 첫 결과의 패밀리를 취한다.
 	addrinfo hints{};
@@ -111,7 +111,7 @@ ne::Result<AddressFamily, ne::OsError> Socket::ResolveFamilyBlocking(const strin
 	if (::getaddrinfo(addressString.c_str(), nullptr, &hints, &result) != 0)
 		return ne::Result<AddressFamily, ne::OsError>::Error(ne::OsError{ LastOsError() }.Context("[Socket/ResolveFamily]"));
 
-	const AddressFamily family = result->ai_family == AF_INET6 ? AddressFamily::IPv6 : AddressFamily::IPv4;
+	const AddressFamily family = result->ai_family == AF_INET6 ? AddressFamily::IPV6 : AddressFamily::IPV4;
 	::freeaddrinfo(result);
 
 	return ne::Result<AddressFamily, ne::OsError>::Ok(family);
@@ -204,7 +204,7 @@ ne::Task<ne::Result<void, ne::OsError>> Socket::Connect(const string_view_t _add
 
 
 
-ne::Task<ne::Result<void, ne::OsError>> Socket::Connect(const string_view_t _address, const uint16_t _port, ne::io::IIoEngine& _engine)
+ne::Task<ne::Result<void, ne::OsError>> Socket::Connect(const string_view_t _address, const uint16_t _port, ne::io::IEngine& _engine)
 {
 	ne::string_t addressString(_address);
 
@@ -272,7 +272,7 @@ ne::Result<std::vector<sockaddr_storage>, ne::OsError> Socket::ResolveCandidates
 	const ne::string_t addressString(_address);
 
 	sockaddr_storage literal{};
-	if (family == AddressFamily::IPv4)
+	if (family == AddressFamily::IPV4)
 	{
 		auto& literalV4 = reinterpret_cast<sockaddr_in&>(literal);
 		if (::inet_pton(AF_INET, addressString.c_str(), &literalV4.sin_addr) == 1)
@@ -299,7 +299,7 @@ ne::Result<std::vector<sockaddr_storage>, ne::OsError> Socket::ResolveCandidates
 	// 전부 모아서 Connect 가 순차적으로 페일오버할 수 있게 한다.
 	addrinfo hints{};
 	addrinfo* result = nullptr;
-	hints.ai_family = family == AddressFamily::IPv6 ? AF_INET6 : AF_INET;
+	hints.ai_family = family == AddressFamily::IPV6 ? AF_INET6 : AF_INET;
 	hints.ai_socktype = SOCK_STREAM;
 
 	if (::getaddrinfo(addressString.c_str(), nullptr, &hints, &result) != 0)
@@ -311,7 +311,7 @@ ne::Result<std::vector<sockaddr_storage>, ne::OsError> Socket::ResolveCandidates
 		sockaddr_storage storage{};
 		std::memcpy(&storage, candidate->ai_addr, candidate->ai_addrlen);
 
-		if (family == AddressFamily::IPv4) reinterpret_cast<sockaddr_in&>(storage).sin_port = ::htons(_port);
+		if (family == AddressFamily::IPV4) reinterpret_cast<sockaddr_in&>(storage).sin_port = ::htons(_port);
 		else reinterpret_cast<sockaddr_in6&>(storage).sin6_port = ::htons(_port);
 
 		candidates.push_back(storage);
@@ -332,7 +332,7 @@ ne::Result<void, ne::OsError> Socket::ConnectResolved(const std::vector<sockaddr
 		// 실패한 소켓으로 connect() 를 재시도했을 때의 동작은 플랫폼마다 다르다.
 		if (i > 0)
 		{
-			const socket_t fd = ::socket(family == AddressFamily::IPv6 ? AF_INET6 : AF_INET, type, protocol);
+			const socket_t fd = ::socket(family == AddressFamily::IPV6 ? AF_INET6 : AF_INET, type, protocol);
 			if (fd == InvalidSocket)
 			{
 				lastError = ne::OsError{ LastOsError() };
@@ -360,7 +360,7 @@ ne::Result<void, ne::OsError> Socket::ConnectResolved(const std::vector<sockaddr
 
 
 
-ne::Task<ne::Result<void, ne::OsError>> Socket::ConnectResolvedAsync(const std::vector<sockaddr_storage>& _candidates, ne::io::IIoEngine& _engine)
+ne::Task<ne::Result<void, ne::OsError>> Socket::ConnectResolvedAsync(const std::vector<sockaddr_storage>& _candidates, ne::io::IEngine& _engine)
 {
 	ne::OsError lastError{ 0 };
 
@@ -370,7 +370,7 @@ ne::Task<ne::Result<void, ne::OsError>> Socket::ConnectResolvedAsync(const std::
 		// 실패한 소켓으로 connect() 를 재시도했을 때의 동작은 플랫폼마다 다르다.
 		if (i > 0)
 		{
-			const socket_t fd = ::socket(family == AddressFamily::IPv6 ? AF_INET6 : AF_INET, type, protocol);
+			const socket_t fd = ::socket(family == AddressFamily::IPV6 ? AF_INET6 : AF_INET, type, protocol);
 			if (fd == InvalidSocket)
 			{
 				lastError = ne::OsError{ LastOsError() };

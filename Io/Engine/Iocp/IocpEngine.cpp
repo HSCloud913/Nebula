@@ -28,7 +28,7 @@ BEGIN_NS(ne::io)
 		// OVERLAPPED 를 전혀 만들지 않고 곧장 RioProvider 로 제출한다. userData 는 RequestContext 로
 		// 그대로 실려 WaitCompletions()→DrainRioCompletions() 가 Completion 으로 되돌려준다.
 		// (Cancel() 은 이 경로를 추적하지 않는다 — RIO 제출 취소는 이번 범위 밖.)
-		if (_request.op == OpCode::SendZeroCopy)
+		if (_request.op == OpCode::SEND_ZERO_COPY)
 		{
 			auto result = rioProvider->SubmitSendRegistered(static_cast<socket_t>(_request.handle), BufferHandle{ _request.bufferId }, _request.buffer, _request.length, _request.userData);
 			if (result.IsError())
@@ -109,7 +109,7 @@ BEGIN_NS(ne::io)
 			else result = static_cast<longlong_t>(entries[i].dwNumberOfBytesTransferred);
 
 			// Accept/Connect 완료 후처리 — SO_UPDATE_* 컨텍스트 갱신 및 Accept 는 새 소켓 핸들을 result 로.
-			if (operation->op == OpCode::Accept)
+			if (operation->op == OpCode::ACCEPT)
 			{
 				if (result >= 0)
 				{
@@ -126,7 +126,7 @@ BEGIN_NS(ne::io)
 					::closesocket(static_cast<SOCKET>(operation->acceptSocket)); // 실패: 만들어둔 소켓 정리
 				}
 			}
-			else if (operation->op == OpCode::Connect && result >= 0)
+			else if (operation->op == OpCode::CONNECT && result >= 0)
 			{
 				(void_t)::setsockopt(static_cast<SOCKET>(operation->contextSocket), SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, nullptr, 0);
 				result = 0;
@@ -159,13 +159,13 @@ BEGIN_NS(ne::io)
 	{
 		switch (_capability)
 		{
-			case Capability::SendFileZeroCopy:
+			case Capability::SEND_FILE_ZERO_COPY:
 				return true; // TransmitFile(SendFile)
-			case Capability::SendMemZeroCopy:
+			case Capability::SEND_MEM_ZERO_COPY:
 				return true; // RIO(SendZeroCopy) — RegisterBuffer 로 등록된 버퍼만
-			case Capability::RecvOverheadReduced:
+			case Capability::RECEIVE_OVERHEAD_REDUCED:
 				return false; // ReadFixed/WriteFixed 는 일반 ReadFile/WriteFile 폴백(RIO 는 소켓 전용, 파일 등록버퍼 없음)
-			case Capability::RecvTrueZeroCopy:
+			case Capability::RECEIVE_TRUE_ZERO_COPY:
 				return false; // Windows 에 진짜 recv zero-copy 없음
 		}
 
@@ -205,7 +205,7 @@ BEGIN_NS(ne::io)
 		// 요구해 임의 크기 세그먼트에 못 쓴다. 세그먼트별로 순차 ReadFile/WriteFile+GetOverlappedResult(대기)
 		// 를 이 스레드에서 동기적으로 수행해 합산한 뒤, 기존 "동기 완료를 IOCP 로 되돌리는" 경로(아래
 		// syncError 처리와 동일한 메커니즘, 성공값도 실어 보낼 수 있음)로 결과를 넘긴다.
-		if (_request.chain != nullptr && (_request.op == OpCode::Read || _request.op == OpCode::Write))
+		if (_request.chain != nullptr && (_request.op == OpCode::READ || _request.op == OpCode::WRITE))
 		{
 			// hEvent 의 최하위 비트를 세우면(문서화된 트릭) 이 handle 이 IOCP 에 연결돼 있어도 이
 			// OVERLAPPED 의 완료가 IOCP 로 자동 posting 되지 않는다 — 세팅 안 하면 세그먼트마다 쓰는
@@ -237,7 +237,7 @@ BEGIN_NS(ne::io)
 				segmentOverlapped.hEvent = taggedEvent;
 
 				ulong_t transferred = 0;
-				bool_t isOk = (_request.op == OpCode::Read) ? ::ReadFile(_handle, segment.ptr, static_cast<ulong_t>(segment.length), &transferred, &segmentOverlapped) :
+				bool_t isOk = (_request.op == OpCode::READ) ? ::ReadFile(_handle, segment.ptr, static_cast<ulong_t>(segment.length), &transferred, &segmentOverlapped) :
 								::WriteFile(_handle, segment.ptr, static_cast<ulong_t>(segment.length), &transferred, &segmentOverlapped);
 				if (!isOk && ::GetLastError() == ERROR_IO_PENDING)
 				{
@@ -271,21 +271,21 @@ BEGIN_NS(ne::io)
 
 		switch (_request.op)
 		{
-			case OpCode::Read:
+			case OpCode::READ:
 			{
 				ulong_t read = 0;
 				if (!::ReadFile(_handle, _request.buffer, static_cast<ulong_t>(_request.length), &read, &_operation->overlapped)) if (const ulong_t error = ::GetLastError();
 					error != ERROR_IO_PENDING) syncError = static_cast<int_t>(error);
 				break;
 			}
-			case OpCode::Write:
+			case OpCode::WRITE:
 			{
 				ulong_t written = 0;
 				if (!::WriteFile(_handle, _request.buffer, static_cast<ulong_t>(_request.length), &written, &_operation->overlapped)) if (const ulong_t error = ::GetLastError();
 					error != ERROR_IO_PENDING) syncError = static_cast<int_t>(error);
 				break;
 			}
-			case OpCode::Receive:
+			case OpCode::RECEIVE:
 			{
 				ulong_t received = 0;
 				ulong_t flags = 0;
@@ -314,7 +314,7 @@ BEGIN_NS(ne::io)
 
 				break;
 			}
-			case OpCode::Send:
+			case OpCode::SEND:
 			{
 				ulong_t sent = 0;
 
@@ -336,7 +336,7 @@ BEGIN_NS(ne::io)
 
 				break;
 			}
-			case OpCode::WaitReadable:
+			case OpCode::WAIT_READABLE:
 			{
 				// IOCP 엔 native readiness 가 없다 — 0-byte WSARecv 는 데이터 도착(=readable) 시 완료되며 데이터를
 				// 소비하지 않는다. 이후 호출자(libssh2 등)가 실제 recv 로 읽으면 블록하지 않는다.
@@ -347,7 +347,7 @@ BEGIN_NS(ne::io)
 					error != WSA_IO_PENDING) syncError = error;
 				break;
 			}
-			case OpCode::WaitWritable:
+			case OpCode::WAIT_WRITABLE:
 			{
 				// IOCP 엔 쓰기-readiness 프리미티브가 없다 — 낙관적으로 즉시 ready(result 0) 처리한다(대부분 소켓은
 				// writable). 송신 버퍼가 가득 차 있으면 호출자가 send 재시도→다시 WaitWritable 로 돌 수 있다.
@@ -357,7 +357,7 @@ BEGIN_NS(ne::io)
 				::PostQueuedCompletionStatus(iocpHandle.Get(), 0, 0, &_operation->overlapped);
 				break;
 			}
-			case OpCode::SendTo: // 비연결형(UDP) 송신 — address/addressLength 가 매 호출 목적지
+			case OpCode::SEND_TO: // 비연결형(UDP) 송신 — address/addressLength 가 매 호출 목적지
 			{
 				WSABUF wsaBuffer{ .len = static_cast<ulong_t>(_request.length), .buf = static_cast<lpstr_t>(_request.buffer) };
 				ulong_t sent = 0;
@@ -365,7 +365,7 @@ BEGIN_NS(ne::io)
 					SOCKET_ERROR) if (const int_t error = ::WSAGetLastError(); error != WSA_IO_PENDING) syncError = error;
 				break;
 			}
-			case OpCode::ReceiveFrom: // 비연결형(UDP) 수신 — fromAddress/fromAddressLength 에 발신자 주소를 채움
+			case OpCode::RECEIVE_FROM: // 비연결형(UDP) 수신 — fromAddress/fromAddressLength 에 발신자 주소를 채움
 			{
 				WSABUF wsaBuffer{ .len = static_cast<ulong_t>(_request.length), .buf = static_cast<lpstr_t>(_request.buffer) };
 				ulong_t received = 0;
@@ -381,7 +381,7 @@ BEGIN_NS(ne::io)
 								nullptr) == SOCKET_ERROR) if (const int_t error = ::WSAGetLastError(); error != WSA_IO_PENDING) syncError = error;
 				break;
 			}
-			case OpCode::Accept:
+			case OpCode::ACCEPT:
 			{
 				const SOCKET listenSocket = reinterpret_cast<SOCKET>(_handle);
 				if (!EnsureExtensions(static_cast<socket_t>(listenSocket)))
@@ -418,7 +418,7 @@ BEGIN_NS(ne::io)
 
 				break;
 			}
-			case OpCode::Connect:
+			case OpCode::CONNECT:
 			{
 				const SOCKET socket = reinterpret_cast<SOCKET>(_handle);
 				if (!EnsureExtensions(static_cast<socket_t>(socket)))
@@ -450,7 +450,7 @@ BEGIN_NS(ne::io)
 
 				break;
 			}
-			case OpCode::SendFile: // handle=목적지 소켓(Send 계열과 동일), auxHandle=원본 파일. TransmitFile 은
+			case OpCode::SEND_FILE: // handle=목적지 소켓(Send 계열과 동일), auxHandle=원본 파일. TransmitFile 은
 			{                      // OVERLAPPED.Offset/OffsetHigh 로 시작 오프셋을 받는다(위에서 이미 세팅됨).
 				const SOCKET destSocket = reinterpret_cast<SOCKET>(_handle);
 				const auto sourceFile = reinterpret_cast<HANDLE>(static_cast<uintptr_t>(_request.auxHandle));
@@ -458,14 +458,14 @@ BEGIN_NS(ne::io)
 					error != WSA_IO_PENDING) syncError = error;
 				break;
 			}
-			case OpCode::ReadFixed: // Windows 에 파일 등록 버퍼 개념이 없다(RIO 는 소켓 전용) — 일반 Read 와 동일, bufferId 무시
+			case OpCode::READ_FIXED: // Windows 에 파일 등록 버퍼 개념이 없다(RIO 는 소켓 전용) — 일반 Read 와 동일, bufferId 무시
 			{
 				ulong_t read = 0;
 				if (!::ReadFile(_handle, _request.buffer, static_cast<ulong_t>(_request.length), &read, &_operation->overlapped)) if (const ulong_t error = ::GetLastError();
 					error != ERROR_IO_PENDING) syncError = static_cast<int_t>(error);
 				break;
 			}
-			case OpCode::WriteFixed: // 위와 동일
+			case OpCode::WRITE_FIXED: // 위와 동일
 			{
 				ulong_t written = 0;
 				if (!::WriteFile(_handle, _request.buffer, static_cast<ulong_t>(_request.length), &written, &_operation->overlapped)) if (const ulong_t error = ::GetLastError();

@@ -165,9 +165,6 @@ BEGIN_NS(ne::crypto)
 
 
 
-	void_t BigInt::Trim() { while (d.size() > 1 && d.back() == 0) d.pop_back(); }
-
-
 	string_t BigInt::ToHex() const
 	{
 		static constexpr char_t hexChars[] = "0123456789abcdef";
@@ -426,7 +423,6 @@ BEGIN_NS(ne::crypto)
 
 		return result;
 	}
-
 
 
 	BigInt BigInt::Random(const size_t _bits, SecureRandom& _rng)

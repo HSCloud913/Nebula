@@ -35,7 +35,9 @@ BEGIN_NS(ne::crypto)
 			}
 			if (n < 0 && errno == EINTR) continue;
 			break; // getrandom 미지원/실패 — /dev/urandom 폴백
-		} if (filled < _length)
+		}
+
+		if (filled < _length)
 		{
 			const int_t fd = ::open("/dev/urandom", O_RDONLY);
 			if (fd >= 0)
@@ -51,15 +53,16 @@ BEGIN_NS(ne::crypto)
 					if (n < 0 && errno == EINTR) continue;
 					break;
 				}
+
 				::close(fd);
 			}
 		}
 #endif
 	}
 
-	SecureRandom::result_type SecureRandom::Next() noexcept
+	ulonglong_t SecureRandom::Next() noexcept
 	{
-		result_type value = 0;
+		ulonglong_t value = 0;
 		Fill(&value, sizeof(value));
 
 		return value;

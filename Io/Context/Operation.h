@@ -16,52 +16,34 @@ BEGIN_NS(ne::io)
 	//   오버헤드 제거(복사는 여전히 있음), 후자만 진짜 recv zero-copy(mmap 기반).
 	enum class Capability : uint_t
 	{
-		SendFileZeroCopy,
-		// 파일→소켓 진짜 zero-copy (TransmitFile / sendfile / splice / SEND_ZC)
-		SendMemZeroCopy,
-		// 메모리→소켓 진짜 zero-copy (RIO / MSG_ZEROCOPY / SEND_ZC)
-		RecvOverheadReduced,
-		// registered buffer — 복사는 있으나 pin/validate 오버헤드 감소 (RIO / io_uring Fixed Buffer)
-		RecvTrueZeroCopy,
-		// 진짜 recv zero-copy (mmap 기반 — TCP_ZEROCOPY_RECEIVE)
+		SEND_FILE_ZERO_COPY, // 파일→소켓 진짜 zero-copy (TransmitFile / sendfile / splice / SEND_ZC)
+		SEND_MEM_ZERO_COPY, // 메모리→소켓 진짜 zero-copy (RIO / MSG_ZEROCOPY / SEND_ZC)
+		RECEIVE_OVERHEAD_REDUCED, // registered buffer — 복사는 있으나 pin/validate 오버헤드 감소 (RIO / io_uring Fixed Buffer)
+		RECEIVE_TRUE_ZERO_COPY, // 진짜 recv zero-copy (mmap 기반 — TCP_ZEROCOPY_RECEIVE)
 	};
 
 	// 제출할 I/O 연산 종류. 규칙 2에 따라 Recv 대신 Receive 로 명명한다.
 	enum class OpCode : uint_t
 	{
-		Read,
-		// 파일 read (offset 사용)
-		Write,
-		// 파일 write (offset 사용)
-		Receive,
-		// 소켓 수신
-		Send,
-		// 소켓 송신
-		Accept,
-		// 소켓 accept
-		Connect,
-		// 소켓 connect
-		ReadFixed,
-		// 등록 버퍼 read  (Level 3.5)
-		WriteFixed,
-		// 등록 버퍼 write (Level 3.5)
-		SendZeroCopy,
-		// 메모리→소켓 zero-copy send (Level 3.5)
-		SendFile,
-		// 파일→소켓 zero-copy 전송  (Level 3.5)
-		SendTo,
-		// 비연결형(UDP 등) 송신 — address/addressLength 가 매 호출 목적지
-		ReceiveFrom,
-		// 비연결형(UDP 등) 수신 — fromAddress/fromAddressLength 에 발신자 주소를 채움
+		READ, // 파일 read (offset 사용)
+		WRITE, // 파일 write (offset 사용)
+		RECEIVE, // 소켓 수신
+		SEND, // 소켓 송신
+		ACCEPT, // 소켓 accept
+		CONNECT, // 소켓 connect
+		READ_FIXED, // 등록 버퍼 read  (Level 3.5)
+		WRITE_FIXED, // 등록 버퍼 write (Level 3.5)
+		SEND_ZERO_COPY, // 메모리→소켓 zero-copy send (Level 3.5)
+		SEND_FILE, // 파일→소켓 zero-copy 전송  (Level 3.5)
+		SEND_TO, // 비연결형(UDP 등) 송신 — address/addressLength 가 매 호출 목적지
+		RECEIVE_FROM, // 비연결형(UDP 등) 수신 — fromAddress/fromAddressLength 에 발신자 주소를 채움
 
 		// readiness 대기(데이터를 옮기지 않고 "읽기/쓰기 가능"까지만 대기) — libssh2 등 readiness(reactor)
 		// 모델 라이브러리를 completion 엔진 위에서 구동하기 위한 프리미티브. reactor(Epoll/WsaPoll)와
 		// io_uring(POLL_ADD)은 native, IOCP 는 WaitReadable=0-byte WSARecv 로 근사(WaitWritable 은 근사 불가라
 		// 즉시 ready 로 처리 — 아래 IocpEngine 주석 참조).
-		WaitReadable,
-		// handle 소켓이 읽기 가능해질 때까지 대기(완료 result 0 = ready)
-		WaitWritable,
-		// handle 소켓이 쓰기 가능해질 때까지 대기
+		WAIT_READABLE, // handle 소켓이 읽기 가능해질 때까지 대기(완료 result 0 = ready)
+		WAIT_WRITABLE, // handle 소켓이 쓰기 가능해질 때까지 대기
 	};
 
 	// 엔진에 제출하는 단일 I/O 요청 (값 기반).
@@ -71,7 +53,7 @@ BEGIN_NS(ne::io)
 	//            정규화해 보관한다(Win64 SOCKET/HANDLE, POSIX fd 모두 수용). 엔진이 원 타입으로 복원.
 	struct Request
 	{
-		OpCode op{ OpCode::Read };
+		OpCode op{ OpCode::READ };
 		void_t* userData{ nullptr };
 		ulonglong_t handle{ 0 };
 		void_t* buffer{ nullptr };

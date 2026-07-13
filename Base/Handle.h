@@ -15,14 +15,12 @@ BEGIN_NS(ne)
 	{
 	public:
 		constexpr Handle() = default;
-		constexpr ~Handle() noexcept { Close(); }
-
 		constexpr explicit Handle(const T _handle) noexcept
 			: handle(_handle) {}
 
-		constexpr Handle(Handle&& _nebulaHandle) noexcept
-			: handle(_nebulaHandle.handle) { _nebulaHandle.handle = InvalidHandle; }
+		constexpr ~Handle() noexcept { Close(); }
 
+		constexpr Handle(const Handle& _nebulaHandle) = delete;
 		constexpr Handle& operator=(const T _handle)
 		{
 			if (handle != _handle)
@@ -33,6 +31,9 @@ BEGIN_NS(ne)
 
 			return *this;
 		}
+
+		constexpr Handle(Handle&& _nebulaHandle) noexcept
+			: handle(_nebulaHandle.handle) { _nebulaHandle.handle = InvalidHandle; }
 
 		constexpr Handle& operator=(Handle&& _nebulaHandle) noexcept
 		{
@@ -45,8 +46,6 @@ BEGIN_NS(ne)
 
 			return *this;
 		}
-
-		NEBULA_NON_COPYABLE(Handle)
 
 	private:
 		T handle = InvalidHandle;

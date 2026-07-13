@@ -5,19 +5,20 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(SOURCES
-    Socket/Socket.cpp
+    #Socket/Socket.cpp
+    Dns/Dns.cpp
     Stream/Plain/PlainStream.cpp
-    Stream/TLS/TlsStream.cpp
-    Stream/SSH/SshStream.cpp
-    Protocol/Http/Http1/Client.cpp
-    Protocol/Http/Http1/Server.cpp
+    Stream/Tls/TlsStream.cpp
+    #Stream/SSH/SshStream.cpp
+    #Protocol/Http/Http1/Client.cpp
+    #Protocol/Http/Http1/Server.cpp
     #Protocol/Http/Http2/Hpack.cpp
     #Protocol/Http/Http2/Stream.cpp
     #Protocol/Http/Http2/FlowControl.cpp
     #Protocol/Http/Http2/Client.cpp
     #Protocol/Http/Http2/Server.cpp
-    Protocol/Ftp/Client.cpp
-    Protocol/Sftp/Client.cpp
+    #Protocol/Ftp/Client.cpp
+    #Protocol/Sftp/Client.cpp
 )
 
 if (WIN32)

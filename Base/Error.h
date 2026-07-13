@@ -52,15 +52,6 @@ BEGIN_NS(ne)
 	private:
 		ulong_t code{};
 
-	public:
-		OsError& Context(string_view_t _context)
-		{
-			Error::Context(_context);
-			return *this;
-		}
-
-		[[nodiscard]] ulong_t Code() const noexcept { return code; }
-
 	private:
 		[[nodiscard]] static string_t OsMessage(const ulong_t _code)
 		{
@@ -78,10 +69,19 @@ BEGIN_NS(ne)
 			return std::format("OS error [{}]", _code);
 #endif
 		}
+
+	public:
+		OsError& Context(string_view_t _context)
+		{
+			Error::Context(_context);
+			return *this;
+		}
+
+		[[nodiscard]] ulong_t Code() const noexcept { return code; }
 	};
 
 #if defined(_WIN32)
-	[[nodiscard]] inline ulong_t LastOsError() noexcept { return static_cast<ulong_t>(::GetLastError()); }
+	[[nodiscard]] inline ulong_t LastOsError() noexcept { return ::GetLastError(); }
 #elif defined(IS_POSIX)
 	[[nodiscard]] inline ulong_t LastOsError() noexcept { return static_cast<ulong_t>(errno); }
 #endif

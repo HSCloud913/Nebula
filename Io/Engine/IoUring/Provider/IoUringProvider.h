@@ -5,7 +5,7 @@
 //
 // RIO(RioProvider)와 달리 io_uring 의 고정 버퍼는 별도 제출 API 가 없다 — 등록해 둔 슬롯 인덱스를
 // io_uring_prep_read_fixed/write_fixed 의 buf_index 인자로 그대로 넘기면 끝이고, 이건 이미
-// IoUringEngine::Submit() 의 OpCode::ReadFixed/WriteFixed 처리에서 Request.bufferId 로 하고
+// IoUringEngine::Submit() 의 OpCode::READ_FIXED/WriteFixed 처리에서 Request.bufferId 로 하고
 // 있다. 따라서 이 provider 는 RegisterBuffer/UnregisterBuffer(슬롯 관리)만 실질적인 일을 하고,
 // IRegisteredBufferProvider 의 SubmitSendRegistered/SubmitReceiveRegistered 는 io_uring 경로에서
 // 쓰이지 않으므로 UNSUPPORTED 를 반환한다(그 두 메서드는 RIO 처럼 "제출 자체가 provider 를 통하는"

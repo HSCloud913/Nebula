@@ -45,7 +45,7 @@ BEGIN_NS(ne::io)
 	{
 		// SendFile — io_uring SQE 를 쓰지 않고 동기 sendfile(2) 로 즉시 처리한다(단순화: splice
 		// 체인 기반 진짜 비동기 구현은 후속 과제). handle=목적지 소켓(Send 계열과 동일), auxHandle=원본 파일.
-		if (_request.op == OpCode::SendFile)
+		if (_request.op == OpCode::SEND_FILE)
 		{
 			off_t offset = static_cast<off_t>(_request.offset);
 			const ssize_t bytes = ::sendfile(static_cast<int_t>(_request.handle), static_cast<int_t>(_request.auxHandle), &offset, _request.length);
@@ -73,7 +73,7 @@ BEGIN_NS(ne::io)
 		const int_t fd = static_cast<int_t>(_request.handle);
 		switch (_request.op)
 		{
-			case OpCode::Read:
+			case OpCode::READ:
 				if (_request.chain != nullptr)
 				{
 					operation->iovecs = _request.chain->AsIovec();
@@ -81,7 +81,7 @@ BEGIN_NS(ne::io)
 				}
 				else { ::io_uring_prep_read(sqe, fd, _request.buffer, static_cast<uint_t>(_request.length), _request.offset); }
 				break;
-			case OpCode::Write:
+			case OpCode::WRITE:
 				if (_request.chain != nullptr)
 				{
 					operation->iovecs = _request.chain->AsIovec();
@@ -89,7 +89,7 @@ BEGIN_NS(ne::io)
 				}
 				else { ::io_uring_prep_write(sqe, fd, _request.buffer, static_cast<uint_t>(_request.length), _request.offset); }
 				break;
-			case OpCode::Receive:
+			case OpCode::RECEIVE:
 				if (_request.chain != nullptr)
 				{
 					operation->iovecs = _request.chain->AsIovec();
@@ -99,7 +99,7 @@ BEGIN_NS(ne::io)
 				}
 				else { ::io_uring_prep_recv(sqe, fd, _request.buffer, _request.length, 0); }
 				break;
-			case OpCode::Send:
+			case OpCode::SEND:
 				if (_request.chain != nullptr)
 				{
 					operation->iovecs = _request.chain->AsIovec();
@@ -111,7 +111,7 @@ BEGIN_NS(ne::io)
 				break;
 			// 비연결형(UDP) 송수신 — plain send/recv 는 목적지/발신자 주소를 못 실으므로 sendmsg/recvmsg
 			// 로 통일한다(msghdr.msg_name 에 주소를 싣는 것 자체는 chain 경로와 동일한 메커니즘).
-			case OpCode::SendTo:
+			case OpCode::SEND_TO:
 				operation->iovecs = { iovec{ _request.buffer, _request.length } };
 				operation->message.msg_iov = operation->iovecs.data();
 				operation->message.msg_iovlen = 1;
@@ -119,7 +119,7 @@ BEGIN_NS(ne::io)
 				operation->message.msg_namelen = static_cast<socklen_t>(_request.addressLength);
 				::io_uring_prep_sendmsg(sqe, fd, &operation->message, 0);
 				break;
-			case OpCode::ReceiveFrom:
+			case OpCode::RECEIVE_FROM:
 				operation->iovecs = { iovec{ _request.buffer, _request.length } };
 				operation->message.msg_iov = operation->iovecs.data();
 				operation->message.msg_iovlen = 1;
@@ -128,32 +128,32 @@ BEGIN_NS(ne::io)
 				operation->fromAddressLength = _request.fromAddressLength; // 완료 후 실채움 길이를 되돌려주기 위해 보관
 				::io_uring_prep_recvmsg(sqe, fd, &operation->message, 0);
 				break;
-			case OpCode::Accept:
+			case OpCode::ACCEPT:
 				::io_uring_prep_accept(sqe, fd, nullptr, nullptr, 0);
 				break;
-			case OpCode::Connect:
+			case OpCode::CONNECT:
 				::io_uring_prep_connect(sqe, fd, static_cast<const sockaddr*>(_request.address), static_cast<socklen_t>(_request.addressLength));
 				break;
 			// bufferId 는 IoUringRegisteredBufferProvider::RegisterBuffer 가 돌려준 BufferHandle.value
 			// (슬롯 인덱스+1, 0=무효) — buf_index 로 넘길 땐 -1 해서 원래 슬롯 인덱스로 되돌린다.
 			// 미리 RegisterBuffer 로 등록된 슬롯이어야 한다.
-			case OpCode::ReadFixed:
+			case OpCode::READ_FIXED:
 				::io_uring_prep_read_fixed(sqe, fd, _request.buffer, static_cast<uint_t>(_request.length), _request.offset, static_cast<int_t>(_request.bufferId) - 1);
 				break;
-			case OpCode::WriteFixed:
+			case OpCode::WRITE_FIXED:
 				::io_uring_prep_write_fixed(sqe, fd, _request.buffer, static_cast<uint_t>(_request.length), _request.offset, static_cast<int_t>(_request.bufferId) - 1);
 				break;
 			// MSG_ZEROCOPY — 등록 불필요(opportunistic). 두 번째(zerocopy-complete) CQE 는 이 구현에서
 			// 추적하지 않는다(버퍼 재사용 안전성은 호출자 책임) — io_uring_prep_send_zc 의 2-CQE 프로토콜
 			// 대신 단순함을 택함.
-			case OpCode::SendZeroCopy:
+			case OpCode::SEND_ZERO_COPY:
 				::io_uring_prep_send(sqe, fd, _request.buffer, _request.length, MSG_ZEROCOPY);
 				break;
 			// readiness 대기 — 데이터 이동 없이 읽기/쓰기 가능까지만(단발 POLL_ADD). 완료 res(>=0)는 준비 이벤트 마스크.
-			case OpCode::WaitReadable:
+			case OpCode::WAIT_READABLE:
 				::io_uring_prep_poll_add(sqe, fd, POLLIN);
 				break;
-			case OpCode::WaitWritable:
+			case OpCode::WAIT_WRITABLE:
 				::io_uring_prep_poll_add(sqe, fd, POLLOUT);
 				break;
 			default:
@@ -268,13 +268,13 @@ BEGIN_NS(ne::io)
 	{
 		switch (_capability)
 		{
-			case Capability::SendFileZeroCopy:
+			case Capability::SEND_FILE_ZERO_COPY:
 				return true; // sendfile(2) 동기 폴백(SendFile)
-			case Capability::SendMemZeroCopy:
+			case Capability::SEND_MEM_ZERO_COPY:
 				return true; // MSG_ZEROCOPY(SendZeroCopy)
-			case Capability::RecvOverheadReduced:
+			case Capability::RECEIVE_OVERHEAD_REDUCED:
 				return true; // Fixed Buffer(ReadFixed/WriteFixed) — 사전 등록 필요
-			case Capability::RecvTrueZeroCopy:
+			case Capability::RECEIVE_TRUE_ZERO_COPY:
 				return false; // 미구현
 		}
 

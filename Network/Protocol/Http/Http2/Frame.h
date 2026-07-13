@@ -16,16 +16,16 @@ inline constexpr uint32_t kDefaultMaxFrameSize = 16384;
 
 enum class FrameType : uint8_t
 {
-	Data = 0x0,
-	Headers = 0x1,
-	Priority = 0x2,
-	RstStream = 0x3,
-	Settings = 0x4,
-	PushPromise = 0x5,
-	Ping = 0x6,
-	GoAway = 0x7,
-	WindowUpdate = 0x8,
-	Continuation = 0x9,
+	DATA = 0x0,
+	HEADERS = 0x1,
+	PRIORITY = 0x2,
+	RST_STREAM = 0x3,
+	SETTINGS = 0x4,
+	PUSH_PROMISE = 0x5,
+	PING = 0x6,
+	GO_AWAY = 0x7,
+	WINDOW_UPDATE = 0x8,
+	CONTINUATION = 0x9,
 };
 
 namespace Flag

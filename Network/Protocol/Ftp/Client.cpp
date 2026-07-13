@@ -150,7 +150,7 @@ ne::Task<ne::Result<void, ne::Error>> Client::Quit()
 
 ne::Task<ne::Result<void, ne::Error>> Client::SetTransferType(TransferType _type)
 {
-	const string_view_t argument = (_type == TransferType::Binary) ? "I" : "A";
+	const string_view_t argument = (_type == TransferType::BINARY) ? "I" : "A";
 
 	auto result = co_await SendCommand("TYPE", argument);
 	if (result.IsError()) co_return ne::Result<void, ne::Error>::Error(std::move(result.Error()));

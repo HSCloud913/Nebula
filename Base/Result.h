@@ -24,6 +24,7 @@ BEGIN_NS(ne)
 	private:
 		explicit Result(T _value)
 			: storage(std::move(_value)) {}
+
 		explicit Result(E _error)
 			: storage(std::move(_error)) {}
 

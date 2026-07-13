@@ -8,7 +8,6 @@
 
 BEGIN_NS(ne)
 	ThreadPool::ThreadPool(const size_t _count)
-		: isShutdown(false)
 	{
 		threads.reserve(_count);
 
@@ -29,7 +28,8 @@ BEGIN_NS(ne)
 
 					lock.unlock();
 
-					try { job(); } catch (...)
+					try { job(); }
+					catch (...)
 					{
 						// A job's exception must not escape the thread's top-level function:
 						// doing so would call std::terminate() and bring down the whole process.

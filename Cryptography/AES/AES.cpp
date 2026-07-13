@@ -50,6 +50,7 @@ static ne::byte_t gmul(ne::byte_t _a, ne::byte_t _b)
 		_a = xtime(_a);
 		_b >>= 1;
 	}
+
 	return p;
 }
 
@@ -100,7 +101,12 @@ static void KeyExpansion(AESContext& _context, const ne::byte_t* _key, const int
 static void AddRoundKey(Block& _state, const ne::byte_t* _roundKey, int _round)
 {
 	for (int c = 0; c < 4; ++c)
-		for (int r = 0; r < 4; ++r) _state[r + 4 * c] ^= _roundKey[(_round * 4 + c) * 4 + r];
+	{
+		for (int r = 0; r < 4; ++r)
+		{
+			_state[r + 4 * c] ^= _roundKey[(_round * 4 + c) * 4 + r];
+		}
+	}
 }
 
 static void SubBytes(Block& _state) { for (auto& b : _state) b = Sbox[b]; }
@@ -193,6 +199,7 @@ static Block EncryptBlock(const AESContext& _context, Block _state)
 static Block DecryptBlock(const AESContext& _context, Block _state)
 {
 	AddRoundKey(_state, _context.roundKey, _context.round);
+
 	for (int round = _context.round - 1; round >= 1; --round)
 	{
 		InvShiftRows(_state);
@@ -200,9 +207,11 @@ static Block DecryptBlock(const AESContext& _context, Block _state)
 		AddRoundKey(_state, _context.roundKey, round);
 		InvMixColumns(_state);
 	}
+
 	InvShiftRows(_state);
 	InvSubBytes(_state);
 	AddRoundKey(_state, _context.roundKey, 0);
+
 	return _state;
 }
 
@@ -236,6 +245,7 @@ static Block ToBlock(const ne::string_t& _data, const size_t _offset)
 {
 	Block b{};
 	for (int i = 0; i < 16; ++i) b[i] = static_cast<ne::byte_t>(_data[_offset + i]);
+
 	return b;
 }
 
@@ -248,11 +258,17 @@ static void ApplyPKCS7(ne::string_t& _data)
 static ne::string_t RemovePKCS7(ne::string_t _data)
 {
 	if (_data.empty() || _data.size() % 16 != 0) return _data;
+
 	const auto pad = static_cast<ne::byte_t>(_data.back());
 	if (pad == 0 || pad > 16) return _data;
+
 	for (size_t i = _data.size() - pad; i < _data.size(); ++i)
+	{
 		if (static_cast<ne::byte_t>(_data[i]) != pad) return _data;
+	}
+
 	_data.resize(_data.size() - pad);
+
 	return _data;
 }
 
@@ -317,7 +333,12 @@ BEGIN_NS(ne::crypto)
 		result.reserve(_plaintext.size());
 
 		for (size_t i = 0; i < _plaintext.size(); i += 16)
-			for (const auto data : EncryptBlock(context, ToBlock(_plaintext, i))) result += static_cast<char_t>(data);
+		{
+			for (const auto data : EncryptBlock(context, ToBlock(_plaintext, i)))
+			{
+				result += static_cast<char_t>(data);
+			}
+		}
 
 		return result;
 	}
@@ -330,7 +351,12 @@ BEGIN_NS(ne::crypto)
 		result.reserve(_ciphertext.size());
 
 		for (size_t i = 0; i < _ciphertext.size(); i += 16)
-			for (const auto data : DecryptBlock(context, ToBlock(_ciphertext, i))) result += static_cast<char_t>(data);
+		{
+			for (const auto data : DecryptBlock(context, ToBlock(_ciphertext, i)))
+			{
+				result += static_cast<char_t>(data);
+			}
+		}
 
 		return RemovePKCS7(std::move(result));
 	}

@@ -4,7 +4,6 @@
 
 #pragma once
 #include <atomic>
-#include <cstddef>
 #include "Base/Type.h"
 
 BEGIN_NS(ne::concurrency)
@@ -69,7 +68,6 @@ BEGIN_NS(ne::concurrency)
 		[[nodiscard]] bool_t IsEmpty() const noexcept
 		{
 			Node* headNode = head.load(std::memory_order_relaxed);
-
 			return headNode->next.load(std::memory_order_acquire) == nullptr;
 		}
 	};

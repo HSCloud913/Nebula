@@ -6,13 +6,18 @@
 
 #include <utility>
 
+
+
 BEGIN_NS(ne::io)
 	BufferPoolSlot::~BufferPoolSlot() { if (pool != nullptr) pool->Release(index); }
 
 	BufferPoolSlot::BufferPoolSlot(BufferPoolSlot&& _other) noexcept
 		: pool(_other.pool)
+		, view(_other.view)
 		, index(_other.index)
-		, view(_other.view) { _other.pool = nullptr; }
+	{
+		_other.pool = nullptr;
+	}
 
 	BufferPoolSlot& BufferPoolSlot::operator=(BufferPoolSlot&& _other) noexcept
 	{
@@ -71,7 +76,7 @@ BEGIN_NS(ne::io)
 		const std::size_t index = freeSlots.back();
 		freeSlots.pop_back();
 
-		return BufferPoolSlot{ *this, index, buffer.View(index * slotSize, slotSize) };
+		return BufferPoolSlot{ *this, buffer.View(index * slotSize, slotSize), index };
 	}
 
 END_NS

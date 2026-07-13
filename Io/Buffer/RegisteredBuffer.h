@@ -27,8 +27,6 @@ BEGIN_NS(ne::io)
 		RegisteredBuffer() = default;
 		~RegisteredBuffer() { Reset(); }
 
-		NEBULA_NON_COPYABLE(RegisteredBuffer)
-
 		RegisteredBuffer(RegisteredBuffer&& _other) noexcept
 			: provider(_other.provider)
 			, handle(_other.handle)
@@ -54,6 +52,8 @@ BEGIN_NS(ne::io)
 
 			return *this;
 		}
+
+		NEBULA_NON_COPYABLE(RegisteredBuffer)
 
 	private:
 		IRegisteredBufferProvider* provider{ nullptr };

@@ -20,36 +20,8 @@ BEGIN_NS(ne)
 	class Task
 	{
 	public:
-		struct promise_type; // ctor 시그니처 사용을 위한 전방 선언
-
-	public:
-		explicit Task(std::coroutine_handle<promise_type> _handle) noexcept
-			: handle(_handle) {}
-
-		Task(Task&& _other) noexcept
-			: handle(std::exchange(_other.handle, {})) {}
-
-		Task& operator=(Task&& _other) noexcept
-		{
-			if (this != &_other)
-			{
-				if (handle) handle.destroy();
-				handle = std::exchange(_other.handle, {});
-			}
-			return *this;
-		}
-
-		~Task() noexcept { if (handle) handle.destroy(); }
-
-		NEBULA_NON_COPYABLE(Task)
-
-	public:
 		struct promise_type
 		{
-		public:
-			promise_type() = default;
-			~promise_type() = default;
-
 		private:
 			// symmetric transfer: 완료 시 호출자 코루틴으로 즉시 이동 (스택 성장 없음)
 			struct FinalAwaiter
@@ -65,6 +37,11 @@ BEGIN_NS(ne)
 				void_t await_resume() const noexcept {}
 			};
 
+		public:
+			promise_type() = default;
+			~promise_type() = default;
+
+		public:
 			std::optional<T> result;
 			std::coroutine_handle<> continuation;
 
@@ -77,9 +54,31 @@ BEGIN_NS(ne)
 			void_t return_value(T _value) noexcept { result.emplace(std::move(_value)); }
 			void_t unhandled_exception() noexcept { std::terminate(); }
 
+		public:
 			T TakeResult() noexcept { return std::move(*result); }
 			void_t SetContinuation(std::coroutine_handle<> _continuation) noexcept { continuation = _continuation; }
 		};
+
+	public:
+		explicit Task(std::coroutine_handle<promise_type> _handle) noexcept
+			: handle(_handle) {}
+
+		~Task() noexcept { if (handle) handle.destroy(); }
+
+		Task(Task&& _other) noexcept
+			: handle(std::exchange(_other.handle, {})) {}
+
+		Task& operator=(Task&& _other) noexcept
+		{
+			if (this != &_other)
+			{
+				if (handle) handle.destroy();
+				handle = std::exchange(_other.handle, {});
+			}
+			return *this;
+		}
+
+		NEBULA_NON_COPYABLE(Task)
 
 	private:
 		std::coroutine_handle<promise_type> handle;
@@ -95,9 +94,9 @@ BEGIN_NS(ne)
 
 		[[nodiscard]] T await_resume() noexcept { return handle.promise().TakeResult(); }
 
+	public:
 		void_t Resume() noexcept { if (handle && !handle.done()) handle.resume(); }
 
-	public:
 		[[nodiscard]] bool_t IsReady() const noexcept { return !handle || handle.done(); }
 		[[nodiscard]] bool_t IsValid() const noexcept { return static_cast<bool_t>(handle); }
 	};
@@ -106,30 +105,6 @@ BEGIN_NS(ne)
 	template <>
 	class Task<void_t>
 	{
-	public:
-		struct promise_type;
-
-	public:
-		explicit Task(const std::coroutine_handle<promise_type> _handle) noexcept
-			: handle(_handle) {}
-
-		Task(Task&& _other) noexcept
-			: handle(std::exchange(_other.handle, {})) {}
-
-		Task& operator=(Task&& _other) noexcept
-		{
-			if (this != &_other)
-			{
-				if (handle) handle.destroy();
-				handle = std::exchange(_other.handle, {});
-			}
-			return *this;
-		}
-
-		~Task() noexcept { if (handle) handle.destroy(); }
-
-		NEBULA_NON_COPYABLE(Task)
-
 	public:
 		struct promise_type
 		{
@@ -165,6 +140,27 @@ BEGIN_NS(ne)
 			void_t SetContinuation(const std::coroutine_handle<> _continuation) noexcept { continuation = _continuation; }
 		};
 
+	public:
+		explicit Task(const std::coroutine_handle<promise_type> _handle) noexcept
+			: handle(_handle) {}
+
+		~Task() noexcept { if (handle) handle.destroy(); }
+
+		Task(Task&& _other) noexcept
+			: handle(std::exchange(_other.handle, {})) {}
+
+		Task& operator=(Task&& _other) noexcept
+		{
+			if (this != &_other)
+			{
+				if (handle) handle.destroy();
+				handle = std::exchange(_other.handle, {});
+			}
+			return *this;
+		}
+
+		NEBULA_NON_COPYABLE(Task)
+
 	private:
 		std::coroutine_handle<promise_type> handle;
 
@@ -179,9 +175,9 @@ BEGIN_NS(ne)
 
 		void_t await_resume() const noexcept {}
 
+	public:
 		void_t Resume() noexcept { if (handle && !handle.done()) handle.resume(); }
 
-	public:
 		[[nodiscard]] bool_t IsReady() const noexcept { return !handle || handle.done(); }
 		[[nodiscard]] bool_t IsValid() const noexcept { return static_cast<bool_t>(handle); }
 	};
