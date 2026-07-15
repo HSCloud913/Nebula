@@ -10,15 +10,6 @@
 
 
 BEGIN_NS(ne::time)
-	TimerWheel::TimerWheel()
-		: TimerWheel([] { return std::chrono::steady_clock::now(); }) {}
-
-	TimerWheel::TimerWheel(Clock _clock)
-		: clock(std::move(_clock))
-		, baseTime(clock()) {}
-
-
-
 	ulonglong_t TimerWheel::Schedule(const std::chrono::milliseconds _delay, std::function<void_t()> _callback)
 	{
 		const ulonglong_t id = nextId.fetch_add(1, std::memory_order_relaxed);
@@ -73,6 +64,7 @@ BEGIN_NS(ne::time)
 
 		for (auto& entry : fired) entry.callback();
 	}
+
 
 	int_t TimerWheel::NextExpiryMs() const noexcept
 	{

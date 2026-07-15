@@ -8,6 +8,14 @@
 #include "Base/Type.h"
 
 BEGIN_NS(ne::memory)
+	/**
+	 * @class IAllocator
+	 * @brief `std::pmr::memory_resource`를 이 프로젝트 인터페이스(Allocate/Deallocate/Available)로
+	 * 노출하는 커스텀 할당자 인터페이스입니다.
+	 *
+	 * `do_allocate`/`do_deallocate`/`do_is_equal`은 표준 pmr 경로용 어댑터일 뿐이며, 실제 구현은
+	 * Allocate()/Deallocate()/Available()에서 이뤄집니다.
+	 */
 	class IAllocator :public std::pmr::memory_resource
 	{
 	public:

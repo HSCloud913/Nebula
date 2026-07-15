@@ -46,6 +46,7 @@ BEGIN_NS(ne::io)
 			int_t* fromAddressLength{ nullptr }; // ReceiveFrom 전용 — 완료 후 message.msg_namelen 을 호출자 포인터로 되돌려줌
 		};
 
+	private:
 		io_uring ring{};
 		bool_t isValid{ false };
 		int_t wakeEventFd{ -1 };
@@ -55,7 +56,7 @@ BEGIN_NS(ne::io)
 		std::vector<Completion> readyCompletions;              // SQ 부족 등 즉시 완료(합성)
 		std::unique_ptr<IoUringProvider> bufferProvider;       // ReadFixed/WriteFixed 전용 등록 버퍼 슬롯 관리
 
-	public:
+	public: /* IEngine */
 		virtual void_t Submit(const Request& _request) override;
 		[[nodiscard]] virtual int_t WaitCompletions(Completion* _out, int_t _max, std::chrono::milliseconds _timeout) override;
 		virtual void_t Wake() override;

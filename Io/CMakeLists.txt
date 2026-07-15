@@ -25,8 +25,7 @@ set(HEADERS
 
     Context/Operation.h
     Engine/IEngine.h
-    Engine/EngineFactory.h
-    Engine/IRegisteredBufferProvider.h
+        Engine/IRegisteredBufferProvider.h
     Engine/IoUring/IoUringEngine.h
     Engine/IoUring/Provider/IoUringProvider.h
     Engine/Epoll/EpollEngine.h
@@ -39,8 +38,7 @@ set(HEADERS
 set(SOURCES
     Context/Context.cpp
     Context/ContextPool.cpp
-    Engine/EngineFactory.cpp
-    File/File.cpp
+        File/File.cpp
     Socket/Socket.cpp
     Buffer/BufferPool.cpp
 )

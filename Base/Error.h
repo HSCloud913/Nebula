@@ -12,6 +12,13 @@
 #endif
 
 BEGIN_NS(ne)
+	/**
+	 * @class Error
+	 * @brief 예외 없이 실패를 표현하기 위한 기본 에러 타입입니다.
+	 *
+	 * 메시지와, Context()로 누적되는 호출 경로 체인을 함께 보관합니다. What()은 이
+	 * 경로 체인과 메시지를 합쳐 반환하고, Message()는 원본 메시지만 반환합니다.
+	 */
 	class Error
 	{
 	public:
@@ -38,6 +45,12 @@ BEGIN_NS(ne)
 		[[nodiscard]] string_t What() const { return contextChain.empty() ? message : contextChain + message; }
 	};
 
+	/**
+	 * @class OsError
+	 * @brief OS 에러 코드(GetLastError/errno)를 사람이 읽을 수 있는 메시지로 변환해 담는 Error입니다.
+	 *
+	 * @note 메시지를 직접 지정하지 않으면 플랫폼별 API(FormatMessageA/strerror)로 자동 조회합니다.
+	 */
 	class OsError :public Error
 	{
 	public:

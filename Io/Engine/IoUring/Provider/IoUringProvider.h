@@ -29,6 +29,7 @@ BEGIN_NS(ne::io)
 	public:
 		explicit IoUringProvider(io_uring* _ring) noexcept
 			: ring(_ring) {}
+
 		virtual ~IoUringProvider() override = default;
 
 		NEBULA_NON_COPYABLE_MOVABLE(IoUringProvider)
@@ -37,20 +38,21 @@ BEGIN_NS(ne::io)
 		// 슬롯 상한(고정) — sparse 등록 시 한 번에 예약해 두는 크기. TODO: 워크로드 기반 산정.
 		static constexpr uint_t MaxBuffers = 1024;
 
+	private:
 		io_uring* ring;
 		std::mutex mutex;
 		bool_t isSparseRegistered{ false };
 		std::vector<bool_t> usedSlots{ std::vector<bool_t>(MaxBuffers, false) };
 
-	public: // IRegisteredBufferProvider
+	public: /* IRegisteredBufferProvider */
 		[[nodiscard]] virtual ne::Result<BufferHandle, IoError> RegisterBuffer(std::span<ne::byte_t> _region) noexcept override;
 		virtual void_t UnregisterBuffer(BufferHandle _handle) noexcept override;
 
-	public:
+	public: /* IRegisteredBufferProvider */
 		// io_uring 고정 버퍼는 Submit()의 ReadFixed/WriteFixed(SQE, buf_index=bufferId)로만 쓰인다 —
 		// 이 두 메서드는 이 provider 에서 호출 경로가 없다(RIO 전용 모델). 항상 실패 반환.
-		[[nodiscard]] virtual ne::Result<void_t, IoError> SubmitSendRegistered(socket_t _socket, BufferHandle _handle, const void_t* _buffer, std::size_t _length, void_t* _userData) noexcept override;
-		[[nodiscard]] virtual ne::Result<void_t, IoError> SubmitReceiveRegistered(socket_t _socket, BufferHandle _handle, void_t* _buffer, std::size_t _length, void_t* _userData) noexcept override;
+		[[nodiscard]] virtual ne::Result<void_t, IoError> SubmitSendRegistered(socket_t _socket, BufferHandle _handle, const void_t* _buffer, std::size_t _length, void_t* _userData) noexcept override { return ne::Result<void_t, IoError>::Error(IoError{ IoErrorKind::UNSUPPORTED, "io_uring fixed buffers are consumed via ReadFixed/WriteFixed, not this method" }); }
+		[[nodiscard]] virtual ne::Result<void_t, IoError> SubmitReceiveRegistered(socket_t _socket, BufferHandle _handle, void_t* _buffer, std::size_t _length, void_t* _userData) noexcept override { return ne::Result<void_t, IoError>::Error(IoError{ IoErrorKind::UNSUPPORTED, "io_uring fixed buffers are consumed via ReadFixed/WriteFixed, not this method" }); }
 
 	private:
 		// lazy: 최초 RegisterBuffer 호출 때 sparse 테이블 예약. mutex 를 이미 쥔 상태로 호출.

@@ -10,62 +10,66 @@
 #include <ws2tcpip.h>
 #include <mswsock.h>
 
-BEGIN_NS(ne::io)
-	namespace
+
+
+namespace
+{
+	// Windows 에는 socketpair()/eventfd 가 없다 — 로컬 루프백 TCP 연결로 대체해 Wake() 용
+	// 읽기/쓰기 소켓 쌍을 만든다.
+	[[nodiscard]] ne::bool_t CreateWakePair(ne::io::socket_t& _readSocket, ne::io::socket_t& _writeSocket) noexcept
 	{
-		// Windows 에는 socketpair()/eventfd 가 없다 — 로컬 루프백 TCP 연결로 대체해 Wake() 용
-		// 읽기/쓰기 소켓 쌍을 만든다.
-		[[nodiscard]] bool_t CreateWakePair(socket_t& _readSocket, socket_t& _writeSocket) noexcept
+		const SOCKET listener = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+		if (listener == INVALID_SOCKET) return false;
+
+		sockaddr_in address{};
+		address.sin_family = AF_INET;
+		address.sin_addr.s_addr = ::htonl(INADDR_LOOPBACK);
+		address.sin_port = 0;
+
+		ne::int_t addressLength = static_cast<ne::int_t>(sizeof(address));
+		if (::bind(listener, reinterpret_cast<sockaddr*>(&address), addressLength) == SOCKET_ERROR || ::getsockname(listener, reinterpret_cast<sockaddr*>(&address), &addressLength) == SOCKET_ERROR || ::listen(listener, 1) == SOCKET_ERROR)
 		{
-			const SOCKET listener = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-			if (listener == INVALID_SOCKET) return false;
-
-			sockaddr_in address{};
-			address.sin_family = AF_INET;
-			address.sin_addr.s_addr = ::htonl(INADDR_LOOPBACK);
-			address.sin_port = 0;
-
-			int_t addressLength = static_cast<int_t>(sizeof(address));
-			if (::bind(listener, reinterpret_cast<sockaddr*>(&address), addressLength) == SOCKET_ERROR || ::getsockname(listener, reinterpret_cast<sockaddr*>(&address), &addressLength) == SOCKET_ERROR
-				|| ::listen(listener, 1) == SOCKET_ERROR)
-			{
-				::closesocket(listener);
-				return false;
-			}
-
-			const SOCKET writer = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-			if (writer == INVALID_SOCKET)
-			{
-				::closesocket(listener);
-				return false;
-			}
-
-			if (::connect(writer, reinterpret_cast<sockaddr*>(&address), addressLength) == SOCKET_ERROR)
-			{
-				::closesocket(listener);
-				::closesocket(writer);
-				return false;
-			}
-
-			const SOCKET reader = ::accept(listener, nullptr, nullptr);
 			::closesocket(listener);
-			if (reader == INVALID_SOCKET)
-			{
-				::closesocket(writer);
-				return false;
-			}
-
-			// Wake() 의 send()/드레인의 recv() 모두 블록하면 안 되므로 논블로킹으로 전환.
-			u_long nonBlocking = 1;
-			::ioctlsocket(reader, FIONBIO, &nonBlocking);
-			::ioctlsocket(writer, FIONBIO, &nonBlocking);
-
-			_readSocket = static_cast<socket_t>(reader);
-			_writeSocket = static_cast<socket_t>(writer);
-			return true;
+			return false;
 		}
-	}
 
+		const SOCKET writer = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+		if (writer == INVALID_SOCKET)
+		{
+			::closesocket(listener);
+			return false;
+		}
+
+		if (::connect(writer, reinterpret_cast<sockaddr*>(&address), addressLength) == SOCKET_ERROR)
+		{
+			::closesocket(listener);
+			::closesocket(writer);
+			return false;
+		}
+
+		const SOCKET reader = ::accept(listener, nullptr, nullptr);
+		::closesocket(listener);
+		if (reader == INVALID_SOCKET)
+		{
+			::closesocket(writer);
+			return false;
+		}
+
+		// Wake() 의 send()/드레인의 recv() 모두 블록하면 안 되므로 논블로킹으로 전환.
+		u_long nonBlocking = 1;
+		::ioctlsocket(reader, FIONBIO, &nonBlocking);
+		::ioctlsocket(writer, FIONBIO, &nonBlocking);
+
+		_readSocket = static_cast<ne::io::socket_t>(reader);
+		_writeSocket = static_cast<ne::io::socket_t>(writer);
+
+		return true;
+	}
+}
+
+
+
+BEGIN_NS(ne::io)
 	WsaPollEngine::WsaPollEngine() noexcept
 	{
 		socket_t readSocket = InvalidSocket;
@@ -76,11 +80,15 @@ BEGIN_NS(ne::io)
 		wakeWriteSocket = static_cast<ulonglong_t>(writeSocket);
 		isValid = true;
 	}
+
 	WsaPollEngine::~WsaPollEngine()
 	{
 		if (wakeReadSocket != 0) ::closesocket(static_cast<SOCKET>(wakeReadSocket));
 		if (wakeWriteSocket != 0) ::closesocket(static_cast<SOCKET>(wakeWriteSocket));
 	}
+
+
+
 	void_t WsaPollEngine::Submit(const Request& _request)
 	{
 		if (longlong_t result = 0; Perform(_request, false, result))
@@ -100,6 +108,7 @@ BEGIN_NS(ne::io)
 		if (isWrite) writeWaiter[fd] = _request.userData;
 		else readWaiter[fd] = _request.userData;
 	}
+
 	int_t WsaPollEngine::WaitCompletions(Completion* _out, const int_t _max, const std::chrono::milliseconds _timeout)
 	{
 		if (_max <= 0) return 0;
@@ -210,11 +219,13 @@ BEGIN_NS(ne::io)
 
 		return count;
 	}
+
 	void_t WsaPollEngine::Wake()
 	{
-		const char_t one = 0;
-		(void_t)::send(static_cast<SOCKET>(wakeWriteSocket), &one, 1, 0);
+		constexpr char_t one = 0;
+		(void_t)::send(wakeWriteSocket, &one, 1, 0);
 	}
+
 	void_t WsaPollEngine::Cancel(void_t* _userData) noexcept
 	{
 		if (_userData == nullptr) return;
@@ -226,6 +237,7 @@ BEGIN_NS(ne::io)
 
 		Wake();
 	}
+
 	bool_t WsaPollEngine::Supports(const Capability _capability) const noexcept
 	{
 		switch (_capability)
@@ -242,6 +254,9 @@ BEGIN_NS(ne::io)
 
 		return false;
 	}
+
+
+
 	bool_t WsaPollEngine::Perform(const Request& _request, const bool_t _isRetry, longlong_t& _result) noexcept
 	{
 		// 파일 scatter/gather — IocpEngine 과 동일한 이유(임의 크기 세그먼트는 ReadFileScatter/
@@ -259,7 +274,8 @@ BEGIN_NS(ne::io)
 				overlapped.OffsetHigh = static_cast<ulong_t>(currentOffset >> 32);
 
 				ulong_t transferred = 0;
-				bool_t isOk = (_request.op == OpCode::READ) ? ::ReadFile(handle, segment.ptr, static_cast<ulong_t>(segment.length), &transferred, &overlapped) :
+				bool_t isOk = (_request.op == OpCode::READ) ?
+								::ReadFile(handle, segment.ptr, static_cast<ulong_t>(segment.length), &transferred, &overlapped) :
 								::WriteFile(handle, segment.ptr, static_cast<ulong_t>(segment.length), &transferred, &overlapped);
 				if (!isOk && ::GetLastError() == ERROR_IO_PENDING) { isOk = ::GetOverlappedResult(handle, &overlapped, &transferred, TRUE); }
 
@@ -553,10 +569,18 @@ BEGIN_NS(ne::io)
 
 		return true;
 	}
+
 	bool_t WsaPollEngine::IsWriteDirection(const OpCode _op) noexcept
 	{
-		return _op == OpCode::WRITE || _op == OpCode::SEND || _op == OpCode::CONNECT || _op == OpCode::WRITE_FIXED || _op == OpCode::SEND_FILE || _op == OpCode::SEND_TO || _op == OpCode::WAIT_WRITABLE;
+		return _op == OpCode::WRITE ||
+				_op == OpCode::SEND ||
+				_op == OpCode::CONNECT ||
+				_op == OpCode::WRITE_FIXED ||
+				_op == OpCode::SEND_FILE ||
+				_op == OpCode::SEND_TO ||
+				_op == OpCode::WAIT_WRITABLE;
 	}
+
 	void_t WsaPollEngine::ProcessCancels()
 	{
 		std::vector<void_t*> cancels;
@@ -580,6 +604,7 @@ BEGIN_NS(ne::io)
 			ready.push_back(Completion{ userData, -static_cast<longlong_t>(ERROR_OPERATION_ABORTED) });
 		}
 	}
+
 END_NS
 
 #endif // _WIN32

@@ -36,11 +36,15 @@ BEGIN_NS(ne::io)
 		isValid = true;
 		ArmWakePoll(); // 최초 wake 감시 무장
 	}
+
 	IoUringEngine::~IoUringEngine()
 	{
 		if (wakeEventFd >= 0) ::close(wakeEventFd);
 		if (isValid) ::io_uring_queue_exit(&ring);
 	}
+
+
+
 	void_t IoUringEngine::Submit(const Request& _request)
 	{
 		// SendFile — io_uring SQE 를 쓰지 않고 동기 sendfile(2) 로 즉시 처리한다(단순화: splice
@@ -171,6 +175,7 @@ BEGIN_NS(ne::io)
 
 		(void_t)::io_uring_submit(&ring);
 	}
+
 	int_t IoUringEngine::WaitCompletions(Completion* _out, const int_t _max, const std::chrono::milliseconds _timeout)
 	{
 		if (_max <= 0) return 0;
@@ -247,11 +252,13 @@ BEGIN_NS(ne::io)
 
 		return count;
 	}
+
 	void_t IoUringEngine::Wake()
 	{
 		const uint64_t one = 1;
 		(void_t)::write(wakeEventFd, &one, sizeof(one));
 	}
+
 	void_t IoUringEngine::Cancel(void_t* _userData) noexcept
 	{
 		if (_userData == nullptr) return;
@@ -264,6 +271,7 @@ BEGIN_NS(ne::io)
 
 		Wake();
 	}
+
 	bool_t IoUringEngine::Supports(const Capability _capability) const noexcept
 	{
 		switch (_capability)
@@ -280,6 +288,9 @@ BEGIN_NS(ne::io)
 
 		return false;
 	}
+
+
+
 	io_uring_sqe* IoUringEngine::AcquireSqe() noexcept
 	{
 		io_uring_sqe* sqe = ::io_uring_get_sqe(&ring);
@@ -290,6 +301,7 @@ BEGIN_NS(ne::io)
 
 		return ::io_uring_get_sqe(&ring);
 	}
+
 	void_t IoUringEngine::ArmWakePoll() noexcept
 	{
 		io_uring_sqe* sqe = AcquireSqe();
@@ -299,6 +311,7 @@ BEGIN_NS(ne::io)
 		::io_uring_sqe_set_data64(sqe, WakeUserData);
 		(void_t)::io_uring_submit(&ring);
 	}
+
 	void_t IoUringEngine::SubmitPendingCancels() noexcept
 	{
 		std::vector<void_t*> cancels;
@@ -325,6 +338,7 @@ BEGIN_NS(ne::io)
 			}
 		}
 	}
+
 END_NS
 
 #endif // IS_POSIX

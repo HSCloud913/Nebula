@@ -19,6 +19,12 @@
 #include "Io/Context/Operation.h"
 
 BEGIN_NS(ne::io)
+	enum class EngineType : uint_t
+	{
+		REACTOR,
+		PROACTOR
+	};
+
 	class IEngine
 	{
 	public:

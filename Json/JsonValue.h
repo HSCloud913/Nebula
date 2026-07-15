@@ -36,44 +36,58 @@ BEGIN_NS(ne)
 	public:
 		JsonValue()
 			: type(JsonType::INVALID) {}
+
 		explicit JsonValue(const JsonType _type)
 			: type(_type) {}
+
 		explicit JsonValue(const bool_t _value)
 			: type(JsonType::BOOLEAN)
 			, value(_value) {}
+
 		explicit JsonValue(const int_t _value)
 			: type(JsonType::NUMBER)
 			, value(_value) {}
+
 		explicit JsonValue(const uint_t _value)
 			: type(JsonType::POSITIVE_NUMBER)
 			, value(_value) {}
+
 		explicit JsonValue(const longlong_t _value)
 			: type(JsonType::LARGE_NUMBER)
 			, value(_value) {}
+
 		explicit JsonValue(const ulonglong_t _value)
 			: type(JsonType::POSITIVE_LARGE_NUMBER)
 			, value(_value) {}
+
 		explicit JsonValue(const double_t _value)
 			: type(JsonType::REAL)
 			, value(_value) {}
+
 		explicit JsonValue(lpcstr_t _value)
 			: type(JsonType::STRING)
 			, value(std::make_shared<string_t>(_value)) {}
+
 		explicit JsonValue(const string_t& _value)
 			: type(JsonType::STRING)
 			, value(std::make_shared<string_t>(_value)) {}
+
 		explicit JsonValue(const JsonObject& _value)
 			: type(JsonType::OBJECT)
 			, value(_value) {}
+
 		explicit JsonValue(JsonObject&& _value)
 			: type(JsonType::OBJECT)
 			, value(std::move(_value)) {}
+
 		explicit JsonValue(const JsonArray& _value)
 			: type(JsonType::ARRAY)
 			, value(_value) {}
+
 		explicit JsonValue(JsonArray&& _value)
 			: type(JsonType::ARRAY)
 			, value(std::move(_value)) {}
+
 		JsonValue(const JsonValue& _value)
 			: type(_value.type)
 			, value(_value.value) {}

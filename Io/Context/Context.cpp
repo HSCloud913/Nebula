@@ -18,7 +18,7 @@ BEGIN_NS(ne::io)
 
 	void_t Context::Start()
 	{
-		// Run() 이 실제로 이 줄에 도달하기 전에 다른 스레드가 이미 Stop() 을 호출했다면(예:
+		// Start() 이 실제로 이 줄에 도달하기 전에 다른 스레드가 이미 Stop() 을 호출했다면(예:
 		// ContextPool 이 워커 스레드를 스폰하자마자 곧바로 Stop() 하는 경합), 아래
 		// running.store(true) 가 그 Stop() 을 덮어써 이 Run() 이 다시는 깨지 않는 무기한
 		// 대기에 빠진다. stopRequested 로 그 경합을 소비해 두면 이번 Run() 은 그냥 즉시 반환한다.

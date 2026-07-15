@@ -11,10 +11,17 @@
 #include "Base/Error.h"
 
 BEGIN_NS(ne)
-	// ─── Result<T, E> ────────────────────────────────────────────────────────────
-	// 성공값(T) 또는 에러(E)를 반환하는 타입.
-	// void 결과는 Result<void, E> 특수화 사용.
-
+	/**
+	 * @class Result
+	 * @brief 실패할 수 있는 연산을 예외 없이 표현하는 타입입니다.
+	 *
+	 * 성공값(T)과 에러(E) 중 하나만 보유합니다. Value()/Error() 호출 전에 IsOk()/IsError()로
+	 * 상태를 확인해야 하며, 잘못된 상태에서 접근하면 assert가 발생합니다.
+	 *
+	 * @tparam T 성공 시의 값 타입입니다.
+	 * @tparam E 실패 시의 에러 타입입니다. 기본값은 ne::Error입니다.
+	 * @note 성공 시 값이 없는 경우에는 아래의 Result<void_t, E> 특수화를 사용하세요.
+	 */
 	template <typename T, typename E = ne::Error>
 	class Result
 	{

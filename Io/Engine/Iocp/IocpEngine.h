@@ -64,10 +64,10 @@ BEGIN_NS(ne::io)
 		bool_t isExtensionsLoaded{ false };
 		std::unique_ptr<RioProvider> rioProvider; // SendZeroCopy(RIOSend) 전용 — lazy 초기화, IsValid() 와 무관하게 항상 생성
 
-	public:
+	public: /* IEngine */
 		virtual void_t Submit(const Request& _request) override;
 		[[nodiscard]] virtual int_t WaitCompletions(Completion* _out, int_t _max, std::chrono::milliseconds _timeout) override;
-		virtual void_t Wake() override;
+		virtual void_t Wake() override { ::PostQueuedCompletionStatus(iocpHandle.Get(), 0, WakeKey, nullptr); }
 		virtual void_t Cancel(void_t* _userData) noexcept override;
 		[[nodiscard]] virtual bool_t Supports(Capability _capability) const noexcept override;
 		[[nodiscard]] virtual bool_t IsValid() const noexcept override { return static_cast<bool_t>(iocpHandle); }

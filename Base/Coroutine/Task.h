@@ -9,13 +9,21 @@
 #include "Base/Type.h"
 
 BEGIN_NS(ne)
-	// 계약: 소멸자는 무조건 handle.destroy() 로 코루틴 프레임을 파괴한다 — 코루틴이 진행 중인
-	// I/O 로 suspend 된 채(예: co_await Io::Awaitable/Time::Awaitable 내부) 소멸되어도 안전하다.
-	// (예전엔 여기서 UAF 위험을 경고했으나, 지금은 그 완료 컨텍스트가 코루틴 프레임이 아니라
-	// heap 에 별도로 살며 — Io::Awaitable 은 CompletionHandler 를 abandoned=true 로 표시해
-	// 루프에 소유권을 넘기고, Time::Awaitable 은 소멸자가 미발화 타이머를 wheel.Cancel() 한다 —
-	// 중도 폐기가 정상 경로다. Io/Coroutine/Timeout.h 의 when_any 류 콤비네이터가 진 쪽 Task 를
-	// 그대로 파괴해 취소하는 것도 이 계약에 기대고 있다.)
+	/**
+	 * @class Task
+	 * @brief co_await 가능한 코루틴 반환 타입입니다. move-only이며, symmetric transfer로 완료 시
+	 * 호출자 코루틴으로 즉시 이동합니다(스택 성장 없음).
+	 *
+	 * @note 계약: 소멸자는 무조건 handle.destroy() 로 코루틴 프레임을 파괴합니다 — 코루틴이 진행 중인
+	 * I/O 로 suspend 된 채(예: co_await Io::Awaitable/Time::Awaitable 내부) 소멸되어도 안전합니다.
+	 * (예전엔 여기서 UAF 위험을 경고했으나, 지금은 그 완료 컨텍스트가 코루틴 프레임이 아니라
+	 * heap 에 별도로 살며 — Io::Awaitable 은 CompletionHandler 를 abandoned=true 로 표시해
+	 * 루프에 소유권을 넘기고, Time::Awaitable 은 소멸자가 미발화 타이머를 wheel.Cancel() 한다 —
+	 * 중도 폐기가 정상 경로입니다. Io/Coroutine/Timeout.h 의 when_any 류 콤비네이터가 진 쪽 Task 를
+	 * 그대로 파괴해 취소하는 것도 이 계약에 기대고 있습니다.)
+	 *
+	 * @tparam T 코루틴이 co_return하는 값의 타입. 값이 없는 경우 아래 Task<void_t> 특수화를 사용합니다.
+	 */
 	template <typename T>
 	class Task
 	{
@@ -23,7 +31,7 @@ BEGIN_NS(ne)
 		struct promise_type
 		{
 		private:
-			// symmetric transfer: 완료 시 호출자 코루틴으로 즉시 이동 (스택 성장 없음)
+			/** @brief symmetric transfer: 완료 시 호출자 코루틴으로 즉시 이동합니다(스택 성장 없음). */
 			struct FinalAwaiter
 			{
 				bool_t await_ready() const noexcept { return false; }
@@ -102,6 +110,7 @@ BEGIN_NS(ne)
 	};
 
 
+	/** @brief 값을 반환하지 않는 코루틴을 위한 Task 특수화입니다. */
 	template <>
 	class Task<void_t>
 	{
@@ -113,6 +122,7 @@ BEGIN_NS(ne)
 			~promise_type() = default;
 
 		private:
+			/** @brief symmetric transfer: 완료 시 호출자 코루틴으로 즉시 이동합니다(스택 성장 없음). */
 			struct FinalAwaiter
 			{
 				bool_t await_ready() const noexcept { return false; }

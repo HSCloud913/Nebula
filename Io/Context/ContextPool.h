@@ -38,7 +38,7 @@ BEGIN_NS(ne::io)
 	public:
 		// _size 워커 수. 0 이면 hardware_concurrency(그마저 0 이면 1)로 결정한다. 생성 시점에
 		// 워커별 엔진/Context/TimerWheel 을 만들어 두며, 스레드는 Start() 에서 스폰한다.
-		explicit ContextPool(std::size_t _size = 0);
+		explicit ContextPool(EngineType _engineType, std::size_t _size = 0);
 		~ContextPool();
 
 		NEBULA_NON_COPYABLE_MOVABLE(ContextPool)

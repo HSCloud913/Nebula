@@ -8,7 +8,7 @@
 
 BEGIN_NS(ne)
 	const int_t Ascii::CharProperties[128] = {
-		/* 00 . */ ACP_CONTROL,
+					/* 00 . */ ACP_CONTROL,
 					/* 01 . */ ACP_CONTROL,
 					/* 02 . */ ACP_CONTROL,
 					/* 03 . */ ACP_CONTROL,

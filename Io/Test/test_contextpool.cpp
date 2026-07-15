@@ -43,7 +43,7 @@ TEST(ContextPoolTest, LifecycleIsClean)
 {
 	for (int_t i = 0; i < 50; ++i)
 	{
-		ContextPool pool{ 4 };
+		ContextPool pool{ EngineType::PROACTOR, 4 };
 		EXPECT_EQ(pool.Size(), 4u);
 		EXPECT_FALSE(pool.IsRunning());
 		pool.Start();
@@ -55,7 +55,7 @@ TEST(ContextPoolTest, LifecycleIsClean)
 	// 스폰 직후 곧바로 Stop — 워커가 아직 Run() 에 진입 전일 수 있는 경합(Context 가 isStopRequested 로 흡수).
 	for (int_t i = 0; i < 50; ++i)
 	{
-		ContextPool pool{ 4 };
+		ContextPool pool{ EngineType::PROACTOR, 4 };
 		pool.Start();
 		pool.Stop();
 	}
@@ -63,7 +63,7 @@ TEST(ContextPoolTest, LifecycleIsClean)
 	// 명시적 Stop 없이 소멸자만으로 정지/join.
 	for (int_t i = 0; i < 25; ++i)
 	{
-		ContextPool pool{ 3 };
+		ContextPool pool{ EngineType::PROACTOR, 3 };
 		pool.Start();
 	}
 
@@ -73,14 +73,14 @@ TEST(ContextPoolTest, LifecycleIsClean)
 // ── 기본 크기: 0 이면 최소 1 이상(hardware_concurrency) ──
 TEST(ContextPoolTest, DefaultSizeIsPositive)
 {
-	ContextPool pool{ 0 };
+	ContextPool pool{ EngineType::PROACTOR, 0 };
 	EXPECT_GE(pool.Size(), 1u);
 }
 
 // ── Acquire 는 모든 워커를 round-robin 으로 고르게 배정한다(스레드 불필요) ──
 TEST(ContextPoolTest, AcquireRoundRobin)
 {
-	ContextPool pool{ 4 };
+	ContextPool pool{ EngineType::PROACTOR, 4 };
 
 	std::unordered_map<Context*, int_t> hits;
 	for (int_t i = 0; i < 4000; ++i) hits[&pool.Acquire()]++;
@@ -99,7 +99,7 @@ TEST(ContextPoolTest, WorkerThreadsRunPostedCoroutines)
 	constexpr int_t perWorker = 25;
 	constexpr int_t total = workerCount * perWorker;
 
-	ContextPool pool{ static_cast<std::size_t>(workerCount) };
+	ContextPool pool{ EngineType::PROACTOR, workerCount };
 	pool.Start();
 
 	std::atomic<int_t> counter{ 0 };

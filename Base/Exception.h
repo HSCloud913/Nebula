@@ -7,6 +7,12 @@
 #include "Base/Type.h"
 
 BEGIN_NS(ne)
+	/**
+	 * @class Exception
+	 * @brief 모듈명과 메시지를 함께 담는 표준 예외 타입입니다.
+	 *
+	 * what()이 "[모듈명] 메시지" 형식의 문자열을 반환합니다.
+	 */
 	class Exception :public std::exception
 	{
 	public:

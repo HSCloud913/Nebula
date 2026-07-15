@@ -5,7 +5,6 @@
 #pragma once
 #include <atomic>
 #include <chrono>
-#include <cstdint>
 #include <functional>
 #include <mutex>
 #include <unordered_set>
@@ -13,27 +12,37 @@
 #include "Base/Type.h"
 
 BEGIN_NS(ne::time)
-	// 최소 힙(min-heap) 기반 타이머. (구 hashed-wheel 대체)
-	// 구 휠은 Tick 이 "경과 ms" 만큼 tick-by-tick 으로 catch-up 하여, 이벤트 루프가 오래 블록했다
-	// 깨어나면 그 경과분(수백만 회)을 순회해 사실상 정지했다. 힙은 그 비용을 만료 개수로 한정한다.
-	//   - Schedule     : O(log n)
-	//   - Cancel       : O(1)          (지연 삭제 — id 를 live 에서 제거, 힙 엔트리는 만료 시 스킵)
-	//   - Tick         : O(만료 · log n)  ← 경과 ms 와 무관
-	//   - NextExpiryMs : O(1)          (힙 top peek)
-	//
-	// 시간 모델 : 모든 tick 값은 baseTime(생성 시각) 이후 경과한 실시간 ms 이다.
-	// 운영에서는 steady_clock 을, 테스트에서는 페이크 클럭을 주입해 결정론적으로 시간을 제어한다.
+	/**
+	 * @class TimerWheel
+	 * @brief 최소 힙(min-heap) 기반 타이머입니다(구 hashed-wheel 대체).
+	 *
+	 * 구 휠은 Tick이 "경과 ms"만큼 tick-by-tick으로 catch-up하여, 이벤트 루프가 오래 블록했다
+	 * 깨어나면 그 경과분(수백만 회)을 순회해 사실상 정지했습니다. 힙은 그 비용을 만료 개수로
+	 * 한정합니다.
+	 *   - Schedule     : O(log n)
+	 *   - Cancel       : O(1)          (지연 삭제 — id를 live에서 제거, 힙 엔트리는 만료 시 스킵)
+	 *   - Tick         : O(만료 · log n)  ← 경과 ms와 무관
+	 *   - NextExpiryMs : O(1)          (힙 top peek)
+	 *
+	 * @note 시간 모델: 모든 tick 값은 baseTime(생성 시각) 이후 경과한 실시간 ms입니다.
+	 * 운영에서는 steady_clock을, 테스트에서는 페이크 클럭을 주입해 결정론적으로 시간을 제어합니다.
+	 */
 	class TimerWheel
 	{
 	public:
-		// 주입 가능한 클럭 seam — 호출 시점의 시각을 반환한다.
+		/** @brief 주입 가능한 클럭 seam — 호출 시점의 시각을 반환합니다. */
 		using Clock = std::function<std::chrono::steady_clock::time_point()>;
 
 	public:
-		// 운영용 : steady_clock 기반 실시간 앵커링.
-		TimerWheel();
-		// 테스트용 : 클럭 주입. Tick / Schedule / NextExpiryMs 가 이 클럭의 경과 시간을 따른다.
-		explicit TimerWheel(Clock _clock);
+		/** @brief 운영용: steady_clock 기반 실시간 앵커링. */
+		TimerWheel()
+			: TimerWheel([] { return std::chrono::steady_clock::now(); }) {}
+
+		/** @brief 테스트용: 클럭 주입. Tick/Schedule/NextExpiryMs가 이 클럭의 경과 시간을 따릅니다. */
+		explicit TimerWheel(Clock _clock)
+			: clock(std::move(_clock))
+			, baseTime(clock()) {}
+
 		~TimerWheel() = default;
 
 		NEBULA_NON_COPYABLE_MOVABLE(TimerWheel)

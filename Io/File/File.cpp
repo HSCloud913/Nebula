@@ -16,19 +16,22 @@
 
 
 
-BEGIN_NS(ne::io)
+namespace
+{
 	// file_t(HANDLE/int)를 Request.handle(64비트)로 정규화.
 	[[nodiscard]] ne::ulonglong_t ToHandleValue(const ne::io::file_t _handle) noexcept
 	{
-	#if defined(_WIN32)
+#if defined(_WIN32)
 		return reinterpret_cast<ne::ulonglong_t>(_handle);
-	#elif defined(IS_POSIX)
+#elif defined(IS_POSIX)
 		return static_cast<ne::ulonglong_t>(_handle);
-	#endif
+#endif
 	}
+}
 
 
 
+BEGIN_NS(ne::io)
 	File::File(FileHandle&& _handle, Context& _context) noexcept
 		: handle(std::move(_handle))
 		, context(&_context) {}
@@ -60,11 +63,13 @@ BEGIN_NS(ne::io)
 
 		// FILE_FLAG_OVERLAPPED: IOCP 비동기 I/O 전제.
 		const file_t raw = ::CreateFileA(path.c_str(), access, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, disposition, FILE_FLAG_OVERLAPPED, nullptr);
-		if (raw == INVALID_HANDLE_VALUE) return IoResult<File>::Error(IoError{ ne::OsError{ ne::LastOsError() } }.Context("[File/Open]"));
+		if (raw == INVALID_HANDLE_VALUE)
+			return IoResult<File>::Error(IoError{ ne::OsError{ ne::LastOsError() } }.Context("[File/Open]"));
 
 		return IoResult<File>::Ok(File{ FileHandle{ raw }, _context });
 #elif defined(IS_POSIX)
-		int_t flags = 0; switch (_mode)
+		int_t flags = 0;
+		switch (_mode)
 		{
 			case OpenMode::READ:
 				flags = O_RDONLY;
@@ -75,8 +80,13 @@ BEGIN_NS(ne::io)
 			case OpenMode::READ_WRITE:
 				flags = O_RDWR | O_CREAT;
 				break;
-		} const file_t raw = ::open(path.c_str(), flags, 0644); if (raw < 0) return IoResult<File>::Error(IoError{ ne::OsError{ ne::LastOsError() } }.Context("[File/Open]")); return IoResult<
-			File>::Ok(File{ FileHandle{ raw }, _context });
+		}
+
+		const file_t raw = ::open(path.c_str(), flags, 0644);
+		if (raw < 0)
+			return IoResult<File>::Error(IoError{ ne::OsError{ ne::LastOsError() } }.Context("[File/Open]"));
+
+		return IoResult<File>::Ok(File{ FileHandle{ raw }, _context });
 #endif
 	}
 

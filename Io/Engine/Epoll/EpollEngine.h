@@ -46,7 +46,7 @@ BEGIN_NS(ne::io)
 		std::vector<Completion> ready;                         // 즉시/합성 완료
 		std::vector<void_t*> pendingCancels;
 
-	public:
+	public: /* IEngine */
 		virtual void_t Submit(const Request& _request) override;
 		[[nodiscard]] virtual int_t WaitCompletions(Completion* _out, int_t _max, std::chrono::milliseconds _timeout) override;
 		virtual void_t Wake() override;

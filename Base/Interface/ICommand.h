@@ -7,6 +7,13 @@
 #include "Base/Type.h"
 
 BEGIN_NS(ne)
+	/**
+	 * @class ICommand
+	 * @brief Command 패턴의 커맨드 인터페이스입니다.
+	 *
+	 * 실행(Execute)과 되돌리기(Undo)를 한 쌍으로 구현해야 하며, IInvoker가 이 둘을
+	 * 스택으로 관리해 실행 취소/재실행을 제공합니다.
+	 */
 	class ICommand
 	{
 	public:
@@ -18,6 +25,13 @@ BEGIN_NS(ne)
 		virtual void_t Undo() = 0;
 	};
 
+	/**
+	 * @class IInvoker
+	 * @brief ICommand 실행 이력을 스택으로 관리해 실행/취소/재실행을 제공하는 호출자입니다.
+	 *
+	 * Push()로 커맨드를 등록하고, Execute()가 대기 중인 커맨드를 실행하며, Undo()/Redo()가
+	 * commandHistory와 undoHistory 두 스택 사이에서 커맨드를 이동시킵니다.
+	 */
 	class IInvoker
 	{
 	public:

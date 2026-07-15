@@ -16,6 +16,13 @@ BEGIN_NS(ne)
 		TRIM
 	};
 
+	/**
+	 * @class StringFormat
+	 * @brief 문자열 트림/대소문자 변환/치환/비교/토큰화 등을 제공하는 정적 유틸리티 클래스입니다.
+	 *
+	 * `std::string`/`std::wstring` 등 문자열류 타입 T에 대해 템플릿으로 동작하며,
+	 * Windows에서는 MBCS/WCS/UTF-8 상호 변환 함수도 함께 제공합니다.
+	 */
 	class NEBULA_API StringFormat final
 	{
 	private:

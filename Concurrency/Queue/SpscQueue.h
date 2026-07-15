@@ -10,8 +10,15 @@
 #include "Base/Type.h"
 
 BEGIN_NS(ne::concurrency)
-	// 단일 생산자 단일 소비자 lock-free 링버퍼.
-	// capacity 는 2의 거듭제곱이어야 함.
+	/**
+	 * @class SpscQueue
+	 * @brief 단일 생산자·단일 소비자(SPSC) 전용 lock-free 링버퍼입니다.
+	 *
+	 * 생산자 스레드는 Enqueue만, 소비자 스레드는 Dequeue만 호출해야 안전합니다.
+	 *
+	 * @tparam T 큐에 저장할 값 타입.
+	 * @note capacity는 2의 거듭제곱이어야 합니다(마스크 연산으로 인덱스를 감쌈).
+	 */
 	template <typename T>
 	class SpscQueue
 	{

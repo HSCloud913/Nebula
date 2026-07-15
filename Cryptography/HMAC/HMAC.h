@@ -3,6 +3,13 @@
 #include "Cryptography/Hash/Hash.h"
 
 BEGIN_NS(ne::crypto)
+	/**
+	 * @class HMACKey
+	 * @brief 지정한 해시 알고리즘으로 HMAC 메시지 인증 코드를 생성하는 키입니다.
+	 *
+	 * Create()에서 원본 키를 ipad/opad로 미리 전처리해 보관하므로, Generate() 호출마다
+	 * 매번 키를 재가공하지 않습니다.
+	 */
 	class HMACKey final
 	{
 	private:

@@ -42,6 +42,7 @@ BEGIN_NS(ne::io)
 			if (this != &_other)
 			{
 				Reset();
+
 				provider = _other.provider;
 				handle = _other.handle;
 				region = _other.region;

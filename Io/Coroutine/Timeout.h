@@ -85,7 +85,7 @@ BEGIN_NS(ne::io)
 		if (!_state.isDecided)
 		{
 			_state.isDecided = true;
-			_source.request_stop();                       // I/O 쪽 stop_token 이 살아있으면 진행 중인 op 을 커널 취소 요청
+			(void_t)_source.request_stop();                       // I/O 쪽 stop_token 이 살아있으면 진행 중인 op 을 커널 취소 요청
 			if (_state.outer) _context.Post(_state.outer); // 인라인 resume 금지 — 위 RaceIo 주석의 UAF 이유와 동일
 		}
 	}
@@ -107,8 +107,7 @@ BEGIN_NS(ne::io)
 		ioRacer.Resume(); // I/O 제출까지 진행(첫 suspend 지점까지) — 동기 완료면 여기서 이미 decided=true
 
 		// 타이머는 I/O 가 이미 동기 완료된 게 아닐 때만 등록한다(불필요한 스케줄/취소 방지).
-		std::optional<ne::Task<void_t>> timerRacer;
-		if (!state.isDecided)
+		if (std::optional<ne::Task<void_t>> timerRacer; !state.isDecided)
 		{
 			timerRacer.emplace(RaceTimer(_context, _duration, state, source));
 			timerRacer->Resume();

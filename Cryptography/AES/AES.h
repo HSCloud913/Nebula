@@ -2,6 +2,12 @@
 #include "Base/Type.h"
 
 BEGIN_NS(ne::crypto)
+	/**
+	 * @class AES
+	 * @brief AES(128/192/256) 대칭키 암호화·복호화를 제공합니다.
+	 *
+	 * Create()로 키 타입과 키를 지정해 생성하며, CBC/ECB 두 모드의 암·복호화를 지원합니다.
+	 */
 	class AES final
 	{
 	public:

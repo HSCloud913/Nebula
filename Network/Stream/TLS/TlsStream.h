@@ -13,7 +13,6 @@
 #include <vector>
 #include "Network/Stream/Plain/PlainStream.h"
 #include "Network/Stream/IStream.h"
-#include "Io/Context/Context.h"
 #include "Io/Socket/Socket.h"
 #include "Memory/Allocator/IAllocator.h"
 
@@ -34,17 +33,43 @@ BEGIN_NS(ne::network)
 	class TlsStream final :public IStream
 	{
 #if defined(_WIN32)
-		explicit TlsStream(PlainStream&& _transport, void* _credHandle, void* _ctxHandle, void* _messageBuffer, ne::memory::IAllocator* _allocator) noexcept;
+		explicit TlsStream(PlainStream&& _transport, void* _credHandle, void* _ctxHandle, void* _messageBuffer, ne::memory::IAllocator* _allocator) noexcept
+			: transport(std::move(_transport))
+			, allocator(_allocator)
+			, credHandle(_credHandle)
+			, ctxHandle(_ctxHandle)
+			, messageBuffer(_messageBuffer) {}
 #elif defined(NEBULA_WITH_OPENSSL)
-		explicit TlsStream(PlainStream&& _transport, void* _ctx, void* _ssl, ne::memory::IAllocator* _allocator) noexcept;
+		explicit TlsStream(PlainStream&& _transport, void* _ctx, void* _ssl, ne::memory::IAllocator* _allocator) noexcept
+			: transport(std::move(_transport))
+			, allocator(_allocator)
+			, ctx(_ctx)
+			, ssl(_ssl) {}
 #else
-		explicit TlsStream(PlainStream&& _transport, ne::memory::IAllocator* _allocator) noexcept;
+		explicit TlsStream(PlainStream&& _transport, ne::memory::IAllocator* _allocator) noexcept
+			: transport(std::move(_transport))
+			, allocator(_allocator) {}
 #endif
 
 	public:
-		TlsStream(TlsStream&& _other) noexcept;
-		TlsStream& operator=(TlsStream&& _other) noexcept;
 		virtual ~TlsStream() override;
+
+		TlsStream(TlsStream&& _other) noexcept
+			: transport(std::move(_other.transport))
+			, sniHost(std::move(_other.sniHost))
+			, alpnCandidates(std::move(_other.alpnCandidates))
+			, negotiatedProtocol(std::move(_other.negotiatedProtocol))
+			, allocator(_other.allocator)
+#if defined(_WIN32)
+			, credHandle(std::exchange(_other.credHandle, nullptr))
+			, ctxHandle(std::exchange(_other.ctxHandle, nullptr))
+			, messageBuffer(std::exchange(_other.messageBuffer, nullptr)) {}
+#elif defined(NEBULA_WITH_OPENSSL)
+			, ctx(std::exchange(_other.ctx, nullptr))
+			, ssl(std::exchange(_other.ssl, nullptr)) {}
+#endif
+		TlsStream& operator=(TlsStream&& _other) noexcept;
+
 
 		NEBULA_NON_COPYABLE(TlsStream)
 

@@ -19,16 +19,6 @@
 
 
 BEGIN_NS(ne::network)
-	PlainStream::PlainStream(ne::io::Socket&& _socket, ne::io::Context& _context, ne::memory::IAllocator* _allocator) noexcept
-		: socket(std::move(_socket))
-		, context(&_context)
-		, allocator(_allocator) {}
-
-	PlainStream::PlainStream(PlainStream&& _other) noexcept
-		: socket(std::move(_other.socket))
-		, context(_other.context)
-		, allocator(_other.allocator) {}
-
 	PlainStream& PlainStream::operator=(PlainStream&& _other) noexcept
 	{
 		if (this != &_other)
@@ -42,8 +32,6 @@ BEGIN_NS(ne::network)
 	}
 
 
-
-	// ─── 팩토리 (server/client) ──────────────────────────────────────────────────
 
 	ne::Task<ne::io::IoResult<PlainStream>> PlainStream::Connect(const string_view_t _host, const uint16_t _port, ne::io::Context& _context, std::stop_token _stopToken, ne::memory::IAllocator* _allocator)
 	{
@@ -88,7 +76,6 @@ BEGIN_NS(ne::network)
 
 
 
-	// ─── IStream ─────────────────────────────────────────────────────────────────
 	ne::Task<ne::io::IoResult<std::size_t>> PlainStream::Receive(const ne::io::BufferView _data, std::stop_token _stopToken)
 	{
 		using R = ne::io::IoResult<std::size_t>;
@@ -143,8 +130,6 @@ BEGIN_NS(ne::network)
 
 
 
-	// ─── readiness 대기 ──────────────────────────────────────────────────────────
-
 	ne::Task<ne::io::IoResult<void_t>> PlainStream::WaitReadable(std::stop_token _stopToken)
 	{
 		using R = ne::io::IoResult<void_t>;
@@ -162,8 +147,6 @@ BEGIN_NS(ne::network)
 	}
 
 
-
-	// ─── zero-copy 파일 전송 ──────────────────────────────────────────────────────
 
 	ne::Task<ne::io::IoResult<std::size_t>> PlainStream::SendFile(const ne::io::file_t _file, const ulonglong_t _offset, const std::size_t _length, const ne::io::BufferChain& _head, const ne::io::BufferChain& _tail, std::stop_token _stopToken)
 	{
@@ -277,8 +260,6 @@ BEGIN_NS(ne::network)
 	}
 
 
-
-	// ─── 등록 버퍼(zero-copy) 송신 ────────────────────────────────────────────────
 
 	ne::Task<ne::io::IoResult<std::size_t>> PlainStream::SendRegistered(const ne::io::RegisteredBuffer& _buffer, std::stop_token _stopToken)
 	{

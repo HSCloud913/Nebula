@@ -2,6 +2,12 @@
 #include "Base/Type.h"
 
 BEGIN_NS(ne::crypto)
+	/**
+	 * @class SHA3
+	 * @brief SHA-3 계열(224/256/384/512) 해시를 계산하는 저수준 알고리즘 구현입니다(Keccak sponge 구조).
+	 *
+	 * Init() 후 AddBuffer()를 반복 호출하고 Get()으로 결과를 얻습니다.
+	 */
 	class SHA3 final
 	{
 	public:

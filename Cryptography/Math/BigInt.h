@@ -5,6 +5,13 @@
 BEGIN_NS(ne::crypto)
 	class SecureRandom; // Random/RandomPrime 이 참조. 정의는 Random/SecureRandom.h (.cpp 에서 include).
 
+	/**
+	 * @class BigInt
+	 * @brief 임의 정밀도 부호 없는 정수(big integer)입니다.
+	 *
+	 * RSA 등에서 필요한 사칙연산, 비트 연산, 모듈러 연산(ModPow/ModInverse/Gcd), 소수 판별
+	 * (IsProbablyPrime, 밀러-라빈)과 SecureRandom 기반 난수 생성을 제공합니다.
+	 */
 	class BigInt
 	{
 	public:

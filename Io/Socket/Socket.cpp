@@ -23,37 +23,37 @@
 
 
 
-BEGIN_NS(ne::io)
-	namespace
+namespace
+{
+	ne::bool_t ParseAddress(ne::string_view_t _ip, uint16_t _port, sockaddr_storage& _out, ne::int_t& _length)
 	{
-		bool_t ParseAddress(string_view_t _ip, uint16_t _port, sockaddr_storage& _out, int_t& _length)
+		const ne::string_t ip{ _ip };
+
+		auto* v4 = reinterpret_cast<sockaddr_in*>(&_out);
+		if (::inet_pton(AF_INET, ip.c_str(), &v4->sin_addr) == 1)
 		{
-			const string_t ip{ _ip };
-
-			auto* v4 = reinterpret_cast<sockaddr_in*>(&_out);
-			if (::inet_pton(AF_INET, ip.c_str(), &v4->sin_addr) == 1)
-			{
-				v4->sin_family = AF_INET;
-				v4->sin_port = ::htons(_port);
-				_length = static_cast<int_t>(sizeof(sockaddr_in));
-				return true;
-			}
-
-			auto* v6 = reinterpret_cast<sockaddr_in6*>(&_out);
-			if (::inet_pton(AF_INET6, ip.c_str(), &v6->sin6_addr) == 1)
-			{
-				v6->sin6_family = AF_INET6;
-				v6->sin6_port = ::htons(_port);
-				_length = static_cast<int_t>(sizeof(sockaddr_in6));
-				return true;
-			}
-
-			return false;
+			v4->sin_family = AF_INET;
+			v4->sin_port = ::htons(_port);
+			_length = static_cast<ne::int_t>(sizeof(sockaddr_in));
+			return true;
 		}
+
+		auto* v6 = reinterpret_cast<sockaddr_in6*>(&_out);
+		if (::inet_pton(AF_INET6, ip.c_str(), &v6->sin6_addr) == 1)
+		{
+			v6->sin6_family = AF_INET6;
+			v6->sin6_port = ::htons(_port);
+			_length = static_cast<ne::int_t>(sizeof(sockaddr_in6));
+			return true;
+		}
+
+		return false;
 	}
+}
 
 
 
+BEGIN_NS(ne::io)
 	Socket::Socket(SocketHandle&& _handle, Context& _context, const bool_t _isRegisteredIo) noexcept
 		: handle(std::move(_handle))
 		, context(&_context)
@@ -64,7 +64,7 @@ BEGIN_NS(ne::io)
 	IoResult<Socket> Socket::Create(Context& _context, const int_t _family, const int_t _type, const int_t _protocol, const bool_t _isRegisteredIo)
 	{
 #if defined(_WIN32)
-		const socket_t raw = static_cast<socket_t>(::WSASocketW(_family, _type, _protocol, nullptr, 0, WSA_FLAG_OVERLAPPED | (_isRegisteredIo ? WSA_FLAG_REGISTERED_IO : 0)));
+		const socket_t raw = ::WSASocketW(_family, _type, _protocol, nullptr, 0, WSA_FLAG_OVERLAPPED | (_isRegisteredIo ? WSA_FLAG_REGISTERED_IO : 0));
 #elif defined(IS_POSIX)
 		const socket_t raw = ::socket(_family, _type, _protocol);
 #endif

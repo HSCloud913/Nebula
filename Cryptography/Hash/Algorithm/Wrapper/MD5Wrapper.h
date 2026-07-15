@@ -5,6 +5,7 @@
 #include "Cryptography/Hash/Algorithm/MD5.h"
 
 BEGIN_NS(ne::crypto)
+	/** @brief MD5 알고리즘을 HashWrapper 인터페이스로 노출하는 어댑터입니다. */
 	class MD5Wrapper :public HashWrapper
 	{
 	public:

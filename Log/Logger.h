@@ -30,6 +30,15 @@ BEGIN_NS(ne)
 		std::chrono::system_clock::time_point timestamp;
 	};
 
+	/**
+	 * @class Logger
+	 * @brief 파일에 로그를 비동기로 기록하는 로거입니다.
+	 *
+	 * 호출 스레드는 Trace()~Fatal() 로 LogRecord를 MpscQueue에 밀어넣기만 하고,
+	 * 별도의 백엔드 스레드가 이를 꺼내 실제 파일 I/O(WriteToFile)를 수행합니다.
+	 * 백엔드는 1ms 폴링 대신 condition_variable로 대기하며, 다중 스레드에서 동시에
+	 * 로그를 기록해도 안전합니다.
+	 */
 	class Logger final
 	{
 	public:

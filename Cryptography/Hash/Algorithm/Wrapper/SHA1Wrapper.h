@@ -5,6 +5,7 @@
 #include "Cryptography/Hash/Algorithm/SHA1.h"
 
 BEGIN_NS(ne::crypto)
+	/** @brief SHA-1 알고리즘을 HashWrapper 인터페이스로 노출하는 어댑터입니다. */
 	class SHA1Wrapper :public HashWrapper
 	{
 	public:

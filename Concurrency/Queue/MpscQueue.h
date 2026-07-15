@@ -7,8 +7,14 @@
 #include "Base/Type.h"
 
 BEGIN_NS(ne::concurrency)
-	// Michael-Scott 큐 기반 MPSC lock-free 큐.
-	// Push: 다중 스레드 안전. TryPop: 단일 소비자 전용.
+	/**
+	 * @class MpscQueue
+	 * @brief Michael-Scott 큐 기반의 다중 생산자·단일 소비자(MPSC) lock-free 큐입니다.
+	 *
+	 * @tparam T 큐에 저장할 값 타입.
+	 * @note Enqueue()는 여러 스레드에서 동시 호출해도 안전하지만, Dequeue()/IsEmpty()는
+	 * 단일 소비자 스레드에서만 호출해야 합니다.
+	 */
 	template <typename T>
 	class MpscQueue
 	{

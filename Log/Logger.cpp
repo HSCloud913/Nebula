@@ -47,12 +47,6 @@ BEGIN_NS(ne)
 		Close();
 	}
 
-	bool_t Logger::IsOpen() const
-	{
-		std::lock_guard<std::mutex> lock(mutex);
-		return os.is_open();
-	}
-
 
 
 	bool_t Logger::Open(const string_t& _fileName)
@@ -100,6 +94,12 @@ BEGIN_NS(ne)
 		if (os.is_open()) os.close();
 
 		return !os.is_open();
+	}
+
+	bool_t Logger::IsOpen() const
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		return os.is_open();
 	}
 
 

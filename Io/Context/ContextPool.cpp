@@ -6,11 +6,20 @@
 
 #include <algorithm>
 #include "Io/Context/Context.h"
-#include "Io/Engine/EngineFactory.h"
 #include "Time/Timer/TimerWheel.h"
 
+#if defined(_WIN32)
+#	include "Io/Engine/Iocp/IocpEngine.h"
+#	include "Io/Engine/WsaPoll/WsaPollEngine.h"
+#elif defined(IS_POSIX)
+#	include "Io/Engine/IoUring/IoUringEngine.h"
+#	include "Io/Engine/Epoll/EpollEngine.h"
+#endif
+
+
+
 BEGIN_NS(ne::io)
-	ContextPool::ContextPool(const std::size_t _size)
+	ContextPool::ContextPool(const EngineType _engineType, const std::size_t _size)
 	{
 		const std::size_t size = _size > 0 ? _size : std::max<std::size_t>(1, std::thread::hardware_concurrency());
 		workers.reserve(size); // Context 는 heap 상주라 주소가 안정적이지만, thread 멤버가 realloc 로 이동되지 않게 미리 확보.
@@ -18,7 +27,25 @@ BEGIN_NS(ne::io)
 		for (std::size_t i = 0; i < size; ++i)
 		{
 			Worker worker;
-			worker.engine = MakeDefaultEngine();
+#if defined(_WIN32)
+			if (_engineType == EngineType::REACTOR)
+			{
+				worker.engine = std::make_unique<WsaPollEngine>();
+			}
+			else if (_engineType == EngineType::PROACTOR)
+			{
+				worker.engine = std::make_unique<IocpEngine>();
+			}
+#elif defined(IS_POSIX)
+			if (_engineType == EngineType::REACTOR)
+			{
+				worker.engine = std::make_unique<EpollEngine>();
+			}
+			else if (_engineType == EngineType::PROACTOR)
+			{
+				worker.engine = std::make_unique<IoUringEngine>();
+			}
+#endif
 			worker.timerWheel = std::make_unique<ne::time::TimerWheel>();
 			worker.context = std::make_unique<Context>(*worker.engine, worker.timerWheel.get()); // 워커마다 자기 wheel — SleepFor/Timeout 전제
 

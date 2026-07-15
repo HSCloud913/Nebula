@@ -9,10 +9,14 @@
 #include "Base/Type.h"
 
 BEGIN_NS(ne::memory)
-	// 고정 크기 블록 풀. free list 기반.
-	// 스레드 안전 (mutex 보호, 추후 lock-free 교체 예정).
-	// 모든 블록은 생성 시 지정한 _alignment(2의 거듭제곱)로 정렬된다 — io_uring fixed buffer /
-	// Windows unbuffered I/O 의 섹터 정렬(512·4096) 요구를 만족시키기 위함.
+	/**
+	 * @class PoolAllocator
+	 * @brief free list 기반의 고정 크기 블록 풀 할당자입니다.
+	 *
+	 * mutex로 보호되어 스레드 안전합니다(추후 lock-free로 교체 예정). 모든 블록은 생성 시
+	 * 지정한 _alignment(2의 거듭제곱)로 정렬되며, 이는 io_uring fixed buffer / Windows
+	 * unbuffered I/O의 섹터 정렬(512·4096) 요구를 만족시키기 위함입니다.
+	 */
 	class PoolAllocator final :public IAllocator
 	{
 	public:

@@ -7,13 +7,12 @@
 #if defined(_WIN32)
 #	include <winsock2.h>
 #	include <ws2tcpip.h>
-#	include <mswsock.h>
-#	include <cstdint>
 
 
 
 // NTSTATUS(완료 entry.Internal) → Win32 에러코드 변환. ntdll 제공(선언만 직접 노출).
 extern "C" ne::ulong_t __stdcall RtlNtStatusToDosError(ne::long_t _status);
+
 BEGIN_NS(ne::io)
 	IocpEngine::IocpEngine(const ulong_t _concurrentThreads) noexcept
 		: iocpHandle(::CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, _concurrentThreads))
@@ -22,6 +21,9 @@ BEGIN_NS(ne::io)
 		// 여기서 만들어 둬도 비용은 iocp 핸들/키 저장뿐이다.
 		if (iocpHandle) rioProvider = std::make_unique<RioProvider>(iocpHandle.Get(), RioKey);
 	}
+
+
+
 	void_t IocpEngine::Submit(const Request& _request)
 	{
 		// RIO(SendZeroCopy) 는 자체 완료 큐(RIO_CQ→IOCP 바인딩, RioKey)를 쓴다 — IocpOperation/
@@ -69,6 +71,7 @@ BEGIN_NS(ne::io)
 
 		Dispatch(operation, _request, handle);
 	}
+
 	int_t IocpEngine::WaitCompletions(Completion* _out, const int_t _max, const std::chrono::milliseconds _timeout)
 	{
 		if (_max <= 0) return 0;
@@ -141,7 +144,7 @@ BEGIN_NS(ne::io)
 
 		return count;
 	}
-	void_t IocpEngine::Wake() { ::PostQueuedCompletionStatus(iocpHandle.Get(), 0, WakeKey, nullptr); }
+
 	void_t IocpEngine::Cancel(void_t* _userData) noexcept
 	{
 		if (_userData == nullptr) return;
@@ -155,6 +158,7 @@ BEGIN_NS(ne::io)
 		IocpOperation* operation = iterator->second;
 		::CancelIoEx(operation->handle, &operation->overlapped);
 	}
+
 	bool_t IocpEngine::Supports(const Capability _capability) const noexcept
 	{
 		switch (_capability)
@@ -171,6 +175,9 @@ BEGIN_NS(ne::io)
 
 		return false;
 	}
+
+
+
 	bool_t IocpEngine::EnsureAssociated(const HANDLE _handle) noexcept
 	{
 		const ulonglong_t key = reinterpret_cast<ulonglong_t>(_handle);
@@ -180,8 +187,10 @@ BEGIN_NS(ne::io)
 		if (::CreateIoCompletionPort(_handle, iocpHandle.Get(), 0, 0) == nullptr) return false;
 
 		associated.insert(key);
+
 		return true;
 	}
+
 	bool_t IocpEngine::EnsureExtensions(const socket_t _socket) noexcept
 	{
 		std::lock_guard lock(mutex);
@@ -192,13 +201,13 @@ BEGIN_NS(ne::io)
 		ulong_t bytes = 0;
 
 		if (::WSAIoctl(_socket, SIO_GET_EXTENSION_FUNCTION_POINTER, &acceptGuid, sizeof(acceptGuid), &acceptExPtr, sizeof(acceptExPtr), &bytes, nullptr, nullptr) == SOCKET_ERROR) return false;
-
 		if (::WSAIoctl(_socket, SIO_GET_EXTENSION_FUNCTION_POINTER, &connectGuid, sizeof(connectGuid), &connectExPtr, sizeof(connectExPtr), &bytes, nullptr, nullptr) == SOCKET_ERROR) return false;
 
 		isExtensionsLoaded = true;
 
 		return true;
 	}
+
 	void_t IocpEngine::Dispatch(IocpOperation* _operation, const Request& _request, const HANDLE _handle) noexcept
 	{
 		// 파일 scatter/gather(Readv/Writev) — Windows 는 ReadFileScatter/WriteFileGather 가 페이지 정렬을
@@ -237,7 +246,8 @@ BEGIN_NS(ne::io)
 				segmentOverlapped.hEvent = taggedEvent;
 
 				ulong_t transferred = 0;
-				bool_t isOk = (_request.op == OpCode::READ) ? ::ReadFile(_handle, segment.ptr, static_cast<ulong_t>(segment.length), &transferred, &segmentOverlapped) :
+				bool_t isOk = (_request.op == OpCode::READ) ?
+								::ReadFile(_handle, segment.ptr, static_cast<ulong_t>(segment.length), &transferred, &segmentOverlapped) :
 								::WriteFile(_handle, segment.ptr, static_cast<ulong_t>(segment.length), &transferred, &segmentOverlapped);
 				if (!isOk && ::GetLastError() == ERROR_IO_PENDING)
 				{
@@ -274,15 +284,15 @@ BEGIN_NS(ne::io)
 			case OpCode::READ:
 			{
 				ulong_t read = 0;
-				if (!::ReadFile(_handle, _request.buffer, static_cast<ulong_t>(_request.length), &read, &_operation->overlapped)) if (const ulong_t error = ::GetLastError();
-					error != ERROR_IO_PENDING) syncError = static_cast<int_t>(error);
+				if (!::ReadFile(_handle, _request.buffer, static_cast<ulong_t>(_request.length), &read, &_operation->overlapped))
+					if (const ulong_t error = ::GetLastError(); error != ERROR_IO_PENDING) syncError = static_cast<int_t>(error);
 				break;
 			}
 			case OpCode::WRITE:
 			{
 				ulong_t written = 0;
-				if (!::WriteFile(_handle, _request.buffer, static_cast<ulong_t>(_request.length), &written, &_operation->overlapped)) if (const ulong_t error = ::GetLastError();
-					error != ERROR_IO_PENDING) syncError = static_cast<int_t>(error);
+				if (!::WriteFile(_handle, _request.buffer, static_cast<ulong_t>(_request.length), &written, &_operation->overlapped))
+					if (const ulong_t error = ::GetLastError(); error != ERROR_IO_PENDING) syncError = static_cast<int_t>(error);
 				break;
 			}
 			case OpCode::RECEIVE:
@@ -294,8 +304,7 @@ BEGIN_NS(ne::io)
 				if (_request.chain != nullptr)
 				{
 					_operation->wsaBuffers.reserve(_request.chain->Segments().size());
-					for (const auto& segment : _request.chain->Segments())
-						_operation->wsaBuffers.push_back(WSABUF{ .len = static_cast<ulong_t>(segment.length), .buf = reinterpret_cast<lpstr_t>(segment.ptr) });
+					for (const auto& segment : _request.chain->Segments()) _operation->wsaBuffers.push_back(WSABUF{ .len = static_cast<ulong_t>(segment.length), .buf = reinterpret_cast<lpstr_t>(segment.ptr) });
 					rc = ::WSARecv(reinterpret_cast<SOCKET>(_handle),
 									_operation->wsaBuffers.data(),
 									static_cast<ulong_t>(_operation->wsaBuffers.size()),
@@ -322,8 +331,7 @@ BEGIN_NS(ne::io)
 				if (_request.chain != nullptr)
 				{
 					_operation->wsaBuffers.reserve(_request.chain->Segments().size());
-					for (const auto& segment : _request.chain->Segments())
-						_operation->wsaBuffers.push_back(WSABUF{ .len = static_cast<ulong_t>(segment.length), .buf = reinterpret_cast<lpstr_t>(segment.ptr) });
+					for (const auto& segment : _request.chain->Segments()) _operation->wsaBuffers.push_back(WSABUF{ .len = static_cast<ulong_t>(segment.length), .buf = reinterpret_cast<lpstr_t>(segment.ptr) });
 					rc = ::WSASend(reinterpret_cast<SOCKET>(_handle), _operation->wsaBuffers.data(), static_cast<ulong_t>(_operation->wsaBuffers.size()), &sent, 0, &_operation->overlapped, nullptr);
 				}
 				else
@@ -343,8 +351,8 @@ BEGIN_NS(ne::io)
 				ulong_t received = 0;
 				ulong_t flags = 0;
 				WSABUF wsaBuffer{ .len = 0, .buf = nullptr };
-				if (::WSARecv(reinterpret_cast<SOCKET>(_handle), &wsaBuffer, 1, &received, &flags, &_operation->overlapped, nullptr) == SOCKET_ERROR) if (const int_t error = ::WSAGetLastError();
-					error != WSA_IO_PENDING) syncError = error;
+				if (::WSARecv(reinterpret_cast<SOCKET>(_handle), &wsaBuffer, 1, &received, &flags, &_operation->overlapped, nullptr) == SOCKET_ERROR)
+					if (const int_t error = ::WSAGetLastError(); error != WSA_IO_PENDING) syncError = error;
 				break;
 			}
 			case OpCode::WAIT_WRITABLE:
@@ -362,7 +370,8 @@ BEGIN_NS(ne::io)
 				WSABUF wsaBuffer{ .len = static_cast<ulong_t>(_request.length), .buf = static_cast<lpstr_t>(_request.buffer) };
 				ulong_t sent = 0;
 				if (::WSASendTo(reinterpret_cast<SOCKET>(_handle), &wsaBuffer, 1, &sent, 0, static_cast<const sockaddr*>(_request.address), _request.addressLength, &_operation->overlapped, nullptr) ==
-					SOCKET_ERROR) if (const int_t error = ::WSAGetLastError(); error != WSA_IO_PENDING) syncError = error;
+					SOCKET_ERROR)
+					if (const int_t error = ::WSAGetLastError(); error != WSA_IO_PENDING) syncError = error;
 				break;
 			}
 			case OpCode::RECEIVE_FROM: // 비연결형(UDP) 수신 — fromAddress/fromAddressLength 에 발신자 주소를 채움
@@ -378,7 +387,8 @@ BEGIN_NS(ne::io)
 								static_cast<sockaddr*>(_request.fromAddress),
 								_request.fromAddressLength,
 								&_operation->overlapped,
-								nullptr) == SOCKET_ERROR) if (const int_t error = ::WSAGetLastError(); error != WSA_IO_PENDING) syncError = error;
+								nullptr) == SOCKET_ERROR)
+					if (const int_t error = ::WSAGetLastError(); error != WSA_IO_PENDING) syncError = error;
 				break;
 			}
 			case OpCode::ACCEPT:
@@ -413,8 +423,8 @@ BEGIN_NS(ne::io)
 				const ulong_t addressLength = static_cast<ulong_t>(sizeof(sockaddr_in6) + 16);
 
 				ulong_t received = 0;
-				if (!acceptEx(listenSocket, accepted, _operation->acceptBuffer, 0, addressLength, addressLength, &received, &_operation->overlapped)) if (const int_t error = ::WSAGetLastError();
-					error != WSA_IO_PENDING) syncError = error;
+				if (!acceptEx(listenSocket, accepted, _operation->acceptBuffer, 0, addressLength, addressLength, &received, &_operation->overlapped))
+					if (const int_t error = ::WSAGetLastError(); error != WSA_IO_PENDING) syncError = error;
 
 				break;
 			}
@@ -445,8 +455,8 @@ BEGIN_NS(ne::io)
 
 				const auto connectEx = reinterpret_cast<LPFN_CONNECTEX>(connectExPtr);
 				ulong_t sent = 0;
-				if (!connectEx(socket, target, _request.addressLength, nullptr, 0, &sent, &_operation->overlapped)) if (const int_t error = ::WSAGetLastError();
-					error != WSA_IO_PENDING) syncError = error;
+				if (!connectEx(socket, target, _request.addressLength, nullptr, 0, &sent, &_operation->overlapped))
+					if (const int_t error = ::WSAGetLastError(); error != WSA_IO_PENDING) syncError = error;
 
 				break;
 			}
@@ -454,22 +464,22 @@ BEGIN_NS(ne::io)
 			{                      // OVERLAPPED.Offset/OffsetHigh 로 시작 오프셋을 받는다(위에서 이미 세팅됨).
 				const SOCKET destSocket = reinterpret_cast<SOCKET>(_handle);
 				const auto sourceFile = reinterpret_cast<HANDLE>(static_cast<uintptr_t>(_request.auxHandle));
-				if (!::TransmitFile(destSocket, sourceFile, static_cast<ulong_t>(_request.length), 0, &_operation->overlapped, nullptr, 0)) if (const int_t error = ::WSAGetLastError();
-					error != WSA_IO_PENDING) syncError = error;
+				if (!::TransmitFile(destSocket, sourceFile, static_cast<ulong_t>(_request.length), 0, &_operation->overlapped, nullptr, 0))
+					if (const int_t error = ::WSAGetLastError(); error != WSA_IO_PENDING) syncError = error;
 				break;
 			}
 			case OpCode::READ_FIXED: // Windows 에 파일 등록 버퍼 개념이 없다(RIO 는 소켓 전용) — 일반 Read 와 동일, bufferId 무시
 			{
 				ulong_t read = 0;
-				if (!::ReadFile(_handle, _request.buffer, static_cast<ulong_t>(_request.length), &read, &_operation->overlapped)) if (const ulong_t error = ::GetLastError();
-					error != ERROR_IO_PENDING) syncError = static_cast<int_t>(error);
+				if (!::ReadFile(_handle, _request.buffer, static_cast<ulong_t>(_request.length), &read, &_operation->overlapped))
+					if (const ulong_t error = ::GetLastError(); error != ERROR_IO_PENDING) syncError = static_cast<int_t>(error);
 				break;
 			}
 			case OpCode::WRITE_FIXED: // 위와 동일
 			{
 				ulong_t written = 0;
-				if (!::WriteFile(_handle, _request.buffer, static_cast<ulong_t>(_request.length), &written, &_operation->overlapped)) if (const ulong_t error = ::GetLastError();
-					error != ERROR_IO_PENDING) syncError = static_cast<int_t>(error);
+				if (!::WriteFile(_handle, _request.buffer, static_cast<ulong_t>(_request.length), &written, &_operation->overlapped))
+					if (const ulong_t error = ::GetLastError(); error != ERROR_IO_PENDING) syncError = static_cast<int_t>(error);
 				break;
 			}
 			default:
@@ -486,6 +496,7 @@ BEGIN_NS(ne::io)
 		}
 		// else: 성공/IO_PENDING — 완료는 WaitCompletions 에서 회수하며 operation 을 해제한다.
 	}
+
 	int_t IocpEngine::DrainRioCompletions(Completion* _out, const int_t _max) noexcept
 	{
 		if (rioProvider == nullptr || !rioProvider->IsInitialized() || _max <= 0) return 0;
@@ -499,7 +510,8 @@ BEGIN_NS(ne::io)
 		{
 			for (ulong_t i = 0; i < dequeued; ++i)
 			{
-				const longlong_t result = results[i].Status == 0 ? static_cast<longlong_t>(results[i].BytesTransferred) :
+				const longlong_t result = results[i].Status == 0 ?
+											static_cast<longlong_t>(results[i].BytesTransferred) :
 											-static_cast<longlong_t>(::RtlNtStatusToDosError(static_cast<long_t>(results[i].Status)));
 
 				_out[count].userData = reinterpret_cast<void_t*>(static_cast<std::uintptr_t>(results[i].RequestContext));

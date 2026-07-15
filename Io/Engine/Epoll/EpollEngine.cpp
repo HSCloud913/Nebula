@@ -48,11 +48,15 @@ BEGIN_NS(ne::io)
 
 		isValid = true;
 	}
+
 	EpollEngine::~EpollEngine()
 	{
 		if (wakeEventFd >= 0) ::close(wakeEventFd);
 		if (epollFd >= 0) ::close(epollFd);
 	}
+
+
+
 	void_t EpollEngine::Submit(const Request& _request)
 	{
 		if (longlong_t result = 0; Perform(_request, false, result))
@@ -74,6 +78,7 @@ BEGIN_NS(ne::io)
 
 		UpdateEpoll(fd);
 	}
+
 	int_t EpollEngine::WaitCompletions(Completion* _out, const int_t _max, const std::chrono::milliseconds _timeout)
 	{
 		if (_max <= 0) return 0;
@@ -159,11 +164,13 @@ BEGIN_NS(ne::io)
 
 		return count;
 	}
+
 	void_t EpollEngine::Wake()
 	{
 		const uint64_t one = 1;
 		(void_t)::write(wakeEventFd, &one, sizeof(one));
 	}
+
 	void_t EpollEngine::Cancel(void_t* _userData) noexcept
 	{
 		if (_userData == nullptr) return;
@@ -175,6 +182,7 @@ BEGIN_NS(ne::io)
 
 		Wake();
 	}
+
 	bool_t EpollEngine::Supports(const Capability _capability) const noexcept
 	{
 		switch (_capability)
@@ -191,11 +199,9 @@ BEGIN_NS(ne::io)
 
 		return false;
 	}
-	bool_t EpollEngine::IsWriteDirection(const OpCode _op) noexcept
-	{
-		return _op == OpCode::WRITE || _op == OpCode::SEND || _op == OpCode::CONNECT || _op == OpCode::WRITE_FIXED || _op == OpCode::SEND_ZERO_COPY || _op == OpCode::SEND_FILE || _op == OpCode::SEND_TO ||
-				_op == OpCode::WAIT_WRITABLE;
-	}
+
+
+
 	bool_t EpollEngine::Perform(const Request& _request, const bool_t _isRetry, longlong_t& _result) noexcept
 	{
 		const int_t fd = static_cast<int_t>(_request.handle);
@@ -414,6 +420,13 @@ BEGIN_NS(ne::io)
 
 		return true;
 	}
+
+	bool_t EpollEngine::IsWriteDirection(const OpCode _op) noexcept
+	{
+		return _op == OpCode::WRITE || _op == OpCode::SEND || _op == OpCode::CONNECT || _op == OpCode::WRITE_FIXED || _op == OpCode::SEND_ZERO_COPY || _op == OpCode::SEND_FILE || _op == OpCode::SEND_TO ||
+				_op == OpCode::WAIT_WRITABLE;
+	}
+
 	void_t EpollEngine::UpdateEpoll(const int_t _fd) noexcept
 	{
 		uint32_t events = 0;
@@ -432,6 +445,7 @@ BEGIN_NS(ne::io)
 
 		if (::epoll_ctl(epollFd, EPOLL_CTL_MOD, _fd, &event) != 0) (void_t)::epoll_ctl(epollFd, EPOLL_CTL_ADD, _fd, &event); // 미등록이면 ADD
 	}
+
 	void_t EpollEngine::ProcessCancels()
 	{
 		std::vector<void_t*> cancels;

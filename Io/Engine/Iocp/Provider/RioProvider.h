@@ -22,8 +22,8 @@ BEGIN_NS(ne::io)
 	{
 	public:
 		// _iocp: 완료 통지를 바인딩할 엔진의 IOCP 핸들. _rioKey: RIO 완료를 GQCS 에서 구분할 sentinel key.
-		RioProvider(const HANDLE _iocp, const ulonglong_t _rioKey) noexcept
-			: iocp(_iocp)
+		RioProvider(const HANDLE _iocpHandle, const ulonglong_t _rioKey) noexcept
+			: iocpHandle(_iocpHandle)
 			, rioKey(_rioKey) {}
 
 		virtual ~RioProvider() override { if (cq != RIO_INVALID_CQ && table.RIOCloseCompletionQueue) table.RIOCloseCompletionQueue(cq); }
@@ -41,9 +41,10 @@ BEGIN_NS(ne::io)
 		static constexpr ulong_t MaxDataBuffers = 1;
 
 	private:
-		HANDLE iocp{};
+		HANDLE iocpHandle{};
 		ulonglong_t rioKey{};
 
+	private:
 		std::mutex mutex; // 초기화/등록/해제/RQ 생성 보호 — IocpEngine 은 멀티스레드 RunOnce 모델.
 		RIO_EXTENSION_FUNCTION_TABLE table{};
 		RIO_CQ cq{ RIO_INVALID_CQ };
@@ -54,17 +55,15 @@ BEGIN_NS(ne::io)
 		std::unordered_map<socket_t, RIO_RQ> requestQueues;    // socket → RIO_RQ (lazy)
 		std::unordered_map<uint64_t, ne::byte_t*> regionBases; // BufferHandle.value → RegisterBuffer 에 넘겼던 region.data()(Offset 산정용)
 
-	public: // IRegisteredBufferProvider
+	public: /* IRegisteredBufferProvider */
 		[[nodiscard]] virtual ne::Result<BufferHandle, IoError> RegisterBuffer(std::span<ne::byte_t> _region) noexcept override;
 		virtual void_t UnregisterBuffer(BufferHandle _handle) noexcept override;
 
-	public:
-		[[nodiscard]] virtual ne::Result<void_t, IoError> SubmitSendRegistered(const socket_t _socket, const BufferHandle _handle, const void_t* _buffer, const std::size_t _length,
-			void_t* _userData) noexcept override { return Submit(_socket, _handle, _buffer, _length, _userData, true); }
-		[[nodiscard]] virtual ne::Result<void_t, IoError> SubmitReceiveRegistered(const socket_t _socket, const BufferHandle _handle, void_t* _buffer, const std::size_t _length,
-			void_t* _userData) noexcept override { return Submit(_socket, _handle, _buffer, _length, _userData, false); }
+	public: /* IRegisteredBufferProvider */
+		[[nodiscard]] virtual ne::Result<void_t, IoError> SubmitSendRegistered(const socket_t _socket, const BufferHandle _handle, const void_t* _buffer, const std::size_t _length, void_t* _userData) noexcept override { return Submit(_socket, _handle, _buffer, _length, _userData, true); }
+		[[nodiscard]] virtual ne::Result<void_t, IoError> SubmitReceiveRegistered(const socket_t _socket, const BufferHandle _handle, void_t* _buffer, const std::size_t _length, void_t* _userData) noexcept override { return Submit(_socket, _handle, _buffer, _length, _userData, false); }
 
-	public:
+	public: /* IRegisteredBufferProvider */
 		virtual void_t ReleaseSocket(socket_t _socket) noexcept override; // 소켓별 RIO_RQ 맵 엔트리 제거
 
 	private:

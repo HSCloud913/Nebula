@@ -56,7 +56,7 @@ BEGIN_NS(ne::io)
 		Context& context;
 		Request request;
 		std::stop_token stopToken;
-		CompletionHandler* handler{ static_cast<CompletionHandler*>(nullptr) };
+		CompletionHandler* handler{ nullptr };
 		std::optional<std::stop_callback<CancelInvoker>> cancelGuard;
 
 	public:

@@ -20,12 +20,20 @@ BEGIN_NS(ne::network)
 	class PlainStream final :public IStream
 	{
 	private:
-		explicit PlainStream(ne::io::Socket&& _socket, ne::io::Context& _context, ne::memory::IAllocator* _allocator) noexcept;
+		explicit PlainStream(ne::io::Socket&& _socket, ne::io::Context& _context, ne::memory::IAllocator* _allocator) noexcept
+			: socket(std::move(_socket))
+			, context(&_context)
+			, allocator(_allocator) {}
 
 	public:
-		PlainStream(PlainStream&& _other) noexcept;
-		PlainStream& operator=(PlainStream&& _other) noexcept;
 		virtual ~PlainStream() override = default;
+
+		PlainStream(PlainStream&& _other) noexcept
+			: socket(std::move(_other.socket))
+			, context(_other.context)
+			, allocator(_other.allocator) {}
+
+		PlainStream& operator=(PlainStream&& _other) noexcept;
 
 		NEBULA_NON_COPYABLE(PlainStream)
 
@@ -49,7 +57,6 @@ BEGIN_NS(ne::network)
 		virtual ne::Task<ne::io::IoResult<std::size_t>> Receivev(const ne::io::BufferChain& _chain, std::stop_token _stopToken = {}) override;
 		virtual ne::Task<ne::io::IoResult<std::size_t>> Send(ne::io::BufferView _data, std::stop_token _stopToken = {}) override;
 		virtual ne::Task<ne::io::IoResult<std::size_t>> Sendv(const ne::io::BufferChain& _chain, std::stop_token _stopToken = {}) override;
-
 		virtual ne::Task<ne::io::IoResult<void_t>> Shutdown() override;
 		virtual ne::Result<void_t, ne::io::IoError> Close() override;
 		[[nodiscard]] virtual bool_t IsOpen() const noexcept override { return socket.IsValid(); }

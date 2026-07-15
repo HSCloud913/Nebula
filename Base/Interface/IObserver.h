@@ -10,6 +10,12 @@
 #include "Base/Type.h"
 
 BEGIN_NS(ne)
+	/**
+	 * @class IObserver
+	 * @brief Observer 패턴의 관찰자 인터페이스입니다.
+	 *
+	 * 고유 id로 식별되며, ISubject::Notify()를 통해 Update()가 호출됩니다.
+	 */
 	class IObserver
 	{
 	public:
@@ -26,6 +32,13 @@ BEGIN_NS(ne)
 		virtual void_t Update(const std::any& _data) = 0;
 	};
 
+	/**
+	 * @class ISubject
+	 * @brief Observer 패턴의 관찰 대상(주체)입니다.
+	 *
+	 * IObserver를 id 기준으로 등록/해제(Attach/Detach)하고, Notify()로 전체 또는
+	 * 지정한 id 집합에만 선택적으로 이벤트를 전파합니다.
+	 */
 	class ISubject
 	{
 	public:
