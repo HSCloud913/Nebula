@@ -64,6 +64,9 @@ inline ne::uint_t Sh(const ne::uint_t _x, const ne::uint_t _n) { return _x >> _n
 
 inline ne::ulonglong_t Sh(const ne::ulonglong_t _x, const ne::ulonglong_t _n) { return _x >> _n; }
 
+// Sigma0/Sigma1(대문자, 압축함수용)과 Gamma0/Gamma1(메시지 스케줄용)의 회전/시프트 상수는
+// FIPS 180-4 스펙에 정의된 고정값이다. SHA-256(32비트): Sigma0=2,13,22 / Sigma1=6,11,25 / Gamma0=7,18,>>3 / Gamma1=17,19,>>10.
+// SHA-512(64비트)는 워드 크기가 다르므로 별도 상수(28,34,39 / 14,18,41 / 1,8,>>7 / 19,61,>>6)를 사용한다.
 inline ne::uint_t Sigma0(const ne::uint_t _x) { return Rot(_x, 2) ^ Rot(_x, 13) ^ Rot(_x, 22); }
 
 inline ne::ulonglong_t Sigma0(const ne::ulonglong_t _x) { return Rot(_x, 28) ^ Rot(_x, 34) ^ Rot(_x, 39); }
@@ -84,16 +87,12 @@ inline void ShaCompress(ne::uint_t* _state, const ne::byte_t* _buffer)
 {
 	ne::uint_t S[8], W[64], t0, t1, t;
 
-	// Copy state into S
 	for (int i = 0; i < 8; i++) S[i] = _state[i];
 
-	// Copy the state into 512-bits into W[0..15]
 	for (int i = 0; i < 16; i++) W[i] = Load32(_buffer + (4 * i));
 
-	// Fill W[16..63]
 	for (int i = 16; i < 64; i++) W[i] = Gamma1(W[i - 2]) + W[i - 7] + Gamma0(W[i - 15]) + W[i - 16];
 
-	// Compress
 	auto RND = [&](ne::uint_t _a, ne::uint_t _b, ne::uint_t _c, ne::uint_t& _d, ne::uint_t _e, ne::uint_t _f, ne::uint_t _g, ne::uint_t& _h, ne::uint_t _i)
 	{
 		t0 = _h + Sigma1(_e) + Ch(_e, _f, _g) + Sha256RoundConstants[_i] + W[_i];
@@ -116,7 +115,6 @@ inline void ShaCompress(ne::uint_t* _state, const ne::byte_t* _buffer)
 		S[0] = t;
 	}
 
-	// Feedback
 	for (int i = 0; i < 8; i++) _state[i] = _state[i] + S[i];
 }
 
@@ -124,16 +122,12 @@ inline void ShaCompress(ne::ulonglong_t* _state, const ne::byte_t* _buffer)
 {
 	ne::ulonglong_t S[8], W[80], t0, t1;
 
-	// Copy state into S
 	for (int i = 0; i < 8; i++) S[i] = _state[i];
 
-	// Copy the state into 1024-bits into W[0..15]
 	for (int i = 0; i < 16; i++) W[i] = Load64(_buffer + (8 * i));
 
-	// Fill W[16..79]
 	for (int i = 16; i < 80; i++) W[i] = Gamma1(W[i - 2]) + W[i - 7] + Gamma0(W[i - 15]) + W[i - 16];
 
-	// Compress
 	auto RND = [&](ne::ulonglong_t _a, ne::ulonglong_t _b, ne::ulonglong_t _c, ne::ulonglong_t& _d, ne::ulonglong_t _e, ne::ulonglong_t _f, ne::ulonglong_t _g, ne::ulonglong_t& _h, ne::ulonglong_t _i)
 	{
 		t0 = _h + Sigma1(_e) + Ch(_e, _f, _g) + Sha512RoundConstants[_i] + W[_i];
@@ -142,6 +136,9 @@ inline void ShaCompress(ne::ulonglong_t* _state, const ne::byte_t* _buffer)
 		_h = t0 + t1;
 	};
 
+	// SHA-256과 달리 상태를 물리적으로 회전(S[7]=S[6]... 재대입)시키지 않고,
+	// 8라운드를 한 그룹으로 풀어서(unroll) 매 호출마다 8개 상태 워드(a~h)의 인자 위치를 한 칸씩 밀어 전달한다.
+	// 8라운드가 지나면 원래 위치로 되돌아오므로 결과는 동일하되 배열 복사 비용이 없어 더 빠르다.
 	for (int i = 0; i < 80; i += 8)
 	{
 		RND(S[0], S[1], S[2], S[3], S[4], S[5], S[6], S[7], i + 0);
@@ -154,7 +151,6 @@ inline void ShaCompress(ne::ulonglong_t* _state, const ne::byte_t* _buffer)
 		RND(S[1], S[2], S[3], S[4], S[5], S[6], S[7], S[0], i + 7);
 	}
 
-	// Feedback
 	for (int i = 0; i < 8; i++) _state[i] = _state[i] + S[i];
 }
 
@@ -283,7 +279,6 @@ BEGIN_NS(ne::crypto)
 
 		if (type == Type::SHA2_224 || type == Type::SHA2_256)
 		{
-			// Increase the length of the message
 			length += currentLength * 8;
 
 			// Append the '1' bit
@@ -299,19 +294,15 @@ BEGIN_NS(ne::crypto)
 				currentLength = 0;
 			}
 
-			// Pad upto 56 bytes of zeroes
 			while (currentLength < 56) { buffer[currentLength++] = 0; }
 
-			// Store length
 			Store64(length, buffer + 56);
 			ShaCompress(sha2Value32, buffer);
 
-			// Copy output
 			for (int i = 0; i < 8; i++) Store32(sha2Value32[i], result + (4 * i));
 		}
 		else if (type == Type::SHA2_384 || type == Type::SHA2_512)
 		{
-			// Increase the length of the message
 			length += currentLength * 8ULL;
 
 			// Append the '1' bit
@@ -326,16 +317,13 @@ BEGIN_NS(ne::crypto)
 				currentLength = 0;
 			}
 
-			// Pad upto 120 bytes of zeroes
 			// note: that from 112 to 120 is the 64 MSB of the length.  We assume that
 			// you won't hash 2^64 bits of data... :-)
 			while (currentLength < 120) buffer[currentLength++] = 0;
 
-			// Store length
 			Store64(length, buffer + 120);
 			ShaCompress(sha2Value64, buffer);
 
-			// Copy output
 			for (int i = 0; i < 8; i++) Store64(sha2Value64[i], result + (8 * i));
 		}
 

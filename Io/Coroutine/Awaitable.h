@@ -1,12 +1,6 @@
 //
 // Created by hscloud on 26. 7. 8.
 //
-// Level 2 — 완료 기반 op 한 건을 co_await 로 감싸는 기본 awaitable. co_await → IoResult<size_t>.
-//
-// 완료 컨텍스트(CompletionHandler)를 heap 에 두고 소유권을 Context 루프와 교대한다:
-//   정상 완료 : 루프가 completed 세팅 후 resume → await_resume 이 소비 → holder 소멸자가 delete.
-//   중도 폐기 : 완료 전 코루틴 프레임 파괴 → holder 소멸자가 abandoned 세팅(소유권을 루프에 넘김)
-//               → 루프가 완료 회수 시 resume 없이 delete. (mid-flight use-after-free 방지, 스펙 4)
 
 #pragma once
 #include <coroutine>
@@ -21,11 +15,20 @@
 #include "Io/Context/Operation.h"
 
 BEGIN_NS(ne::io)
+	/**
+	 * @class Awaitable
+	 * @brief I/O 완료 한 건을 co_await 로 감싸는 awaitable.
+	 *
+	 * Request 를 Context 의 엔진에 제출하고, 완료될 때까지 코루틴을 suspend 시킨다.
+	 * co_await 결과는 IoResult<std::size_t> 이며, 완료 컨텍스트(CompletionHandler)는 heap 에
+	 * 할당되어 소유권이 이 객체와 Context 루프 사이를 오간다: 정상 완료 시 루프가 재개하며
+	 * await_resume 이 값을 소비한 뒤 소멸자가 해제하고, 완료 전에 이 객체가 먼저 파괴되면
+	 * 소유권을 루프로 넘겨 루프가 완료를 회수할 때 해제한다. stop_token 이 취소되면 진행 중인
+	 * op 을 커널 취소 요청한다.
+	 */
 	class Awaitable
 	{
 	public:
-		// _stopToken 이 stop 을 받으면 진행 중 op 를 커널 취소(CancelIoEx)한다 — op 는 aborted 로 완료돼
-		// 코루틴이 에러(ERROR_OPERATION_ABORTED)로 재개된다. 기본값(빈 토큰)은 취소 없음.
 		Awaitable(Context& _context, const Request& _request, std::stop_token _stopToken = {}) noexcept
 			: context(_context)
 			, request(_request)
@@ -35,7 +38,6 @@ BEGIN_NS(ne::io)
 		{
 			if (handler == nullptr) return;
 
-			// 아직 완료 전이면 커널/루프가 참조 중 — 소유권을 루프에 넘긴다(완료 시 루프가 delete).
 			if (!handler->isCompleted) handler->isAbandoned = true;
 			else delete handler;
 		}
@@ -43,7 +45,12 @@ BEGIN_NS(ne::io)
 		NEBULA_NON_COPYABLE_MOVABLE(Awaitable)
 
 	private:
-		// stop_callback 이 부를 취소 함수자 — userData(handler) 로 엔진에 커널 취소를 요청한다.
+		/**
+		 * @class CancelInvoker
+		 * @brief stop_callback 이 발화할 때 엔진에 커널 취소를 요청하는 함수자.
+		 *
+		 * userData(CompletionHandler 포인터)를 엔진의 Cancel() 에 그대로 전달한다.
+		 */
 		struct CancelInvoker
 		{
 			IEngine* engine;
@@ -69,7 +76,6 @@ BEGIN_NS(ne::io)
 			request.userData = handler;
 			context.Engine().Submit(request);
 
-			// 제출 후 취소 콜백 등록. 이미 stop 이 요청됐으면 emplace 시 즉시 발화해 방금 제출한 op 를 취소.
 			if (stopToken.stop_possible()) cancelGuard.emplace(stopToken, CancelInvoker{ &context.Engine(), handler });
 		}
 

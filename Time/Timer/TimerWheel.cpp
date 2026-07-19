@@ -10,6 +10,11 @@
 
 
 BEGIN_NS(ne::time)
+	// 지연 삭제(lazy-deletion) 방식의 min-heap 기반 타이머 설계:
+	// heap은 만료 시각(expireTick) 기준 최소 힙으로 "가장 빨리 만료될 타이머가 무엇인지"만 O(log n)에 관리하고,
+	// live는 "아직 취소되지 않은 타이머 id" 집합이다. Cancel은 힙을 건드리지 않고 live에서만 제거하므로 O(1)이며,
+	// 힙에 남은 취소된 엔트리는 Tick에서 팝될 때 live에 없음을 확인하고 그냥 버려진다(스킵).
+	// 힙 재구성(compaction)은 dead 엔트리 비율이 일정 이상일 때만 수행해 메모리 증가를 억제한다.
 	ulonglong_t TimerWheel::Schedule(const std::chrono::milliseconds _delay, std::function<void_t()> _callback)
 	{
 		const ulonglong_t id = nextId.fetch_add(1, std::memory_order_relaxed);
@@ -18,16 +23,16 @@ BEGIN_NS(ne::time)
 
 		std::lock_guard lock(mutex);
 		heap.push_back({ id, tick, std::move(_callback) });
-		std::push_heap(heap.begin(), heap.end(), LaterExpiry{});
+		std::ranges::push_heap(heap, LaterExpiry{});
 		live.insert(id);
 
 		return id;
 	}
 
+	// 지연 삭제: live 에서만 제거한다. 힙 엔트리는 만료 시 Tick 이 live 에 없음을 보고 스킵·폐기.
 	bool_t TimerWheel::Cancel(const ulonglong_t _id)
 	{
 		std::lock_guard lock(mutex);
-		// 지연 삭제: live 에서만 제거한다. 힙 엔트리는 만료 시 Tick 이 live 에 없음을 보고 스킵·폐기.
 		return live.erase(_id) > 0;
 	}
 
@@ -41,7 +46,7 @@ BEGIN_NS(ne::time)
 
 			while (!heap.empty() && heap.front().expireTick <= target)
 			{
-				std::pop_heap(heap.begin(), heap.end(), LaterExpiry{}); // top → back
+				std::ranges::pop_heap(heap, LaterExpiry{}); // top → back
 				TimerEntry entry = std::move(heap.back());
 				heap.pop_back();
 
@@ -58,7 +63,7 @@ BEGIN_NS(ne::time)
 					if (live.contains(entry.id)) alive.push_back(std::move(entry));
 
 				heap = std::move(alive);
-				std::make_heap(heap.begin(), heap.end(), LaterExpiry{});
+				std::ranges::make_heap(heap, LaterExpiry{});
 			}
 		}
 

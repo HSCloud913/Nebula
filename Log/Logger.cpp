@@ -37,7 +37,7 @@ BEGIN_NS(ne)
 		// running 변경은 wakeMutex(백엔드 wait 술어가 읽는 락) 하에서 하고 깨운다 — lost-wakeup 방지.
 		{
 			std::lock_guard<std::mutex> lock(wakeMutex);
-			running.store(false, std::memory_order_relaxed);
+			isRunning.store(false, std::memory_order_relaxed);
 		}
 		wake.notify_one();
 
@@ -110,7 +110,7 @@ BEGIN_NS(ne)
 
 		queue.Enqueue(LogRecord{ _logLevel, _message, std::chrono::system_clock::now() });
 		// Enqueue 완료 후 pending 세팅 → 백엔드가 놓쳐도(false-empty) 다음 wait 술어에서 재드레인.
-		pending.store(true, std::memory_order_release);
+		isPending.store(true, std::memory_order_release);
 		wake.notify_one();
 	}
 
@@ -127,12 +127,12 @@ BEGIN_NS(ne)
 
 	void_t Logger::BackendLoop()
 	{
-		while (running.load(std::memory_order_relaxed))
+		while (isRunning.load(std::memory_order_relaxed))
 		{
 			// 유휴 시 스핀(1ms 폴링) 대신 condvar 로 블록. pending.exchange 로 lost-wakeup 을 흡수한다.
 			{
 				std::unique_lock<std::mutex> lock(wakeMutex);
-				wake.wait(lock, [this] { return !running.load(std::memory_order_relaxed) || pending.exchange(false, std::memory_order_acq_rel); });
+				wake.wait(lock, [this] { return !isRunning.load(std::memory_order_relaxed) || isPending.exchange(false, std::memory_order_acq_rel); });
 			}
 
 			LogRecord record;

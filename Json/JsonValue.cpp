@@ -7,13 +7,19 @@
 
 
 
-inline ne::bool_t strchk(ne::lpcstr_t _string, size_t _count)
+namespace
 {
-	if (_count == 0) return false;
+	ne::bool_t StringCheck(ne::lpcstr_t _string, size_t _count)
+	{
+		if (_count == 0) return false;
 
-	while (_count-- > 0) { if (*(_string++) == 0) return false; }
+		while (_count-- > 0)
+		{
+			if (*(_string++) == 0) return false;
+		}
 
-	return true;
+		return true;
+	}
 }
 
 
@@ -38,14 +44,14 @@ BEGIN_NS(ne)
 
 #if defined(_WIN32)
 		// NULL
-		if (strchk(*_data, 4) && _strnicmp(*_data, "null", 4) == 0)
+		if (StringCheck(*_data, 4) && _strnicmp(*_data, "null", 4) == 0)
 		{
 			(*_data) += 4;
 			return JsonValue(JsonType::NULL_DATA);
 		}
 
 		// BOOLEAN
-		if ((strchk(*_data, 4) && _strnicmp(*_data, "true", 4) == 0) || (strchk(*_data, 5) && _strnicmp(*_data, "false", 5) == 0))
+		if ((StringCheck(*_data, 4) && _strnicmp(*_data, "true", 4) == 0) || (StringCheck(*_data, 5) && _strnicmp(*_data, "false", 5) == 0))
 		{
 			bool_t isTrue = _strnicmp(*_data, "true", 4) == 0;
 			(*_data) += isTrue ? 4 : 5;
@@ -53,11 +59,11 @@ BEGIN_NS(ne)
 			return JsonValue(isTrue);
 		}
 #elif defined(IS_POSIX)
-		if (strchk(*_data, 4) && strncasecmp(*_data, "null", 4) == 0)
+		if (StringCheck(*_data, 4) && strncasecmp(*_data, "null", 4) == 0)
 		{
 			(*_data) += 4;
 			return JsonValue(JsonType::NULL_DATA);
-		} if ((strchk(*_data, 4) && strncasecmp(*_data, "true", 4) == 0) || (strchk(*_data, 5) && strncasecmp(*_data, "false", 5) == 0))
+		} if ((StringCheck(*_data, 4) && strncasecmp(*_data, "true", 4) == 0) || (StringCheck(*_data, 5) && strncasecmp(*_data, "false", 5) == 0))
 		{
 			bool_t isTrue = strncasecmp(*_data, "true", 4) == 0;
 			(*_data) += isTrue ? 4 : 5;
@@ -285,7 +291,7 @@ BEGIN_NS(ne)
 						break;
 					case 'u':
 					{
-						if (!strchk(*_data, 5)) return false;
+						if (!StringCheck(*_data, 5)) return false;
 
 						uint32_t codepoint = 0;
 						for (int_t i = 0; i < 4; i++)
@@ -419,7 +425,7 @@ BEGIN_NS(ne)
 				auto& array = AsArray();
 				for (auto iter = array.begin(); iter != array.end();)
 				{
-					result += (*iter).OnStringify(indentDepth1);
+					result += iter->OnStringify(indentDepth1);
 
 					if (++iter != array.end()) result += ",";
 				}
@@ -435,9 +441,9 @@ BEGIN_NS(ne)
 				auto& object = AsObject();
 				for (auto iter = object.begin(); iter != object.end();)
 				{
-					result += StringifyString((*iter).first);
+					result += StringifyString(iter->first);
 					result += ":";
-					result += (*iter).second.OnStringify(indentDepth1);
+					result += iter->second.OnStringify(indentDepth1);
 
 					if (++iter != object.end()) result += ",";
 				}

@@ -85,13 +85,13 @@ TEST(IoEngineTest, FileWriteThenReadRoundTrip)
 	const std::size_t length = sizeof(payload) - 1;
 
 	int_t writeTag = 0;
-	Request write{ .op = OpCode::WRITE, .userData = &writeTag, .handle = reinterpret_cast<ulonglong_t>(file), .buffer = const_cast<lpstr_t>(payload), .length = length, .offset = 0 };
+	Request write{ .requestKind = RequestKind::WRITE, .userData = &writeTag, .handle = reinterpret_cast<ulonglong_t>(file), .buffer = const_cast<lpstr_t>(payload), .length = length, .offset = 0 };
 	engine.Submit(write);
 	EXPECT_EQ(WaitFor(engine, &writeTag), static_cast<longlong_t>(length));
 
 	char readBuffer[64]{};
 	int_t readTag = 0;
-	Request read{ .op = OpCode::READ, .userData = &readTag, .handle = reinterpret_cast<ulonglong_t>(file), .buffer = readBuffer, .length = length, .offset = 0 };
+	Request read{ .requestKind = RequestKind::READ, .userData = &readTag, .handle = reinterpret_cast<ulonglong_t>(file), .buffer = readBuffer, .length = length, .offset = 0 };
 	engine.Submit(read);
 	EXPECT_EQ(WaitFor(engine, &readTag), static_cast<longlong_t>(length));
 	EXPECT_EQ(std::memcmp(readBuffer, payload, length), 0);
@@ -115,13 +115,13 @@ TEST(IoEngineTest, SocketSendThenReceiveRoundTrip)
 	const std::size_t length = sizeof(payload) - 1;
 
 	int_t sendTag = 0;
-	Request send{ .op = OpCode::SEND, .userData = &sendTag, .handle = static_cast<ulonglong_t>(a), .buffer = const_cast<lpstr_t>(payload), .length = length };
+	Request send{ .requestKind = RequestKind::SEND, .userData = &sendTag, .handle = static_cast<ulonglong_t>(a), .buffer = const_cast<lpstr_t>(payload), .length = length };
 	engine.Submit(send);
 	EXPECT_EQ(WaitFor(engine, &sendTag), static_cast<longlong_t>(length));
 
 	char receiveBuffer[64]{};
 	int_t receiveTag = 0;
-	Request receive{ .op = OpCode::RECEIVE, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b), .buffer = receiveBuffer, .length = length };
+	Request receive{ .requestKind = RequestKind::RECEIVE, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b), .buffer = receiveBuffer, .length = length };
 	engine.Submit(receive);
 	EXPECT_EQ(WaitFor(engine, &receiveTag), static_cast<longlong_t>(length));
 	EXPECT_EQ(std::memcmp(receiveBuffer, payload, length), 0);
@@ -156,13 +156,13 @@ TEST(IoEngineTest, SendFileZeroCopyRoundTrip)
 	ASSERT_TRUE(MakeConnectedPair(a, b));
 
 	int_t sendFileTag = 0;
-	Request sendFile{ .op = OpCode::SEND_FILE, .userData = &sendFileTag, .handle = static_cast<ulonglong_t>(a), .length = length, .offset = 0, .auxHandle = reinterpret_cast<ulonglong_t>(sourceFile) };
+	Request sendFile{ .requestKind = RequestKind::SEND_FILE, .userData = &sendFileTag, .handle = static_cast<ulonglong_t>(a), .length = length, .offset = 0, .auxHandle = reinterpret_cast<ulonglong_t>(sourceFile) };
 	engine.Submit(sendFile);
 	EXPECT_EQ(WaitFor(engine, &sendFileTag), static_cast<longlong_t>(length));
 
 	char receiveBuffer[64]{};
 	int_t receiveTag = 0;
-	Request receive{ .op = OpCode::RECEIVE, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b), .buffer = receiveBuffer, .length = length };
+	Request receive{ .requestKind = RequestKind::RECEIVE, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b), .buffer = receiveBuffer, .length = length };
 	engine.Submit(receive);
 	EXPECT_EQ(WaitFor(engine, &receiveTag), static_cast<longlong_t>(length));
 	EXPECT_EQ(std::memcmp(receiveBuffer, payload, length), 0);
@@ -210,13 +210,13 @@ TEST(IoEngineTest, SendZeroCopyRegisteredBufferRoundTrip)
 	::closesocket(listener);
 
 	int_t sendTag = 0;
-	Request send{ .op = OpCode::SEND_ZERO_COPY, .userData = &sendTag, .handle = static_cast<ulonglong_t>(a), .buffer = region, .length = length, .bufferId = handle.value };
+	Request send{ .requestKind = RequestKind::SEND_ZERO_COPY, .userData = &sendTag, .handle = static_cast<ulonglong_t>(a), .buffer = region, .length = length, .bufferId = handle.value };
 	engine.Submit(send);
 	EXPECT_EQ(WaitFor(engine, &sendTag), static_cast<longlong_t>(length));
 
 	char receiveBuffer[64]{};
 	int_t receiveTag = 0;
-	Request receive{ .op = OpCode::RECEIVE, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b), .buffer = receiveBuffer, .length = length };
+	Request receive{ .requestKind = RequestKind::RECEIVE, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(b), .buffer = receiveBuffer, .length = length };
 	engine.Submit(receive);
 	EXPECT_EQ(WaitFor(engine, &receiveTag), static_cast<longlong_t>(length));
 	EXPECT_EQ(std::memcmp(receiveBuffer, region, length), 0);
@@ -288,13 +288,13 @@ using namespace ne;using namespace ne::io;namespace
 		const std::size_t length = sizeof(payload) - 1;
 
 		int_t writeTag = 0;
-		Request write{ .op = OpCode::WRITE, .userData = &writeTag, .handle = static_cast<ulonglong_t>(fd), .buffer = const_cast<char*>(payload), .length = length, .offset = 0 };
+		Request write{ .requestKind = RequestKind::WRITE, .userData = &writeTag, .handle = static_cast<ulonglong_t>(fd), .buffer = const_cast<char*>(payload), .length = length, .offset = 0 };
 		_engine.Submit(write);
 		EXPECT_EQ(WaitFor(_engine, &writeTag), static_cast<longlong_t>(length));
 
 		char buffer[64]{};
 		int_t readTag = 0;
-		Request read{ .op = OpCode::READ, .userData = &readTag, .handle = static_cast<ulonglong_t>(fd), .buffer = buffer, .length = length, .offset = 0 };
+		Request read{ .requestKind = RequestKind::READ, .userData = &readTag, .handle = static_cast<ulonglong_t>(fd), .buffer = buffer, .length = length, .offset = 0 };
 		_engine.Submit(read);
 		EXPECT_EQ(WaitFor(_engine, &readTag), static_cast<longlong_t>(length));
 		EXPECT_EQ(std::memcmp(buffer, payload, length), 0);
@@ -315,13 +315,13 @@ using namespace ne;using namespace ne::io;namespace
 		const std::size_t length = sizeof(payload) - 1;
 
 		int_t sendTag = 0;
-		Request send{ .op = OpCode::SEND, .userData = &sendTag, .handle = static_cast<ulonglong_t>(pair[0]), .buffer = const_cast<char*>(payload), .length = length };
+		Request send{ .requestKind = RequestKind::SEND, .userData = &sendTag, .handle = static_cast<ulonglong_t>(pair[0]), .buffer = const_cast<char*>(payload), .length = length };
 		_engine.Submit(send);
 		EXPECT_EQ(WaitFor(_engine, &sendTag), static_cast<longlong_t>(length));
 
 		char buffer[64]{};
 		int_t receiveTag = 0;
-		Request receive{ .op = OpCode::RECEIVE, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(pair[1]), .buffer = buffer, .length = length };
+		Request receive{ .requestKind = RequestKind::RECEIVE, .userData = &receiveTag, .handle = static_cast<ulonglong_t>(pair[1]), .buffer = buffer, .length = length };
 		_engine.Submit(receive);
 		EXPECT_EQ(WaitFor(_engine, &receiveTag), static_cast<longlong_t>(length));
 		EXPECT_EQ(std::memcmp(buffer, payload, length), 0);

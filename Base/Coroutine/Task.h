@@ -16,11 +16,10 @@ BEGIN_NS(ne)
 	 *
 	 * @note 계약: 소멸자는 무조건 handle.destroy() 로 코루틴 프레임을 파괴합니다 — 코루틴이 진행 중인
 	 * I/O 로 suspend 된 채(예: co_await Io::Awaitable/Time::Awaitable 내부) 소멸되어도 안전합니다.
-	 * (예전엔 여기서 UAF 위험을 경고했으나, 지금은 그 완료 컨텍스트가 코루틴 프레임이 아니라
-	 * heap 에 별도로 살며 — Io::Awaitable 은 CompletionHandler 를 abandoned=true 로 표시해
-	 * 루프에 소유권을 넘기고, Time::Awaitable 은 소멸자가 미발화 타이머를 wheel.Cancel() 한다 —
-	 * 중도 폐기가 정상 경로입니다. Io/Coroutine/Timeout.h 의 when_any 류 콤비네이터가 진 쪽 Task 를
-	 * 그대로 파괴해 취소하는 것도 이 계약에 기대고 있습니다.)
+	 * 완료 컨텍스트가 코루틴 프레임이 아니라 heap 에 별도로 살기 때문입니다 — Io::Awaitable 은
+	 * CompletionHandler 를 abandoned=true 로 표시해 루프에 소유권을 넘기고, Time::Awaitable 은
+	 * 소멸자가 미발화 타이머를 wheel.Cancel() 합니다. 중도 폐기가 정상 경로이며, Io/Coroutine/Timeout.h
+	 * 의 when_any 류 콤비네이터가 진 쪽 Task 를 그대로 파괴해 취소하는 것도 이 계약에 기대고 있습니다.
 	 *
 	 * @tparam T 코루틴이 co_return하는 값의 타입. 값이 없는 경우 아래 Task<void_t> 특수화를 사용합니다.
 	 */
@@ -31,7 +30,7 @@ BEGIN_NS(ne)
 		struct promise_type
 		{
 		private:
-			/** @brief symmetric transfer: 완료 시 호출자 코루틴으로 즉시 이동합니다(스택 성장 없음). */
+			/** @brief symmetric transfer: 완료 시 호출자 코루틴으로 즉시 이동합니다. (스택 성장 없음) */
 			struct FinalAwaiter
 			{
 				bool_t await_ready() const noexcept { return false; }
@@ -63,7 +62,10 @@ BEGIN_NS(ne)
 			void_t unhandled_exception() noexcept { std::terminate(); }
 
 		public:
+			/** @brief co_return 된 결과값을 소유권째로 꺼냅니다. 호출 후 result 는 빈 상태가 됩니다. */
 			T TakeResult() noexcept { return std::move(*result); }
+
+			/** @brief 완료 시 resume 할 호출자 코루틴 handle 을 등록합니다(symmetric transfer 용). */
 			void_t SetContinuation(std::coroutine_handle<> _continuation) noexcept { continuation = _continuation; }
 		};
 
@@ -103,9 +105,13 @@ BEGIN_NS(ne)
 		[[nodiscard]] T await_resume() noexcept { return handle.promise().TakeResult(); }
 
 	public:
+		/** @brief 코루틴을 재개합니다. 이미 완료됐거나 handle 이 없으면 아무 일도 하지 않습니다. */
 		void_t Resume() noexcept { if (handle && !handle.done()) handle.resume(); }
 
+		/** @brief 코루틴이 완료(co_return)되어 결과를 꺼낼 수 있는 상태인지 확인합니다. */
 		[[nodiscard]] bool_t IsReady() const noexcept { return !handle || handle.done(); }
+
+		/** @brief move-out 등으로 handle 을 잃지 않은, 유효한 Task 인지 확인합니다. */
 		[[nodiscard]] bool_t IsValid() const noexcept { return static_cast<bool_t>(handle); }
 	};
 
@@ -122,7 +128,7 @@ BEGIN_NS(ne)
 			~promise_type() = default;
 
 		private:
-			/** @brief symmetric transfer: 완료 시 호출자 코루틴으로 즉시 이동합니다(스택 성장 없음). */
+			/** @brief symmetric transfer: 완료 시 호출자 코루틴으로 즉시 이동합니다. (스택 성장 없음) */
 			struct FinalAwaiter
 			{
 				bool_t await_ready() const noexcept { return false; }
@@ -147,6 +153,7 @@ BEGIN_NS(ne)
 			void_t return_void() noexcept {}
 			void_t unhandled_exception() noexcept { std::terminate(); }
 
+			/** @brief 완료 시 resume 할 호출자 코루틴 handle 을 등록합니다(symmetric transfer 용). */
 			void_t SetContinuation(const std::coroutine_handle<> _continuation) noexcept { continuation = _continuation; }
 		};
 
@@ -186,9 +193,13 @@ BEGIN_NS(ne)
 		void_t await_resume() const noexcept {}
 
 	public:
+		/** @brief 코루틴을 재개합니다. 이미 완료됐거나 handle 이 없으면 아무 일도 하지 않습니다. */
 		void_t Resume() noexcept { if (handle && !handle.done()) handle.resume(); }
 
+		/** @brief 코루틴이 완료(co_return)됐는지 확인합니다. */
 		[[nodiscard]] bool_t IsReady() const noexcept { return !handle || handle.done(); }
+
+		/** @brief move-out 등으로 handle 을 잃지 않은, 유효한 Task 인지 확인합니다. */
 		[[nodiscard]] bool_t IsValid() const noexcept { return static_cast<bool_t>(handle); }
 	};
 

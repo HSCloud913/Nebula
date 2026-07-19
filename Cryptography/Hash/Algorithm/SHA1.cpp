@@ -4,11 +4,15 @@
 
 
 
+// 라운드별로 다른 비선형 함수를 써서 각 20라운드 구간마다 확산 특성을 다르게 가져간다.
+// F1: (b&c)|(~b&d) — b를 조건으로 c/d 중 하나를 선택(Choose).
 inline ne::uint_t SHA1_F1(const ne::uint_t _b, const ne::uint_t _c, const ne::uint_t _d)
 {
 	return _d ^ (_b & (_c ^ _d)); // original: f = (b & c) | ((~b) & d);
 }
+// F2: b^c^d — 패리티(Parity) 함수. 1,4라운드에서 사용.
 inline ne::uint_t SHA1_F2(const ne::uint_t _b, const ne::uint_t _c, const ne::uint_t _d) { return _b ^ _c ^ _d; }
+// F3: (b&c)|(b&d)|(c&d) — 다수결(Majority) 함수. 3비트 중 다수인 값을 채택.
 inline ne::uint_t SHA1_F3(const ne::uint_t _b, const ne::uint_t _c, const ne::uint_t _d) { return (_b & _c) | (_b & _d) | (_c & _d); }
 inline ne::uint_t SHA1_Rotate(const ne::uint_t _a, const ne::uint_t _c) { return (_a << _c) | (_a >> (32 - _c)); }
 
@@ -131,6 +135,8 @@ BEGIN_NS(ne::crypto)
 
 		for (int_t i = 0; i < 16; i++) { words[i] = (data[i] >> 24) | ((data[i] >> 8) & 0x0000FF00) | ((data[i] << 8) & 0x00FF0000) | (data[i] << 24); }
 
+		// 메시지 스케줄 확장: 원본 16워드(512비트 블록)만으로는 80라운드를 채울 수 없으므로
+		// 이전 워드들을 XOR한 뒤 1비트 회전시켜 나머지 64워드를 만들어낸다(입력 전체를 더 넓게 확산시키기 위함).
 		for (int_t i = 16; i < 80; i++) { words[i] = SHA1_Rotate(words[i - 3] ^ words[i - 8] ^ words[i - 14] ^ words[i - 16], 1); }
 
 		uint_t a = sha1Value[0];
@@ -141,6 +147,8 @@ BEGIN_NS(ne::crypto)
 
 		int_t offset = 0;
 
+		// 라운드 상수 0x5a827999, 0x6ed9eba1, 0x8f1bbcdc, 0xca62c1d6는 각각 sqrt(2), sqrt(3), sqrt(5), sqrt(10)의
+		// 소수부(fractional part)를 고정소수점 표현으로 취한 값이다.
 		// first round
 		for (int_t i = 0; i < 4; i++)
 		{

@@ -1,14 +1,6 @@
 //
 // Created by hscloud on 26. 7. 10.
 //
-// Level 3.5 — 등록 버퍼 풀. 등록(RegisterBuffer)은 비싼 연산이므로 slotSize*slotCount 바이트를
-// 한 번에 할당·등록해두고, Acquire/Release 로 고정 크기 슬롯을 재사용한다.
-// 단일 io::Context(단일 스레드) 에서 쓰는 것을 전제로 하며 내부 락이 없다 — 여러 스레드가 공유하려면
-// 호출자가 동기화해야 한다.
-//
-// 수명 주의: BufferPoolSlot 은 자신을 내준 BufferPool 의 주소를 들고 있다 — 대여 중인 슬롯이 있는
-// 상태로 BufferPool 을 이동/파괴하면 안 된다(RegisteredBuffer 의 "호출자가 수명 보장" 계약과 동일한
-// 종류의 제약).
 
 #pragma once
 #include <cstddef>
@@ -21,7 +13,13 @@
 BEGIN_NS(ne::io)
 	class BufferPool;
 
-	// BufferPool::Acquire() 가 돌려주는 슬롯 — 소멸 시 자동으로 풀에 반환된다(RAII).
+	/**
+	 * @class BufferPoolSlot
+	 * @brief BufferPool 에서 대여한 고정 크기 버퍼 슬롯을 나타내는 RAII 핸들.
+	 *
+	 * BufferPool::Acquire() 로만 생성되며, 소멸 시 자신을 내준 BufferPool 에 자동으로 반환된다.
+	 * 이동만 가능하고 복사할 수 없다. 대여 중인 슬롯이 있는 상태로 원본 BufferPool 을 이동/파괴하면 안 된다.
+	 */
 	class BufferPoolSlot
 	{
 		friend class BufferPool;
@@ -50,6 +48,14 @@ BEGIN_NS(ne::io)
 		[[nodiscard]] BufferHandle Handle() const noexcept;
 	};
 
+	/**
+	 * @class BufferPool
+	 * @brief 등록 버퍼(RegisteredBuffer) 위에 고정 크기 슬롯을 나눠 재사용하는 풀.
+	 *
+	 * 등록 연산은 비용이 크므로 slotSize * slotCount 바이트를 한 번에 할당·등록해 두고,
+	 * Acquire()/Release() 로 고정 크기 슬롯을 빌리고 반환한다. 단일 io::Context(단일 스레드)에서
+	 * 쓰는 것을 전제로 하며 내부 락이 없다 — 여러 스레드가 공유하려면 호출자가 동기화해야 한다.
+	 */
 	class BufferPool
 	{
 	private:
@@ -62,17 +68,15 @@ BEGIN_NS(ne::io)
 		NEBULA_DEFAULT_MOVE(BufferPool)
 
 	private:
-		std::vector<ne::byte_t> storage; // 등록된 region 의 실제 소유자 — buffer(등록/해제) 보다 먼저 살아있어야 한다
-		RegisteredBuffer buffer;         // storage 전체를 한 번에 등록(선언 순서상 storage 보다 나중에 소멸 = 먼저 해제)
+		std::vector<ne::byte_t> storage;
+		RegisteredBuffer buffer;
 		std::size_t slotSize{ 0 };
 		std::size_t totalSlots{ 0 };
-		std::vector<std::size_t> freeSlots; // 대여 가능한 슬롯 인덱스 스택
+		std::vector<std::size_t> freeSlots;
 
 	public:
-		// _engine 이 등록 버퍼를 지원하지 않으면 UNSUPPORTED. _slotSize * _slotCount 바이트를 할당·등록한다.
 		[[nodiscard]] static IoResult<BufferPool> Create(IEngine& _engine, std::size_t _slotSize, std::size_t _slotCount);
 
-		// 빈 슬롯이 없으면 std::nullopt.
 		[[nodiscard]] std::optional<BufferPoolSlot> Acquire() noexcept;
 
 	private:

@@ -21,6 +21,12 @@ BEGIN_NS(ne::crypto)
 
 		const size_t psLen = keyLength - 3 - _plainText.size();
 
+		// PKCS#1 v1.5 패딩 레이아웃: 0x00 0x02 PS(0이 아닌 랜덤 바이트로 채운 패딩, 길이 가변) 0x00 M(원본 메시지)
+		// - 0x00: 맨 앞 바이트가 0이면 BigInt로 변환해도 항상 keyLength 크기보다 작게 해석되지 않도록 보장.
+		// - 0x02: 블록 타입(암호화용, 서명은 0x01) 식별자.
+		// - PS: 0이 아닌 랜덤 바이트로 채워 최소 8바이트 이상 패딩 → 평문을 무작위화(같은 평문도 매번 다른 암호문)하고
+		//   PS 중간에 0x00이 섞이면 안 되므로 1~255 범위에서만 뽑는다.
+		// - 0x00: PS와 메시지를 구분하는 분리자.
 		string_t em;
 		em.reserve(keyLength);
 		em += '\x00';

@@ -10,15 +10,16 @@
 
 
 
-// NTSTATUS(완료 entry.Internal) → Win32 에러코드 변환. ntdll 제공(선언만 직접 노출).
+// ntdll 함수. OVERLAPPED_ENTRY::Internal 에 담기는 값은 NTSTATUS 이고, 사용자 코드가 흔히 다루는
+// Win32 에러 코드(GetLastError 계열)와는 체계가 달라 이 함수로 변환해야 의미가 맞는다.
 extern "C" ne::ulong_t __stdcall RtlNtStatusToDosError(ne::long_t _status);
 
 BEGIN_NS(ne::io)
 	IocpEngine::IocpEngine(const ulong_t _concurrentThreads) noexcept
+		// hFile=INVALID_HANDLE_VALUE, ExistingCompletionPort=nullptr 조합은 "새 IOCP 를 만들기만 한다"는 뜻이다.
 		: iocpHandle(::CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, _concurrentThreads))
 	{
-		// RioProvider 는 lazy 초기화(WSAIoctl/RIOCreateCompletionQueue 는 RegisterBuffer 첫 호출 때만) —
-		// 여기서 만들어 둬도 비용은 iocp 핸들/키 저장뿐이다.
+		// RIO 완료는 이 IOCP 핸들에 RioKey 로 바인딩되므로, RioProvider 생성 시점에 핸들을 넘겨준다.
 		if (iocpHandle) rioProvider = std::make_unique<RioProvider>(iocpHandle.Get(), RioKey);
 	}
 
@@ -26,15 +27,15 @@ BEGIN_NS(ne::io)
 
 	void_t IocpEngine::Submit(const Request& _request)
 	{
-		// RIO(SendZeroCopy) 는 자체 완료 큐(RIO_CQ→IOCP 바인딩, RioKey)를 쓴다 — IocpOperation/
-		// OVERLAPPED 를 전혀 만들지 않고 곧장 RioProvider 로 제출한다. userData 는 RequestContext 로
-		// 그대로 실려 WaitCompletions()→DrainRioCompletions() 가 Completion 으로 되돌려준다.
-		// (Cancel() 은 이 경로를 추적하지 않는다 — RIO 제출 취소는 이번 범위 밖.)
-		if (_request.op == OpCode::SEND_ZERO_COPY)
+		if (_request.requestKind == RequestKind::SEND_ZERO_COPY)
 		{
+			// RIO 경로는 IocpOperation/OVERLAPPED 를 쓰지 않고 RIO 자체 요청 큐로 직접 제출한다.
 			auto result = rioProvider->SubmitSendRegistered(static_cast<socket_t>(_request.handle), BufferHandle{ _request.bufferId }, _request.buffer, _request.length, _request.userData);
 			if (result.IsError())
 			{
+				// 제출 자체가 실패한 경우, RIO 완료 경로(DrainRioCompletions) 대신 여기서 임시
+				// IocpOperation 을 만들어 일반 완료 큐로 실패를 게시해 WaitCompletions() 가 통일된
+				// 방식으로 소비하게 한다.
 				auto* failure = new IocpOperation{};
 				failure->userData = _request.userData;
 				failure->hasSyncResult = true;
@@ -44,10 +45,11 @@ BEGIN_NS(ne::io)
 			return;
 		}
 
+		// IocpOperation 은 완료 시점까지 살아 있어야 하므로 heap 에 둔다. 첫 멤버가 OVERLAPPED 이므로
+		// 커널이 돌려주는 OVERLAPPED* 를 그대로 IocpOperation* 로 reinterpret_cast 할 수 있다.
 		auto* operation = new IocpOperation{};
 		operation->userData = _request.userData;
-		operation->op = _request.op;
-		// 파일 오프셋(소켓 op 에서는 무시된다).
+		operation->requestKind = _request.requestKind;
 		operation->overlapped.Offset = static_cast<ulong_t>(_request.offset & 0xFFFFFFFFull);
 		operation->overlapped.OffsetHigh = static_cast<ulong_t>(_request.offset >> 32);
 
@@ -58,6 +60,8 @@ BEGIN_NS(ne::io)
 			std::lock_guard lock(mutex);
 			if (!EnsureAssociated(handle))
 			{
+				// 연관 자체가 실패하면 어떤 비동기 API 도 호출할 수 없으므로, 곧바로 동기 실패
+				// 완료를 IOCP 에 게시해 정상 완료와 동일한 경로로 처리되게 한다.
 				const int_t error = static_cast<int_t>(::GetLastError());
 				operation->hasSyncResult = true;
 				operation->syncResult = -static_cast<longlong_t>(error);
@@ -65,7 +69,7 @@ BEGIN_NS(ne::io)
 				return;
 			}
 
-			// Cancel 이 조회할 수 있도록 커널 제출 전에 등록한다(제출 후 완료가 먼저 오는 경합 방지).
+			// Cancel() 이 나중에 이 요청을 찾을 수 있도록 먼저 inflight 에 등록한 뒤 실제 호출을 수행한다.
 			if (_request.userData != nullptr) inflight[_request.userData] = operation;
 		}
 
@@ -76,18 +80,20 @@ BEGIN_NS(ne::io)
 	{
 		if (_max <= 0) return 0;
 
+		// Ex 버전은 한 번의 대기로 최대 capacity 개의 완료를 배치 회수한다(완료마다 별도 대기하는
+		// 구버전 GetQueuedCompletionStatus 보다 훨씬 효율적).
 		const int_t capacity = _max < MaxBatch ? _max : MaxBatch;
 		OVERLAPPED_ENTRY entries[MaxBatch];
 		ulong_t removed = 0;
 		const ulong_t timeoutMs = _timeout.count() < 0 ? INFINITE : static_cast<ulong_t>(_timeout.count());
 
-		if (!::GetQueuedCompletionStatusEx(iocpHandle.Get(), entries, static_cast<ulong_t>(capacity), &removed, timeoutMs, FALSE)) return 0; // 타임아웃 등 — 수확할 완료 없음
+		if (!::GetQueuedCompletionStatusEx(iocpHandle.Get(), entries, static_cast<ulong_t>(capacity), &removed, timeoutMs, FALSE)) return 0;
 
 		int_t count = 0;
 		for (ulong_t i = 0; i < removed && count < _max; ++i)
 		{
-			// RIO 완료 통지 — lpOverlapped 는 RioProvider 소유의 notifyOverlapped 를 가리키므로
-			// IocpOperation* 으로 캐스팅하면 안 된다(먼저 key 로 구분해야 함).
+			// RioKey 는 실제 op 완료가 아니라 "RIO_CQ 에 새 완료가 도착했다"는 신호일 뿐이므로
+			// RIO 전용 큐에서 별도로 회수해야 한다.
 			if (entries[i].lpCompletionKey == RioKey)
 			{
 				count += DrainRioCompletions(_out + count, _max - count);
@@ -95,11 +101,11 @@ BEGIN_NS(ne::io)
 			}
 
 			OVERLAPPED* overlapped = entries[i].lpOverlapped;
-			if (overlapped == nullptr) continue; // Wake — 완료 아님
+			if (overlapped == nullptr) continue;
 
+			// IocpOperation 의 첫 멤버가 OVERLAPPED 이므로 포인터 값을 그대로 재해석해 원래 컨텍스트를 복원한다.
 			auto* operation = reinterpret_cast<IocpOperation*>(overlapped);
 
-			// Cancel 조회 대상에서 먼저 제거 — 이후 delete 해도 Cancel 이 dangling 을 만지지 않는다.
 			if (operation->userData != nullptr)
 			{
 				std::lock_guard lock(mutex);
@@ -108,29 +114,34 @@ BEGIN_NS(ne::io)
 
 			longlong_t result;
 			if (operation->hasSyncResult) result = operation->syncResult;
-			else if (const long_t status = static_cast<long_t>(entries[i].Internal); status < 0) result = -static_cast<longlong_t>(::RtlNtStatusToDosError(status)); // 실패(NTSTATUS 음수) → Win32 에러
+			// OVERLAPPED_ENTRY::Internal 은 NTSTATUS 를 담고 있어 Win32 에러 코드로 변환해야 사용자에게 일관되게 노출할 수 있다.
+			else if (const long_t status = static_cast<long_t>(entries[i].Internal); status < 0) result = -static_cast<longlong_t>(::RtlNtStatusToDosError(status));
 			else result = static_cast<longlong_t>(entries[i].dwNumberOfBytesTransferred);
 
-			// Accept/Connect 완료 후처리 — SO_UPDATE_* 컨텍스트 갱신 및 Accept 는 새 소켓 핸들을 result 로.
-			if (operation->op == OpCode::ACCEPT)
+			if (operation->requestKind == RequestKind::ACCEPT)
 			{
 				if (result >= 0)
 				{
+					// AcceptEx 로 만든 소켓은 리스닝 소켓의 옵션(SO_UPDATE_ACCEPT_CONTEXT)을 상속받아야
+					// getsockname/getpeername, setsockopt 상속 등이 리스닝 소켓과 동일하게 동작한다.
 					const SOCKET listenSocket = static_cast<SOCKET>(operation->contextSocket);
 					(void_t)::setsockopt(static_cast<SOCKET>(operation->acceptSocket),
 										SOL_SOCKET,
 										SO_UPDATE_ACCEPT_CONTEXT,
 										reinterpret_cast<const char*>(&listenSocket),
 										static_cast<int_t>(sizeof(listenSocket)));
-					result = static_cast<longlong_t>(operation->acceptSocket); // 성공: accept 소켓 핸들 반환
+					result = static_cast<longlong_t>(operation->acceptSocket);
 				}
 				else
 				{
-					::closesocket(static_cast<SOCKET>(operation->acceptSocket)); // 실패: 만들어둔 소켓 정리
+					// accept 실패 시 AcceptEx 호출 전에 미리 만들어둔 소켓을 반드시 직접 닫아야 한다(누수 방지).
+					::closesocket(static_cast<SOCKET>(operation->acceptSocket));
 				}
 			}
-			else if (operation->op == OpCode::CONNECT && result >= 0)
+			else if (operation->requestKind == RequestKind::CONNECT && result >= 0)
 			{
+				// ConnectEx 로 연결된 소켓도 SO_UPDATE_CONNECT_CONTEXT 를 설정해야 getpeername/send 등
+				// 일반 connect() 소켓과 동일하게 동작한다.
 				(void_t)::setsockopt(static_cast<SOCKET>(operation->contextSocket), SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, nullptr, 0);
 				result = 0;
 			}
@@ -149,12 +160,13 @@ BEGIN_NS(ne::io)
 	{
 		if (_userData == nullptr) return;
 
-		// 락을 쥔 채 CancelIoEx 까지 수행한다 — WaitCompletions 의 erase+delete 와 직렬화되어
-		// 취소 대상 op 가 그 사이 해제되지 않는다(이미 완료돼 erase 됐으면 조회 실패로 no-op).
 		std::lock_guard lock(mutex);
 		const auto iterator = inflight.find(_userData);
 		if (iterator == inflight.end()) return;
 
+		// CancelIoEx 는 특정 OVERLAPPED 하나만 취소 대상으로 지정할 수 있어(2번째 인자가 nullptr 이면
+		// 그 핸들의 모든 미완료 요청을 취소), 다른 요청에는 영향을 주지 않는다. 비동기 호출이므로
+		// 여기서 반환되어도 즉시 취소가 끝났다는 보장은 없다.
 		IocpOperation* operation = iterator->second;
 		::CancelIoEx(operation->handle, &operation->overlapped);
 	}
@@ -164,13 +176,13 @@ BEGIN_NS(ne::io)
 		switch (_capability)
 		{
 			case Capability::SEND_FILE_ZERO_COPY:
-				return true; // TransmitFile(SendFile)
+				return true;
 			case Capability::SEND_MEM_ZERO_COPY:
-				return true; // RIO(SendZeroCopy) — RegisterBuffer 로 등록된 버퍼만
+				return true;
 			case Capability::RECEIVE_OVERHEAD_REDUCED:
-				return false; // ReadFixed/WriteFixed 는 일반 ReadFile/WriteFile 폴백(RIO 는 소켓 전용, 파일 등록버퍼 없음)
+				return false;
 			case Capability::RECEIVE_TRUE_ZERO_COPY:
-				return false; // Windows 에 진짜 recv zero-copy 없음
+				return false;
 		}
 
 		return false;
@@ -180,10 +192,11 @@ BEGIN_NS(ne::io)
 
 	bool_t IocpEngine::EnsureAssociated(const HANDLE _handle) noexcept
 	{
+		// 같은 핸들을 CreateIoCompletionPort 로 두 번 연관시키면 실패하므로, 이미 연관된 핸들을
+		// associated 셋으로 추적해 최초 1회만 시도한다.
 		const ulonglong_t key = reinterpret_cast<ulonglong_t>(_handle);
 		if (associated.contains(key)) return true;
 
-		// completionKey 는 0(op 완료). Wake 는 널 overlapped 로 구분하므로 키로 나눌 필요 없다.
 		if (::CreateIoCompletionPort(_handle, iocpHandle.Get(), 0, 0) == nullptr) return false;
 
 		associated.insert(key);
@@ -196,6 +209,8 @@ BEGIN_NS(ne::io)
 		std::lock_guard lock(mutex);
 		if (isExtensionsLoaded) return true;
 
+		// AcceptEx/ConnectEx 는 Winsock 표준 API 가 아니라 WSAIoctl(SIO_GET_EXTENSION_FUNCTION_POINTER)
+		// 로만 얻을 수 있는 벤더 확장 함수라서, 최초 사용 시점에 함수 포인터를 로드해 캐시한다.
 		GUID acceptGuid = WSAID_ACCEPTEX;
 		GUID connectGuid = WSAID_CONNECTEX;
 		ulong_t bytes = 0;
@@ -210,19 +225,11 @@ BEGIN_NS(ne::io)
 
 	void_t IocpEngine::Dispatch(IocpOperation* _operation, const Request& _request, const HANDLE _handle) noexcept
 	{
-		// 파일 scatter/gather(Readv/Writev) — Windows 는 ReadFileScatter/WriteFileGather 가 페이지 정렬을
-		// 요구해 임의 크기 세그먼트에 못 쓴다. 세그먼트별로 순차 ReadFile/WriteFile+GetOverlappedResult(대기)
-		// 를 이 스레드에서 동기적으로 수행해 합산한 뒤, 기존 "동기 완료를 IOCP 로 되돌리는" 경로(아래
-		// syncError 처리와 동일한 메커니즘, 성공값도 실어 보낼 수 있음)로 결과를 넘긴다.
-		if (_request.chain != nullptr && (_request.op == OpCode::READ || _request.op == OpCode::WRITE))
+		// ReadFile/WriteFile 은 여러 버퍼(체인)를 한 번의 호출로 받는 API 가 없으므로, 세그먼트별로
+		// 순차 호출하고 그때그때 완료를 기다린 뒤(GetOverlappedResult) 합산 결과를 만든다. 이 경로만
+		// 예외적으로 이 함수 안에서 "동기적으로" 끝내고 결과를 PostQueuedCompletionStatus 로 게시한다.
+		if (_request.chain != nullptr && (_request.requestKind == RequestKind::READ || _request.requestKind == RequestKind::WRITE))
 		{
-			// hEvent 의 최하위 비트를 세우면(문서화된 트릭) 이 handle 이 IOCP 에 연결돼 있어도 이
-			// OVERLAPPED 의 완료가 IOCP 로 자동 posting 되지 않는다 — 세팅 안 하면 세그먼트마다 쓰는
-			// 스택 OVERLAPPED(다음 반복에서 소멸)를 가리키는 가짜 완료가 IOCP 에 쌓여 WaitCompletions
-			// 가 나중에 댕글링 포인터를 완료로 잘못 처리한다. 단, hEvent 는 GetOverlappedResult(wait)
-			// 의 실제 대기 객체이기도 하므로 값 자체가 유효한 이벤트 핸들이어야 한다(1 같은 가짜 값은
-			// WaitForSingleObject 에서 ERROR_INVALID_HANDLE) — bit0 은 커널이 IOCP posting 여부를 볼 때만
-			// 마스킹해서 보고, 대기 시에는 그대로 실핸들로 쓰인다.
 			const HANDLE waitEvent = ::CreateEventW(nullptr, TRUE, FALSE, nullptr);
 			if (waitEvent == nullptr)
 			{
@@ -237,6 +244,9 @@ BEGIN_NS(ne::io)
 			bool_t hasFailed = false;
 			ulong_t lastError = 0;
 
+			// hEvent 의 최하위 비트를 1로 세팅하면(문서화된 Windows 관례) 이 OVERLAPPED 가 완료되어도
+			// 이미 IOCP 에 연관된 핸들이더라도 완료 패킷을 포트에 큐잉하지 않는다. 여기서는
+			// GetOverlappedResult 로 직접 기다리므로 중복 완료 통지를 막기 위해 필요하다.
 			const auto taggedEvent = reinterpret_cast<HANDLE>(reinterpret_cast<std::uintptr_t>(waitEvent) | 1);
 			for (const auto& segment : _request.chain->Segments())
 			{
@@ -246,13 +256,14 @@ BEGIN_NS(ne::io)
 				segmentOverlapped.hEvent = taggedEvent;
 
 				ulong_t transferred = 0;
-				bool_t isOk = (_request.op == OpCode::READ) ?
+				bool_t isOk = (_request.requestKind == RequestKind::READ) ?
 								::ReadFile(_handle, segment.ptr, static_cast<ulong_t>(segment.length), &transferred, &segmentOverlapped) :
 								::WriteFile(_handle, segment.ptr, static_cast<ulong_t>(segment.length), &transferred, &segmentOverlapped);
 				if (!isOk && ::GetLastError() == ERROR_IO_PENDING)
 				{
+					// bWait=TRUE 로 완료까지 블로킹 대기한다(체인 처리는 세그먼트를 순서대로 끝내야 하므로).
 					isOk = ::GetOverlappedResult(_handle, &segmentOverlapped, &transferred, TRUE);
-					::ResetEvent(waitEvent); // 수동 리셋 이벤트 — 다음 세그먼트를 위해 되돌림
+					::ResetEvent(waitEvent);
 				}
 
 				if (!isOk)
@@ -264,7 +275,8 @@ BEGIN_NS(ne::io)
 
 				total += static_cast<longlong_t>(transferred);
 				currentOffset += transferred;
-				if (transferred < segment.length) break; // 짧은 전송 — 나머지는 호출자가 Suffix() 로 재시도
+				// 짧은 전송(파일 끝 도달 등)이면 나머지 세그먼트를 시도하지 않고 지금까지의 합계로 완료한다.
+				if (transferred < segment.length) break;
 			}
 
 			::CloseHandle(waitEvent);
@@ -277,25 +289,124 @@ BEGIN_NS(ne::io)
 			return;
 		}
 
-		int_t syncError = 0; // 0 = 즉시 실패 없음(완료가 IOCP 로 옴)
+		int_t syncError = 0;
 
-		switch (_request.op)
+		switch (_request.requestKind)
 		{
-			case OpCode::READ:
+			case RequestKind::ACCEPT:
+			{
+				const SOCKET listenSocket = reinterpret_cast<SOCKET>(_handle);
+				if (!EnsureExtensions(static_cast<socket_t>(listenSocket)))
+				{
+					syncError = ::WSAGetLastError();
+					break;
+				}
+
+				// AcceptEx 는 리스닝 소켓과 같은 주소체계(IPv4/IPv6)의 새 소켓을 미리 만들어 넘겨야 하므로,
+				// 리스닝 소켓의 실제 바인딩 주소체계를 getsockname 으로 먼저 확인한다.
+				sockaddr_storage local{};
+				int_t nameLength = static_cast<int_t>(sizeof(local));
+				(void_t)::getsockname(listenSocket, reinterpret_cast<sockaddr*>(&local), &nameLength);
+
+				// RIO 로 이어질 accept 라면 WSA_FLAG_REGISTERED_IO 로 소켓을 만들어야 RIO 요청 큐를 붙일 수 있다.
+				const SOCKET accepted = ::WSASocketW(local.ss_family, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED | (_request.isRegisteredIo ? WSA_FLAG_REGISTERED_IO : 0));
+				if (accepted == INVALID_SOCKET)
+				{
+					syncError = ::WSAGetLastError();
+					break;
+				}
+
+				_operation->acceptSocket = static_cast<socket_t>(accepted);
+				_operation->contextSocket = static_cast<socket_t>(listenSocket);
+
+				const auto acceptEx = reinterpret_cast<LPFN_ACCEPTEX>(acceptExPtr);
+				// AcceptEx 의 로컬/원격 주소 버퍼는 sockaddr 구조체 크기 + 16바이트 여유를 요구한다(문서화된 요구사항).
+				const ulong_t addressLength = static_cast<ulong_t>(sizeof(sockaddr_in6) + 16);
+
+				ulong_t received = 0;
+				if (!acceptEx(listenSocket, accepted, _operation->acceptBuffer, 0, addressLength, addressLength, &received, &_operation->overlapped))
+					if (const int_t error = ::WSAGetLastError(); error != WSA_IO_PENDING) syncError = error;
+
+				break;
+			}
+			case RequestKind::CONNECT:
+			{
+				const SOCKET socket = reinterpret_cast<SOCKET>(_handle);
+				if (!EnsureExtensions(static_cast<socket_t>(socket)))
+				{
+					syncError = ::WSAGetLastError();
+					break;
+				}
+
+				const auto* target = static_cast<const sockaddr*>(_request.address);
+				if (target == nullptr)
+				{
+					syncError = static_cast<int_t>(WSAEINVAL);
+					break;
+				}
+
+				// ConnectEx 는 사전에 bind() 된 소켓만 받아들이므로(문서화된 제약), 대상 주소체계에 맞춰
+				// 와일드카드 주소로 명시적으로 bind 해준다.
+				sockaddr_storage local{};
+				local.ss_family = target->sa_family;
+
+				const int_t bindLength = (target->sa_family == AF_INET6) ? static_cast<int_t>(sizeof(sockaddr_in6)) : static_cast<int_t>(sizeof(sockaddr_in));
+				(void_t)::bind(socket, reinterpret_cast<sockaddr*>(&local), bindLength);
+
+				_operation->contextSocket = static_cast<socket_t>(socket);
+
+				const auto connectEx = reinterpret_cast<LPFN_CONNECTEX>(connectExPtr);
+				ulong_t sent = 0;
+				if (!connectEx(socket, target, _request.addressLength, nullptr, 0, &sent, &_operation->overlapped))
+					if (const int_t error = ::WSAGetLastError(); error != WSA_IO_PENDING) syncError = error;
+
+				break;
+			}
+			case RequestKind::READ:
 			{
 				ulong_t read = 0;
 				if (!::ReadFile(_handle, _request.buffer, static_cast<ulong_t>(_request.length), &read, &_operation->overlapped))
 					if (const ulong_t error = ::GetLastError(); error != ERROR_IO_PENDING) syncError = static_cast<int_t>(error);
 				break;
 			}
-			case OpCode::WRITE:
+			case RequestKind::WRITE:
 			{
 				ulong_t written = 0;
 				if (!::WriteFile(_handle, _request.buffer, static_cast<ulong_t>(_request.length), &written, &_operation->overlapped))
 					if (const ulong_t error = ::GetLastError(); error != ERROR_IO_PENDING) syncError = static_cast<int_t>(error);
 				break;
 			}
-			case OpCode::RECEIVE:
+			case RequestKind::READ_FIXED:
+			{
+				ulong_t read = 0;
+				if (!::ReadFile(_handle, _request.buffer, static_cast<ulong_t>(_request.length), &read, &_operation->overlapped))
+					if (const ulong_t error = ::GetLastError(); error != ERROR_IO_PENDING) syncError = static_cast<int_t>(error);
+				break;
+			}
+			case RequestKind::WRITE_FIXED:
+			{
+				ulong_t written = 0;
+				if (!::WriteFile(_handle, _request.buffer, static_cast<ulong_t>(_request.length), &written, &_operation->overlapped))
+					if (const ulong_t error = ::GetLastError(); error != ERROR_IO_PENDING) syncError = static_cast<int_t>(error);
+				break;
+			}
+			case RequestKind::WAIT_READABLE:
+			{
+				ulong_t received = 0;
+				ulong_t flags = 0;
+				WSABUF wsaBuffer{ .len = 0, .buf = nullptr };
+				if (::WSARecv(reinterpret_cast<SOCKET>(_handle), &wsaBuffer, 1, &received, &flags, &_operation->overlapped, nullptr) == SOCKET_ERROR)
+					if (const int_t error = ::WSAGetLastError(); error != WSA_IO_PENDING) syncError = error;
+				break;
+			}
+			case RequestKind::WAIT_WRITABLE:
+			{
+				_operation->hasSyncResult = true;
+				_operation->syncResult = 0;
+				::PostQueuedCompletionStatus(iocpHandle.Get(), 0, 0, &_operation->overlapped);
+				break;
+			}
+			case RequestKind::RECEIVE:
 			{
 				ulong_t received = 0;
 				ulong_t flags = 0;
@@ -323,7 +434,7 @@ BEGIN_NS(ne::io)
 
 				break;
 			}
-			case OpCode::SEND:
+			case RequestKind::SEND:
 			{
 				ulong_t sent = 0;
 
@@ -344,37 +455,7 @@ BEGIN_NS(ne::io)
 
 				break;
 			}
-			case OpCode::WAIT_READABLE:
-			{
-				// IOCP 엔 native readiness 가 없다 — 0-byte WSARecv 는 데이터 도착(=readable) 시 완료되며 데이터를
-				// 소비하지 않는다. 이후 호출자(libssh2 등)가 실제 recv 로 읽으면 블록하지 않는다.
-				ulong_t received = 0;
-				ulong_t flags = 0;
-				WSABUF wsaBuffer{ .len = 0, .buf = nullptr };
-				if (::WSARecv(reinterpret_cast<SOCKET>(_handle), &wsaBuffer, 1, &received, &flags, &_operation->overlapped, nullptr) == SOCKET_ERROR)
-					if (const int_t error = ::WSAGetLastError(); error != WSA_IO_PENDING) syncError = error;
-				break;
-			}
-			case OpCode::WAIT_WRITABLE:
-			{
-				// IOCP 엔 쓰기-readiness 프리미티브가 없다 — 낙관적으로 즉시 ready(result 0) 처리한다(대부분 소켓은
-				// writable). 송신 버퍼가 가득 차 있으면 호출자가 send 재시도→다시 WaitWritable 로 돌 수 있다.
-				// 정밀 쓰기-backpressure 가 필요하면 WsaPollEngine(native WSAPoll) 을 쓴다.
-				_operation->hasSyncResult = true;
-				_operation->syncResult = 0;
-				::PostQueuedCompletionStatus(iocpHandle.Get(), 0, 0, &_operation->overlapped);
-				break;
-			}
-			case OpCode::SEND_TO: // 비연결형(UDP) 송신 — address/addressLength 가 매 호출 목적지
-			{
-				WSABUF wsaBuffer{ .len = static_cast<ulong_t>(_request.length), .buf = static_cast<lpstr_t>(_request.buffer) };
-				ulong_t sent = 0;
-				if (::WSASendTo(reinterpret_cast<SOCKET>(_handle), &wsaBuffer, 1, &sent, 0, static_cast<const sockaddr*>(_request.address), _request.addressLength, &_operation->overlapped, nullptr) ==
-					SOCKET_ERROR)
-					if (const int_t error = ::WSAGetLastError(); error != WSA_IO_PENDING) syncError = error;
-				break;
-			}
-			case OpCode::RECEIVE_FROM: // 비연결형(UDP) 수신 — fromAddress/fromAddressLength 에 발신자 주소를 채움
+			case RequestKind::RECEIVE_FROM:
 			{
 				WSABUF wsaBuffer{ .len = static_cast<ulong_t>(_request.length), .buf = static_cast<lpstr_t>(_request.buffer) };
 				ulong_t received = 0;
@@ -391,116 +472,42 @@ BEGIN_NS(ne::io)
 					if (const int_t error = ::WSAGetLastError(); error != WSA_IO_PENDING) syncError = error;
 				break;
 			}
-			case OpCode::ACCEPT:
+			case RequestKind::SEND_TO:
 			{
-				const SOCKET listenSocket = reinterpret_cast<SOCKET>(_handle);
-				if (!EnsureExtensions(static_cast<socket_t>(listenSocket)))
-				{
-					syncError = ::WSAGetLastError();
-					break;
-				}
-
-				// accept 소켓은 listen 소켓과 같은 주소 체계로 만든다(TCP 전제).
-				sockaddr_storage local{};
-				int_t nameLength = static_cast<int_t>(sizeof(local));
-				(void_t)::getsockname(listenSocket, reinterpret_cast<sockaddr*>(&local), &nameLength);
-
-				// accept 소켓 생성 플래그: 기본은 일반 overlapped(흔한 Receive/Send 경로). RIO 플래그로 만든
-				// 소켓은 일반 WSARecv/WSASend 가 WSAENOTSOCK 로 실패하므로 opt-in 이다. Socket::Accept(true) 가
-				// _request.isRegisteredIo 를 세우면 여기서 RIO 로 만들어 SendZeroCopy 를 가능케 한다(RIO 는 생성
-				// 시점에만 지정 가능하고 accept 소켓은 엔진이 미리 만들므로 이 지점에서 결정해야 한다).
-				const SOCKET accepted = ::WSASocketW(local.ss_family, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED | (_request.isRegisteredIo ? WSA_FLAG_REGISTERED_IO : 0));
-				if (accepted == INVALID_SOCKET)
-				{
-					syncError = ::WSAGetLastError();
-					break;
-				}
-
-				_operation->acceptSocket = static_cast<socket_t>(accepted);
-				_operation->contextSocket = static_cast<socket_t>(listenSocket);
-
-				const auto acceptEx = reinterpret_cast<LPFN_ACCEPTEX>(acceptExPtr);
-				const ulong_t addressLength = static_cast<ulong_t>(sizeof(sockaddr_in6) + 16);
-
-				ulong_t received = 0;
-				if (!acceptEx(listenSocket, accepted, _operation->acceptBuffer, 0, addressLength, addressLength, &received, &_operation->overlapped))
-					if (const int_t error = ::WSAGetLastError(); error != WSA_IO_PENDING) syncError = error;
-
-				break;
-			}
-			case OpCode::CONNECT:
-			{
-				const SOCKET socket = reinterpret_cast<SOCKET>(_handle);
-				if (!EnsureExtensions(static_cast<socket_t>(socket)))
-				{
-					syncError = ::WSAGetLastError();
-					break;
-				}
-
-				const auto* target = static_cast<const sockaddr*>(_request.address);
-				if (target == nullptr)
-				{
-					syncError = static_cast<int_t>(WSAEINVAL);
-					break;
-				}
-
-				// ConnectEx 는 소켓이 bound 되어 있어야 한다 — 대상 family 로 any:0 바인딩(이미 bound 면 무시).
-				sockaddr_storage local{};
-				local.ss_family = target->sa_family;
-
-				const int_t bindLength = (target->sa_family == AF_INET6) ? static_cast<int_t>(sizeof(sockaddr_in6)) : static_cast<int_t>(sizeof(sockaddr_in));
-				(void_t)::bind(socket, reinterpret_cast<sockaddr*>(&local), bindLength);
-
-				_operation->contextSocket = static_cast<socket_t>(socket);
-
-				const auto connectEx = reinterpret_cast<LPFN_CONNECTEX>(connectExPtr);
+				WSABUF wsaBuffer{ .len = static_cast<ulong_t>(_request.length), .buf = static_cast<lpstr_t>(_request.buffer) };
 				ulong_t sent = 0;
-				if (!connectEx(socket, target, _request.addressLength, nullptr, 0, &sent, &_operation->overlapped))
+				if (::WSASendTo(reinterpret_cast<SOCKET>(_handle), &wsaBuffer, 1, &sent, 0, static_cast<const sockaddr*>(_request.address), _request.addressLength, &_operation->overlapped, nullptr) ==
+					SOCKET_ERROR)
 					if (const int_t error = ::WSAGetLastError(); error != WSA_IO_PENDING) syncError = error;
-
 				break;
 			}
-			case OpCode::SEND_FILE: // handle=목적지 소켓(Send 계열과 동일), auxHandle=원본 파일. TransmitFile 은
-			{                      // OVERLAPPED.Offset/OffsetHigh 로 시작 오프셋을 받는다(위에서 이미 세팅됨).
+			case RequestKind::SEND_FILE:
+			{
 				const SOCKET destSocket = reinterpret_cast<SOCKET>(_handle);
 				const auto sourceFile = reinterpret_cast<HANDLE>(static_cast<uintptr_t>(_request.auxHandle));
 				if (!::TransmitFile(destSocket, sourceFile, static_cast<ulong_t>(_request.length), 0, &_operation->overlapped, nullptr, 0))
 					if (const int_t error = ::WSAGetLastError(); error != WSA_IO_PENDING) syncError = error;
 				break;
 			}
-			case OpCode::READ_FIXED: // Windows 에 파일 등록 버퍼 개념이 없다(RIO 는 소켓 전용) — 일반 Read 와 동일, bufferId 무시
-			{
-				ulong_t read = 0;
-				if (!::ReadFile(_handle, _request.buffer, static_cast<ulong_t>(_request.length), &read, &_operation->overlapped))
-					if (const ulong_t error = ::GetLastError(); error != ERROR_IO_PENDING) syncError = static_cast<int_t>(error);
-				break;
-			}
-			case OpCode::WRITE_FIXED: // 위와 동일
-			{
-				ulong_t written = 0;
-				if (!::WriteFile(_handle, _request.buffer, static_cast<ulong_t>(_request.length), &written, &_operation->overlapped))
-					if (const ulong_t error = ::GetLastError(); error != ERROR_IO_PENDING) syncError = static_cast<int_t>(error);
-				break;
-			}
 			default:
-				syncError = static_cast<int_t>(ERROR_NOT_SUPPORTED); // 알 수 없는 op
+				syncError = static_cast<int_t>(ERROR_NOT_SUPPORTED);
 				break;
 		}
 
 		if (syncError != 0)
 		{
-			// 동기 실패 — 완료가 IOCP 로 오지 않으므로 -에러를 담아 수동으로 되돌린다(경로 통일).
 			_operation->hasSyncResult = true;
 			_operation->syncResult = -static_cast<longlong_t>(syncError);
 			::PostQueuedCompletionStatus(iocpHandle.Get(), 0, 0, &_operation->overlapped);
 		}
-		// else: 성공/IO_PENDING — 완료는 WaitCompletions 에서 회수하며 operation 을 해제한다.
 	}
 
 	int_t IocpEngine::DrainRioCompletions(Completion* _out, const int_t _max) noexcept
 	{
 		if (rioProvider == nullptr || !rioProvider->IsInitialized() || _max <= 0) return 0;
 
+		// RIODequeueCompletion 은 폴링 API 라 IOCP 완료 통지(RioKey)를 받은 시점에 호출해야 하며,
+		// 한 번에 여러 RIO 완료를 배치로 회수할 수 있다.
 		RIORESULT results[MaxBatch];
 		const ulong_t capacity = static_cast<ulong_t>(_max < MaxBatch ? _max : MaxBatch);
 		const ulong_t dequeued = rioProvider->Table().RIODequeueCompletion(rioProvider->CompletionQueue(), results, capacity);
@@ -520,7 +527,9 @@ BEGIN_NS(ne::io)
 			}
 		}
 
-		(void_t)rioProvider->ArmNotify(); // RIONotify 는 one-shot — 다음 완료를 받으려면 매번 재무장
+		// RIO_CQ 는 통지가 한 번 발생하면 다시 ArmNotify(RIONotify)를 호출해야 다음 완료가 또
+		// IOCP 로 전달된다(one-shot 통지 모델). 여기서 재무장하지 않으면 이후 RIO 완료가 누락된다.
+		(void_t)rioProvider->ArmNotify();
 
 		return count;
 	}

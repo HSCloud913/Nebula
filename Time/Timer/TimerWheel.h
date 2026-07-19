@@ -14,11 +14,10 @@
 BEGIN_NS(ne::time)
 	/**
 	 * @class TimerWheel
-	 * @brief 최소 힙(min-heap) 기반 타이머입니다(구 hashed-wheel 대체).
+	 * @brief 최소 힙(min-heap) 기반 타이머입니다.
 	 *
-	 * 구 휠은 Tick이 "경과 ms"만큼 tick-by-tick으로 catch-up하여, 이벤트 루프가 오래 블록했다
-	 * 깨어나면 그 경과분(수백만 회)을 순회해 사실상 정지했습니다. 힙은 그 비용을 만료 개수로
-	 * 한정합니다.
+	 * 만료 시각(expireTick) 기준 최소 힙으로 타이머를 관리해, 비용을 경과 시간이 아닌
+	 * 만료 개수에 비례하게 한정합니다.
 	 *   - Schedule     : O(log n)
 	 *   - Cancel       : O(1)          (지연 삭제 — id를 live에서 제거, 힙 엔트리는 만료 시 스킵)
 	 *   - Tick         : O(만료 · log n)  ← 경과 ms와 무관
@@ -64,21 +63,26 @@ BEGIN_NS(ne::time)
 	private:
 		Clock clock;
 		std::chrono::steady_clock::time_point baseTime;
-		std::vector<TimerEntry> heap;         // 이진 힙(수동 push/pop_heap — callback 를 이동해 꺼내기 위함)
+		std::vector<TimerEntry> heap; // 이진 힙(수동 push/pop_heap — callback 를 이동해 꺼내기 위함)
 		std::unordered_set<ulonglong_t> live; // 아직 발화/취소되지 않은 id. Cancel/Tick 에서 제거.
 		std::atomic<ulonglong_t> nextId{ 1 };
 		mutable std::mutex mutex;
 
 	public:
+		/** @brief _delay 후 _callback 을 실행하도록 예약하고, 취소/식별에 쓸 타이머 id 를 반환합니다. */
 		[[nodiscard]] ulonglong_t Schedule(std::chrono::milliseconds _delay, std::function<void_t()> _callback);
+
+		/** @brief 예약된 타이머를 취소합니다. 이미 발화됐거나 존재하지 않는 id 면 false 를 반환합니다. */
 		bool_t Cancel(ulonglong_t _id);
+
+		/** @brief 현재 시각까지 만료된 타이머들의 콜백을 실행합니다. 이벤트 루프에서 주기적으로 호출해야 합니다. */
 		void_t Tick();
 
-		// 현재 시각 기준 가장 빠른 타이머의 만료까지 남은 ms. 예약된 타이머가 없으면 -1(무기한 대기 의미).
+		/** @brief 현재 시각 기준 가장 빠른 타이머의 만료까지 남은 ms. 예약된 타이머가 없으면 -1. (무기한 대기 의미) */
 		[[nodiscard]] int_t NextExpiryMs() const noexcept;
 
 	private:
-		// baseTime 이후 경과한 실시간 ms (음수는 0 으로 클램프).
+		/** @brief baseTime 이후 경과한 실시간 ms (음수는 0 으로 클램프). */
 		[[nodiscard]] ulonglong_t ElapsedMs() const noexcept;
 	};
 

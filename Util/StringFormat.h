@@ -3,6 +3,7 @@
 //
 
 #pragma once
+#include <concepts>
 #include <cstring>
 #include <vector>
 #include <memory>
@@ -15,6 +16,19 @@ BEGIN_NS(ne)
 		IGNORE_EMPTY,
 		TRIM
 	};
+
+	/**
+	* @brief StringFormat 템플릿 함수들이 요구하는 최소 인터페이스: std::basic_string 특수화만 허용한다.
+	*
+	* (std::string_view 등은 resize/erase 가 없어 *InPlace 계열과 호환되지 않으므로 의도적으로 제외)
+	*/
+	template <typename T>
+	concept StringLike = requires
+	{
+		typename T::value_type;
+		typename T::traits_type;
+		typename T::allocator_type;
+	} && std::same_as<T, std::basic_string<typename T::value_type, typename T::traits_type, typename T::allocator_type>>;
 
 	/**
 	 * @class StringFormat
@@ -30,79 +44,78 @@ BEGIN_NS(ne)
 		~StringFormat() = default;
 
 	public:
-		template <class T>
-		inline static T Trim(const T& _source);
-		template <class T>
-		inline static T& TrimInPlace(T& _source);
+		template <StringLike T>
+		static T Trim(const T& _source);
+		template <StringLike T>
+		static T& TrimInPlace(T& _source);
 
-		template <class T>
-		inline static T TrimLeft(const T& _source);
-		template <class T>
-		inline static T& TrimLeftInPlace(T& _source);
+		template <StringLike T>
+		static T TrimLeft(const T& _source);
+		template <StringLike T>
+		static T& TrimLeftInPlace(T& _source);
 
-		template <class T>
-		inline static T TrimRight(const T& _source);
-		template <class T>
-		inline static T& TrimRightInPlace(T& _source);
+		template <StringLike T>
+		static T TrimRight(const T& _source);
+		template <StringLike T>
+		static T& TrimRightInPlace(T& _source);
 
 	public:
-		template <class T>
-		inline static T Lower(const T& _source);
-		template <class T>
-		inline static T& LowerInPlace(T& _source);
+		template <StringLike T>
+		static T Lower(const T& _source);
+		template <StringLike T>
+		static T& LowerInPlace(T& _source);
 
-		template <class T>
+		template <StringLike T>
 		static T Upper(const T& _source);
-		template <class T>
+		template <StringLike T>
 		static T& UpperInPlace(T& _source);
 
 	public:
-		template <class T>
-		inline static T Replace(T& _source, const T& _from, const T& _to, typename T::size_type _start = 0);
-		template <class T>
-		inline static T Replace(T& _source, const typename T::value_type* _from, const typename T::value_type* _to, typename T::size_type _start = 0);
+		template <StringLike T>
+		static T Replace(T& _source, const T& _from, const T& _to, T::size_type _start = 0);
+		template <StringLike T>
+		static T Replace(T& _source, const T::value_type* _from, const T::value_type* _to, T::size_type _start = 0);
 
-		template <class T>
-		inline static T& ReplaceInPlace(T& _source, const T& _from, const T& _to, typename T::size_type _start = 0);
-		template <class T>
-		inline static T& ReplaceInPlace(T& _source, const typename T::value_type* _from, const typename T::value_type* _to, typename T::size_type _start = 0);
-
-	public:
-		template <class T>
-		inline static int_t Compare(const T& _lhs, const T& _rhs);
-		template <class T>
-		inline static int_t CompareIgnoreCase(const T& _lhs, const T& _rhs);
+		template <StringLike T>
+		static T& ReplaceInPlace(T& _source, const T& _from, const T& _to, T::size_type _start = 0);
+		template <StringLike T>
+		static T& ReplaceInPlace(T& _source, const T::value_type* _from, const T::value_type* _to, T::size_type _start = 0);
 
 	public:
-		template <class T>
-		inline static bool_t Tokenize(const T& _source, const T& _separators, std::vector<T>& _tokens, TokenizeOption _option = TokenizeOption::NONE);
+		template <StringLike T>
+		static int_t Compare(const T& _lhs, const T& _rhs);
+		template <StringLike T>
+		static int_t CompareIgnoreCase(const T& _lhs, const T& _rhs);
 
 	public:
-		inline static constexpr auto LowerCaseTransform = std::views::transform([](const char_t _c) { return static_cast<char_t>(std::tolower(static_cast<byte_t>(_c))); });
+		template <StringLike T>
+		static bool_t Tokenize(const T& _source, const T& _separators, std::vector<T>& _tokens, TokenizeOption _option = TokenizeOption::NONE);
 
-		inline static constexpr auto UpperCaseTransform = std::views::transform([](const char_t _c) { return static_cast<char_t>(std::toupper(static_cast<byte_t>(_c))); });
+	public:
+		static constexpr auto LowerCaseTransform = std::views::transform([](const char_t _c) { return static_cast<char_t>(std::tolower(static_cast<byte_t>(_c))); });
 
-		inline static constexpr auto LowerCaseWideTransform = std::views::transform([](const wchar_t _c) { return static_cast<wchar_t>(std::towlower(static_cast<ushort_t>(_c))); });
+		static constexpr auto UpperCaseTransform = std::views::transform([](const char_t _c) { return static_cast<char_t>(std::toupper(static_cast<byte_t>(_c))); });
 
-		inline static constexpr auto UpperCaseWideTransform = std::views::transform([](const wchar_t _c) { return static_cast<wchar_t>(std::towupper(static_cast<ushort_t>(_c))); });
+		static constexpr auto LowerCaseWideTransform = std::views::transform([](const wchar_t _c) { return static_cast<wchar_t>(std::towlower(static_cast<ushort_t>(_c))); });
 
-		[[nodiscard]] inline static constexpr bool_t EqualCaseInsensitive(string_view_t _lhs, string_view_t _rhs) noexcept;
+		static constexpr auto UpperCaseWideTransform = std::views::transform([](const wchar_t _c) { return static_cast<wchar_t>(std::towupper(static_cast<ushort_t>(_c))); });
 
-		[[nodiscard]] inline static constexpr bool_t EqualCaseInsensitive(wstring_view_t _lhs, wstring_view_t _rhs) noexcept;
+		[[nodiscard]] static constexpr bool_t EqualCaseInsensitive(string_view_t _lhs, string_view_t _rhs) noexcept;
+
+		[[nodiscard]] static constexpr bool_t EqualCaseInsensitive(wstring_view_t _lhs, wstring_view_t _rhs) noexcept;
 
 #if defined(_WIN32)
-
 	public:
-		inline static string_t WCStoMBCS(const wchar_t* _wcs);
-		inline static string_t WCStoUTF8(const wchar_t* _wcs);
-		inline static string_t MBCStoUTF8(const char_t* _mbcs);
-		inline static std::wstring MBCStoWCS(const char_t* _mbcs);
-		inline static string_t UTF8toMBCS(const char_t* _utf8);
-		inline static std::wstring UTF8toWCS(const char_t* _utf8);
+		static string_t WCStoMBCS(const wchar_t* _wcs);
+		static string_t WCStoUTF8(const wchar_t* _wcs);
+		static string_t MBCStoUTF8(const char_t* _mbcs);
+		static std::wstring MBCStoWCS(const char_t* _mbcs);
+		static string_t UTF8toMBCS(const char_t* _utf8);
+		static std::wstring UTF8toWCS(const char_t* _utf8);
 #endif
 	};
 
-	template <class T>
+	template <StringLike T>
 	T StringFormat::Trim(const T& _source)
 	{
 		int_t first = 0;
@@ -114,7 +127,7 @@ BEGIN_NS(ne)
 		return T(_source, first, last - first + 1);
 	}
 
-	template <class T>
+	template <StringLike T>
 	T& StringFormat::TrimInPlace(T& _source)
 	{
 		int_t first = 0;
@@ -130,7 +143,7 @@ BEGIN_NS(ne)
 	}
 
 
-	template <class T>
+	template <StringLike T>
 	T StringFormat::TrimLeft(const T& _source)
 	{
 		auto iter = _source.begin();
@@ -141,7 +154,7 @@ BEGIN_NS(ne)
 		return T(iter, end);
 	}
 
-	template <class T>
+	template <StringLike T>
 	T& StringFormat::TrimLeftInPlace(T& _source)
 	{
 		auto iter = _source.begin();
@@ -155,7 +168,7 @@ BEGIN_NS(ne)
 	}
 
 
-	template <class T>
+	template <StringLike T>
 	T StringFormat::TrimRight(const T& _source)
 	{
 		int_t pos = static_cast<int_t>(_source.size()) - 1;
@@ -165,7 +178,7 @@ BEGIN_NS(ne)
 		return T(_source, 0, pos + 1);
 	}
 
-	template <class T>
+	template <StringLike T>
 	T& StringFormat::TrimRightInPlace(T& _source)
 	{
 		int_t pos = static_cast<int_t>(_source.size()) - 1;
@@ -179,7 +192,7 @@ BEGIN_NS(ne)
 
 
 
-	template <class T>
+	template <StringLike T>
 	T StringFormat::Lower(const T& _source)
 	{
 		auto iter = _source.begin();
@@ -187,12 +200,12 @@ BEGIN_NS(ne)
 
 		T result;
 		result.reserve(_source.size());
-		while (iter != end) { result += static_cast<typename T::value_type>(Ascii::Lower(*iter++)); }
+		while (iter != end) { result += static_cast<T::value_type>(Ascii::Lower(*iter++)); }
 
 		return result;
 	}
 
-	template <class T>
+	template <StringLike T>
 	T& StringFormat::LowerInPlace(T& _source)
 	{
 		auto iter = _source.begin();
@@ -200,7 +213,7 @@ BEGIN_NS(ne)
 
 		while (iter != end)
 		{
-			*iter = static_cast<typename T::value_type>(Ascii::Lower(*iter));
+			*iter = static_cast<T::value_type>(Ascii::Lower(*iter));
 			++iter;
 		}
 
@@ -209,7 +222,7 @@ BEGIN_NS(ne)
 
 
 
-	template <class T>
+	template <StringLike T>
 	T StringFormat::Upper(const T& _source)
 	{
 		auto iter = _source.begin();
@@ -217,12 +230,12 @@ BEGIN_NS(ne)
 
 		T result;
 		result.reserve(_source.size());
-		while (iter != end) { result += static_cast<typename T::value_type>(Ascii::Upper(*iter++)); }
+		while (iter != end) { result += static_cast<T::value_type>(Ascii::Upper(*iter++)); }
 
 		return result;
 	}
 
-	template <class T>
+	template <StringLike T>
 	T& StringFormat::UpperInPlace(T& _source)
 	{
 		auto iter = _source.begin();
@@ -230,7 +243,7 @@ BEGIN_NS(ne)
 
 		while (iter != end)
 		{
-			*iter = static_cast<typename T::value_type>(Ascii::Upper(*iter));
+			*iter = static_cast<T::value_type>(Ascii::Upper(*iter));
 			++iter;
 		}
 
@@ -238,7 +251,7 @@ BEGIN_NS(ne)
 	}
 
 
-	template <class T>
+	template <StringLike T>
 	T StringFormat::Replace(T& _source, const T& _from, const T& _to, typename T::size_type _start)
 	{
 		T result(_source);
@@ -246,7 +259,7 @@ BEGIN_NS(ne)
 		return result;
 	}
 
-	template <class T>
+	template <StringLike T>
 	T StringFormat::Replace(T& _source, const typename T::value_type* _from, const typename T::value_type* _to, typename T::size_type _start)
 	{
 		T result(_source);
@@ -255,7 +268,7 @@ BEGIN_NS(ne)
 	}
 
 
-	template <class T>
+	template <StringLike T>
 	T& StringFormat::ReplaceInPlace(T& _source, const T& _from, const T& _to, typename T::size_type _start)
 	{
 		T result;
@@ -279,7 +292,7 @@ BEGIN_NS(ne)
 		return _source;
 	}
 
-	template <class T>
+	template <StringLike T>
 	T& StringFormat::ReplaceInPlace(T& _source, const typename T::value_type* _from, const typename T::value_type* _to, typename T::size_type _start)
 	{
 		T result;
@@ -306,15 +319,15 @@ BEGIN_NS(ne)
 	}
 
 
-	template <class T>
+	template <StringLike T>
 	int_t StringFormat::Compare(const T& _lhs, const T& _rhs) { return _lhs.compare(_rhs); }
 
-	template <class T>
+	template <StringLike T>
 	int_t StringFormat::CompareIgnoreCase(const T& _lhs, const T& _rhs) { return Upper(_lhs).compare(Upper(_rhs)); }
 
 
 
-	template <class T>
+	template <StringLike T>
 	bool_t StringFormat::Tokenize(const T& _source, const T& _separators, std::vector<T>& _tokens, TokenizeOption _option)
 	{
 		_tokens.clear();

@@ -59,12 +59,12 @@ namespace
 
 	ne::Task<IoResult<std::size_t>> ReceiveOp(Context& _context, const ulonglong_t _handle, void_t* _buffer, const std::size_t _length)
 	{
-		co_return co_await Awaitable{ _context, Request{ .op = OpCode::RECEIVE, .handle = _handle, .buffer = _buffer, .length = _length } };
+		co_return co_await Awaitable{ _context, Request{ .requestKind = RequestKind::RECEIVE, .handle = _handle, .buffer = _buffer, .length = _length } };
 	}
 
 	ne::Task<IoResult<std::size_t>> ReceiveOpCancellable(Context& _context, const ulonglong_t _handle, void_t* _buffer, const std::size_t _length, std::stop_token _token)
 	{
-		co_return co_await Awaitable{ _context, Request{ .op = OpCode::RECEIVE, .handle = _handle, .buffer = _buffer, .length = _length }, std::move(_token) };
+		co_return co_await Awaitable{ _context, Request{ .requestKind = RequestKind::RECEIVE, .handle = _handle, .buffer = _buffer, .length = _length }, std::move(_token) };
 	}
 
 	template <typename T>

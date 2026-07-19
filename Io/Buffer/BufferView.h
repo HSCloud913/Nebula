@@ -9,8 +9,13 @@
 #include "Base/Type.h"
 
 BEGIN_NS(ne::io)
-	// 비소유 메모리 조각(포인터+길이). scatter/gather(BufferChain)의 세그먼트 단위로 쓰인다.
-	// 가리키는 메모리의 수명은 호출자가 I/O 완료까지 보장한다(Read/Write/Send/Receive 와 동일 계약).
+	/**
+	 * @class BufferView
+	 * @brief 비소유 메모리 조각(포인터+길이)을 나타내는 값 타입.
+	 *
+	 * scatter/gather I/O(BufferChain)의 세그먼트 단위로 쓰인다. 메모리를 소유하지 않으며,
+	 * 가리키는 메모리의 수명은 호출자가 I/O 완료 시점까지 보장해야 한다.
+	 */
 	struct BufferView
 	{
 		ne::byte_t* ptr{ nullptr };

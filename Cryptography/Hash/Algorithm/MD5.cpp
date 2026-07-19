@@ -4,10 +4,13 @@
 
 
 
+// (b & c) | (~b & d)를 XOR/AND만으로 재작성한 형태.
+// d ^ (b & (c ^ d))는 b가 1인 비트는 c를, 0인 비트는 d를 선택하므로 원래 식과 값이 동일하면서 게이트 수가 줄어든다.
 inline ne::uint_t MD5_F1(const ne::uint_t _b, const ne::uint_t _c, const ne::uint_t _d)
 {
 	return _d ^ (_b & (_c ^ _d)); // original: f = (b & c) | ((~b) & d);
 }
+// (b & d) | (c & ~d)를 같은 방식으로 재작성. F1에서 b와 d의 역할을 바꾼 대칭 형태.
 inline ne::uint_t MD5_F2(const ne::uint_t _b, const ne::uint_t _c, const ne::uint_t _d)
 {
 	return _c ^ (_d & (_b ^ _c)); // original: f = (b & d) | (c & (~d));
@@ -145,6 +148,8 @@ BEGIN_NS(ne::crypto)
 		uint_t d = md5Value[3];
 
 		// first round
+		// 각 라운드 상수(0xd76aa478 등 64개)는 K[i] = floor(2^32 * abs(sin(i+1)))로 정의된다.
+		// sin 값을 난수처럼 활용해 특별한 대칭성 없는 상수를 얻기 위함이다.
 		a = MD5_Rotate(a + MD5_F1(b, c, d) + words[0] + 0xd76aa478, 7) + b;
 		d = MD5_Rotate(d + MD5_F1(a, b, c) + words[1] + 0xe8c7b756, 12) + a;
 		c = MD5_Rotate(c + MD5_F1(d, a, b) + words[2] + 0x242070db, 17) + d;

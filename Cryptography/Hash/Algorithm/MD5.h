@@ -2,7 +2,12 @@
 #include "Base/Type.h"
 
 BEGIN_NS(ne::crypto)
-	/** @brief MD5 해시를 계산하는 저수준 알고리즘 구현입니다. Init() 후 AddBuffer()를 반복 호출하고 Get()으로 결과를 얻습니다. */
+	/**
+	 * @class MD5
+	 * @brief MD5 해시를 계산하는 저수준 알고리즘 구현입니다.
+	 *
+	 * Init() 후 AddBuffer()를 반복 호출하고 Get()으로 결과를 얻습니다.
+	 */
 	class MD5 final
 	{
 	public:

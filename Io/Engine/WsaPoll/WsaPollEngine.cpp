@@ -14,13 +14,15 @@
 
 namespace
 {
-	// Windows 에는 socketpair()/eventfd 가 없다 — 로컬 루프백 TCP 연결로 대체해 Wake() 용
-	// 읽기/쓰기 소켓 쌍을 만든다.
+	// Windows 에는 POSIX eventfd/socketpair 가 없으므로, 루프백(127.0.0.1)에 스스로 connect 하는
+	// TCP 소켓 쌍을 만들어 그 역할(WSAPoll 로 감시 가능한 "깨우기용" 통신 채널)을 대신한다.
 	[[nodiscard]] ne::bool_t CreateWakePair(ne::io::socket_t& _readSocket, ne::io::socket_t& _writeSocket) noexcept
 	{
 		const SOCKET listener = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 		if (listener == INVALID_SOCKET) return false;
 
+		// 포트 0으로 바인드해 OS 가 임의의 빈 포트를 골라주게 하고, getsockname 으로 실제 배정된
+		// 포트를 읽어와 이후 connect 에 사용한다.
 		sockaddr_in address{};
 		address.sin_family = AF_INET;
 		address.sin_addr.s_addr = ::htonl(INADDR_LOOPBACK);
@@ -55,7 +57,8 @@ namespace
 			return false;
 		}
 
-		// Wake() 의 send()/드레인의 recv() 모두 블록하면 안 되므로 논블로킹으로 전환.
+		// 두 소켓 모두 non-blocking 으로 전환해, Wake() 의 send() 나 신호 소비용 recv() 가
+		// 절대 블로킹하지 않도록 한다.
 		u_long nonBlocking = 1;
 		::ioctlsocket(reader, FIONBIO, &nonBlocking);
 		::ioctlsocket(writer, FIONBIO, &nonBlocking);
@@ -72,6 +75,7 @@ namespace
 BEGIN_NS(ne::io)
 	WsaPollEngine::WsaPollEngine() noexcept
 	{
+		// EpollEngine 의 eventfd 에 대응하는 Windows 대체 수단으로 루프백 소켓 쌍을 만든다.
 		socket_t readSocket = InvalidSocket;
 		socket_t writeSocket = InvalidSocket;
 		if (!CreateWakePair(readSocket, writeSocket)) return;
@@ -91,6 +95,7 @@ BEGIN_NS(ne::io)
 
 	void_t WsaPollEngine::Submit(const Request& _request)
 	{
+		// EpollEngine 과 동일한 전략: 가능하면 WSAPoll 을 거치지 않고 즉시 완료를 시도해 지연을 줄인다.
 		if (longlong_t result = 0; Perform(_request, false, result))
 		{
 			std::lock_guard lock(mutex);
@@ -98,9 +103,9 @@ BEGIN_NS(ne::io)
 			return;
 		}
 
-		// WSAEWOULDBLOCK/연결 진행 중 — WSAPoll 에 등록하고 준비되면 재수행.
+		// WSAEWOULDBLOCK 등으로 당장 처리할 수 없는 소켓 요청만 pending 에 등록해 WSAPoll 대기로 넘긴다.
 		const ulonglong_t fd = _request.handle;
-		const bool_t isWrite = IsWriteDirection(_request.op);
+		const bool_t isWrite = IsWriteDirection(_request.requestKind);
 
 		std::lock_guard lock(mutex);
 
@@ -113,12 +118,13 @@ BEGIN_NS(ne::io)
 	{
 		if (_max <= 0) return 0;
 
+		// 이전에 예약된 취소를 먼저 합성 완료로 만든다.
 		ProcessCancels();
 
-		// 합성 완료(즉시 완료/취소) 우선 배출.
 		{
 			std::lock_guard lock(mutex);
 
+			// Submit() 이 즉시 처리해 둔 결과가 있으면 WSAPoll 대기 없이 그대로 반환한다.
 			int_t drained = 0;
 			while (drained < _max && !ready.empty())
 			{
@@ -129,12 +135,14 @@ BEGIN_NS(ne::io)
 			if (drained > 0) return drained;
 		}
 
-		// WSAPoll 은 epoll 과 달리 영속 등록이 없다 — 매 호출마다 현재 대기 목록으로 fd 배열을 새로 구성한다.
+		// WSAPoll 은 매 호출마다 감시 대상 fd 배열을 새로 구성해 넘겨야 하므로, readWaiter/writeWaiter
+		// 를 하나의 소켓당 하나의 엔트리(read+write 방향을 OR)로 병합해 fds 배열을 만든다.
 		std::vector<WSAPOLLFD> fds;
 		std::vector<ulonglong_t> fdOrder;
 		{
 			std::lock_guard lock(mutex);
 
+			// Wake() 신호를 받을 소켓을 항상 첫 번째 엔트리로 포함시킨다.
 			WSAPOLLFD wakeEntry{};
 			wakeEntry.fd = static_cast<SOCKET>(wakeReadSocket);
 			wakeEntry.events = POLLRDNORM;
@@ -159,7 +167,7 @@ BEGIN_NS(ne::io)
 
 		const int_t timeoutMs = _timeout.count() < 0 ? -1 : static_cast<int_t>(_timeout.count());
 		const int_t polled = ::WSAPoll(fds.data(), static_cast<ULONG>(fds.size()), timeoutMs);
-		if (polled <= 0) return 0; // 타임아웃/오류
+		if (polled <= 0) return 0;
 
 		int_t count = 0;
 		for (std::size_t i = 0; i < fds.size() && count < _max; ++i)
@@ -168,6 +176,7 @@ BEGIN_NS(ne::io)
 
 			if (fdOrder[i] == wakeReadSocket)
 			{
+				// Wake 신호 자체는 완료로 노출하지 않고, 쌓여 있는 더미 바이트를 모두 비운다.
 				char_t buffer[64];
 				while (::recv(static_cast<SOCKET>(wakeReadSocket), buffer, sizeof(buffer), 0) > 0) {}
 				continue;
@@ -203,7 +212,7 @@ BEGIN_NS(ne::io)
 				if (!isFound) continue;
 
 				longlong_t result = 0;
-				if (!Perform(operation.request, true, result)) continue; // 아직 WSAEWOULDBLOCK — 계속 대기
+				if (!Perform(operation.request, true, result)) continue;
 
 				{
 					std::lock_guard lock(mutex);
@@ -222,6 +231,7 @@ BEGIN_NS(ne::io)
 
 	void_t WsaPollEngine::Wake()
 	{
+		// 소켓에 1바이트를 보내면 반대편(wakeReadSocket)에 POLLRDNORM 이 발생해 WSAPoll 이 깨어난다.
 		constexpr char_t one = 0;
 		(void_t)::send(wakeWriteSocket, &one, 1, 0);
 	}
@@ -230,6 +240,7 @@ BEGIN_NS(ne::io)
 	{
 		if (_userData == nullptr) return;
 
+		// 실제 취소 처리는 WaitCompletions() 시작 시점의 ProcessCancels() 에서 일괄 수행한다.
 		{
 			std::lock_guard lock(mutex);
 			pendingCancels.push_back(_userData);
@@ -243,11 +254,11 @@ BEGIN_NS(ne::io)
 		switch (_capability)
 		{
 			case Capability::SEND_FILE_ZERO_COPY:
-				return true; // TransmitFile(SendFile) — RIO 없이도 가능
+				return true;
 			case Capability::SEND_MEM_ZERO_COPY:
-				return false; // RIO 는 IOCP 완료 모델 전제라 reactor 폴백에서 불가
+				return false;
 			case Capability::RECEIVE_OVERHEAD_REDUCED:
-				return false; // 등록 버퍼 없음
+				return false;
 			case Capability::RECEIVE_TRUE_ZERO_COPY:
 				return false;
 		}
@@ -259,9 +270,9 @@ BEGIN_NS(ne::io)
 
 	bool_t WsaPollEngine::Perform(const Request& _request, const bool_t _isRetry, longlong_t& _result) noexcept
 	{
-		// 파일 scatter/gather — IocpEngine 과 동일한 이유(임의 크기 세그먼트는 ReadFileScatter/
-		// WriteFileGather 의 페이지 정렬 요구를 못 맞춤)로 세그먼트별 순차 동기 처리 후 합산한다.
-		if (_request.chain != nullptr && (_request.op == OpCode::READ || _request.op == OpCode::WRITE))
+		// 파일 핸들은 WSAPoll 로 감시할 수 없는 대상이므로(WSAPoll 은 소켓 전용 API), 체인 Read/Write
+		// 는 항상 여기서 OVERLAPPED + GetOverlappedResult(TRUE) 로 동기적으로 끝까지 완료시킨다.
+		if (_request.chain != nullptr && (_request.requestKind == RequestKind::READ || _request.requestKind == RequestKind::WRITE))
 		{
 			const HANDLE handle = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(_request.handle));
 			longlong_t total = 0;
@@ -274,7 +285,7 @@ BEGIN_NS(ne::io)
 				overlapped.OffsetHigh = static_cast<ulong_t>(currentOffset >> 32);
 
 				ulong_t transferred = 0;
-				bool_t isOk = (_request.op == OpCode::READ) ?
+				bool_t isOk = (_request.requestKind == RequestKind::READ) ?
 								::ReadFile(handle, segment.ptr, static_cast<ulong_t>(segment.length), &transferred, &overlapped) :
 								::WriteFile(handle, segment.ptr, static_cast<ulong_t>(segment.length), &transferred, &overlapped);
 				if (!isOk && ::GetLastError() == ERROR_IO_PENDING) { isOk = ::GetOverlappedResult(handle, &overlapped, &transferred, TRUE); }
@@ -295,10 +306,48 @@ BEGIN_NS(ne::io)
 			return true;
 		}
 
-		switch (_request.op)
+		switch (_request.requestKind)
 		{
-			case OpCode::READ:
+			case RequestKind::ACCEPT:
 			{
+				const SOCKET socket = _request.handle;
+
+				const SOCKET accepted = ::accept(socket, nullptr, nullptr);
+				if (accepted != INVALID_SOCKET)
+				{
+					_result = static_cast<longlong_t>(accepted);
+					return true;
+				}
+				break;
+			}
+			case RequestKind::CONNECT:
+			{
+				// non-blocking connect() 는 WSAEWOULDBLOCK 을 반환하며 진행되고, 실제 성공 여부는
+				// 소켓이 쓰기 가능(POLLWRNORM) 해진 뒤 SO_ERROR 로 확인해야 한다(EpollEngine 과 동일한 패턴).
+				const SOCKET socket = _request.handle;
+
+				if (_isRetry)
+				{
+					int_t soError = 0;
+					int_t length = static_cast<int_t>(sizeof(soError));
+					(void_t)::getsockopt(socket, SOL_SOCKET, SO_ERROR, reinterpret_cast<lpstr_t>(&soError), &length);
+					_result = (soError == 0) ? 0 : -static_cast<longlong_t>(soError);
+					return true;
+				}
+
+				if (::connect(socket, static_cast<const sockaddr*>(_request.address), _request.addressLength) == 0)
+				{
+					_result = 0;
+					return true;
+				}
+
+				if (::WSAGetLastError() == WSAEWOULDBLOCK) return false;
+				break;
+			}
+			case RequestKind::READ:
+			{
+				// 파일 핸들은 WSAPoll 대상이 될 수 없으므로 이 op 도 항상 즉시 동기 완료된다
+				// (ERROR_IO_PENDING 이어도 GetOverlappedResult(TRUE) 로 여기서 끝까지 기다린다).
 				const HANDLE handle = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(_request.handle));
 
 				OVERLAPPED overlapped{};
@@ -323,7 +372,7 @@ BEGIN_NS(ne::io)
 				}
 				break;
 			}
-			case OpCode::WRITE:
+			case RequestKind::WRITE:
 			{
 				const HANDLE handle = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(_request.handle));
 
@@ -349,12 +398,73 @@ BEGIN_NS(ne::io)
 				}
 				break;
 			}
-			case OpCode::RECEIVE:
+			case RequestKind::READ_FIXED:
+			{
+				const HANDLE handle = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(_request.handle));
+
+				OVERLAPPED overlapped{};
+				overlapped.Offset = static_cast<ulong_t>(_request.offset & 0xFFFFFFFFull);
+				overlapped.OffsetHigh = static_cast<ulong_t>(_request.offset >> 32);
+
+				ulong_t read = 0;
+				if (::ReadFile(handle, _request.buffer, static_cast<ulong_t>(_request.length), &read, &overlapped))
+				{
+					_result = static_cast<longlong_t>(read);
+					return true;
+				}
+
+				if (::GetLastError() == ERROR_IO_PENDING)
+				{
+					ulong_t transferred = 0;
+					if (::GetOverlappedResult(handle, &overlapped, &transferred, TRUE))
+					{
+						_result = static_cast<longlong_t>(transferred);
+						return true;
+					}
+				}
+				break;
+			}
+			case RequestKind::WRITE_FIXED:
+			{
+				const HANDLE handle = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(_request.handle));
+
+				OVERLAPPED overlapped{};
+				overlapped.Offset = static_cast<ulong_t>(_request.offset & 0xFFFFFFFFull);
+				overlapped.OffsetHigh = static_cast<ulong_t>(_request.offset >> 32);
+
+				ulong_t written = 0;
+				if (::WriteFile(handle, _request.buffer, static_cast<ulong_t>(_request.length), &written, &overlapped))
+				{
+					_result = static_cast<longlong_t>(written);
+					return true;
+				}
+
+				if (::GetLastError() == ERROR_IO_PENDING)
+				{
+					ulong_t transferred = 0;
+					if (::GetOverlappedResult(handle, &overlapped, &transferred, TRUE))
+					{
+						_result = static_cast<longlong_t>(transferred);
+						return true;
+					}
+				}
+				break;
+			}
+			case RequestKind::WAIT_READABLE:
+			case RequestKind::WAIT_WRITABLE:
+				if (!_isRetry) return false;
+				_result = 0;
+				return true;
+
+			case RequestKind::RECEIVE:
 			{
 				const SOCKET socket = _request.handle;
 
 				if (_request.chain != nullptr)
 				{
+					// overlapped 인자를 nullptr 로 넘기므로 이 호출은 완전히 동기(blocking 여부는
+					// 소켓의 non-blocking 설정에 따름) 이다 - IocpEngine 과 달리 여기서는 소켓이
+					// non-blocking 이라 즉시 반환되며, 실패 시 WSAEWOULDBLOCK 으로 재시도를 유도한다.
 					std::vector<WSABUF> wsaBuffers;
 					wsaBuffers.reserve(_request.chain->Segments().size());
 					for (const auto& segment : _request.chain->Segments()) wsaBuffers.push_back(WSABUF{ .len = static_cast<ulong_t>(segment.length), .buf = reinterpret_cast<lpstr_t>(segment.ptr) });
@@ -377,7 +487,7 @@ BEGIN_NS(ne::io)
 				}
 				break;
 			}
-			case OpCode::SEND:
+			case RequestKind::SEND:
 			{
 				const SOCKET socket = _request.handle;
 
@@ -404,23 +514,7 @@ BEGIN_NS(ne::io)
 				}
 				break;
 			}
-			case OpCode::SEND_TO: // 비연결형(UDP) 송신 — address/addressLength 가 매 호출 목적지
-			{
-				const SOCKET socket = _request.handle;
-				const int_t bytes = ::sendto(socket,
-											static_cast<lpstr_t>(_request.buffer),
-											static_cast<int_t>(_request.length),
-											0,
-											static_cast<const sockaddr*>(_request.address),
-											_request.addressLength);
-				if (bytes >= 0)
-				{
-					_result = static_cast<longlong_t>(bytes);
-					return true;
-				}
-				break;
-			}
-			case OpCode::RECEIVE_FROM: // 비연결형(UDP) 수신 — fromAddress/fromAddressLength 에 발신자 주소를 채움
+			case RequestKind::RECEIVE_FROM:
 			{
 				const SOCKET socket = _request.handle;
 				const int_t bytes = ::recvfrom(socket,
@@ -436,51 +530,27 @@ BEGIN_NS(ne::io)
 				}
 				break;
 			}
-			case OpCode::WAIT_READABLE:
-			case OpCode::WAIT_WRITABLE:
-				// readiness 대기 — 실제 recv/send 없이 POLLRDNORM/POLLWRNORM(IsWriteDirection 이 방향 결정)만
-				// 기다린다. 첫 호출은 미준비로 등록(false), WSAPoll 이 준비를 알린 재수행에서 ready(result 0)로 완료.
-				if (!_isRetry) return false;
-				_result = 0;
-				return true;
-
-			case OpCode::ACCEPT:
+			case RequestKind::SEND_TO:
 			{
 				const SOCKET socket = _request.handle;
-
-				const SOCKET accepted = ::accept(socket, nullptr, nullptr);
-				if (accepted != INVALID_SOCKET)
+				const int_t bytes = ::sendto(socket,
+											static_cast<lpstr_t>(_request.buffer),
+											static_cast<int_t>(_request.length),
+											0,
+											static_cast<const sockaddr*>(_request.address),
+											_request.addressLength);
+				if (bytes >= 0)
 				{
-					_result = static_cast<longlong_t>(accepted);
+					_result = static_cast<longlong_t>(bytes);
 					return true;
 				}
 				break;
 			}
-			case OpCode::CONNECT:
+			case RequestKind::SEND_FILE:
 			{
-				const SOCKET socket = _request.handle;
-
-				if (_isRetry)
-				{
-					int_t soError = 0;
-					int_t length = static_cast<int_t>(sizeof(soError));
-					(void_t)::getsockopt(socket, SOL_SOCKET, SO_ERROR, reinterpret_cast<lpstr_t>(&soError), &length);
-					_result = (soError == 0) ? 0 : -static_cast<longlong_t>(soError);
-					return true;
-				}
-
-				if (::connect(socket, static_cast<const sockaddr*>(_request.address), _request.addressLength) == 0)
-				{
-					_result = 0;
-					return true; // 즉시 연결(로컬 등)
-				}
-
-				if (::WSAGetLastError() == WSAEWOULDBLOCK) return false; // POLLOUT 대기
-				break;
-			}
-			case OpCode::SEND_FILE: // handle=목적지 소켓(Send 계열과 동일), auxHandle=원본 파일.
-			{                      // IocpEngine 과 달리 여기엔 IOCP 가 없어 stray completion 위험이 없으므로
-				// 로컬 OVERLAPPED 로 바로 동기 완료시킬 수 있다(File Read/Write 와 동일 패턴).
+				// TransmitFile 도 OVERLAPPED 를 받을 수 있으나, 여기서는 non-blocking 소켓에 대해
+				// WSA_IO_PENDING 이 나오면 곧바로 GetOverlappedResult(TRUE) 로 완료까지 기다려
+				// WSAPoll 을 거치지 않고 동기적으로 확정한다.
 				const SOCKET destSocket = static_cast<SOCKET>(_request.handle);
 				const HANDLE sourceFile = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(_request.auxHandle));
 
@@ -505,84 +575,33 @@ BEGIN_NS(ne::io)
 				}
 				break;
 			}
-			case OpCode::READ_FIXED: // Windows 에 파일 등록 버퍼 개념이 없다 — 일반 Read 와 동일, bufferId 무시
-			{
-				const HANDLE handle = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(_request.handle));
-
-				OVERLAPPED overlapped{};
-				overlapped.Offset = static_cast<ulong_t>(_request.offset & 0xFFFFFFFFull);
-				overlapped.OffsetHigh = static_cast<ulong_t>(_request.offset >> 32);
-
-				ulong_t read = 0;
-				if (::ReadFile(handle, _request.buffer, static_cast<ulong_t>(_request.length), &read, &overlapped))
-				{
-					_result = static_cast<longlong_t>(read);
-					return true;
-				}
-
-				if (::GetLastError() == ERROR_IO_PENDING)
-				{
-					ulong_t transferred = 0;
-					if (::GetOverlappedResult(handle, &overlapped, &transferred, TRUE))
-					{
-						_result = static_cast<longlong_t>(transferred);
-						return true;
-					}
-				}
-				break;
-			}
-			case OpCode::WRITE_FIXED: // 위와 동일
-			{
-				const HANDLE handle = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(_request.handle));
-
-				OVERLAPPED overlapped{};
-				overlapped.Offset = static_cast<ulong_t>(_request.offset & 0xFFFFFFFFull);
-				overlapped.OffsetHigh = static_cast<ulong_t>(_request.offset >> 32);
-
-				ulong_t written = 0;
-				if (::WriteFile(handle, _request.buffer, static_cast<ulong_t>(_request.length), &written, &overlapped))
-				{
-					_result = static_cast<longlong_t>(written);
-					return true;
-				}
-
-				if (::GetLastError() == ERROR_IO_PENDING)
-				{
-					ulong_t transferred = 0;
-					if (::GetOverlappedResult(handle, &overlapped, &transferred, TRUE))
-					{
-						_result = static_cast<longlong_t>(transferred);
-						return true;
-					}
-				}
-				break;
-			}
 			default:
-				_result = -static_cast<longlong_t>(ERROR_NOT_SUPPORTED); // SendZeroCopy(RIO) 는 reactor 모델에서 불가
+				_result = -static_cast<longlong_t>(ERROR_NOT_SUPPORTED);
 				return true;
 		}
 
 		const int_t error = ::WSAGetLastError();
-		if (error == WSAEWOULDBLOCK) return false; // WSAPoll 대기 필요
+		if (error == WSAEWOULDBLOCK) return false;
 
 		_result = -static_cast<longlong_t>(error);
 
 		return true;
 	}
 
-	bool_t WsaPollEngine::IsWriteDirection(const OpCode _op) noexcept
+	bool_t WsaPollEngine::IsWriteDirection(const RequestKind _requestKind) noexcept
 	{
-		return _op == OpCode::WRITE ||
-				_op == OpCode::SEND ||
-				_op == OpCode::CONNECT ||
-				_op == OpCode::WRITE_FIXED ||
-				_op == OpCode::SEND_FILE ||
-				_op == OpCode::SEND_TO ||
-				_op == OpCode::WAIT_WRITABLE;
+		return _requestKind == RequestKind::WRITE ||
+				_requestKind == RequestKind::SEND ||
+				_requestKind == RequestKind::CONNECT ||
+				_requestKind == RequestKind::WRITE_FIXED ||
+				_requestKind == RequestKind::SEND_FILE ||
+				_requestKind == RequestKind::SEND_TO ||
+				_requestKind == RequestKind::WAIT_WRITABLE;
 	}
 
 	void_t WsaPollEngine::ProcessCancels()
 	{
+		// mutex 를 오래 잡지 않도록 pendingCancels 를 통째로 스왑해 락 밖에서 순회한다.
 		std::vector<void_t*> cancels;
 		{
 			std::lock_guard lock(mutex);
@@ -593,14 +612,14 @@ BEGIN_NS(ne::io)
 		{
 			std::lock_guard lock(mutex);
 			const auto iterator = pending.find(userData);
-			if (iterator == pending.end()) continue;
+			if (iterator == pending.end()) continue; // 이미 완료되었거나 존재하지 않는 요청은 무시.
 
 			const ulonglong_t fd = iterator->second.request.handle;
 			if (iterator->second.isWrite) writeWaiter.erase(fd);
 			else readWaiter.erase(fd);
 			pending.erase(iterator);
 
-			// IocpEngine 의 실제 취소(CancelIoEx) 결과와 대칭되는 코드로 합성한다.
+			// 취소를 합성 완료(ERROR_OPERATION_ABORTED)로 변환해 다음 WaitCompletions() 에서 통지되게 한다.
 			ready.push_back(Completion{ userData, -static_cast<longlong_t>(ERROR_OPERATION_ABORTED) });
 		}
 	}

@@ -1,24 +1,6 @@
 //
 // Created by hscloud on 26. 7. 10.
 //
-// Level 2 — I/O 작업과 데드라인을 경합시키는 콤비네이터. time::Awaitable(SleepFor)은 이미
-// Context::SleepFor 로 결선돼 있고, Io::Awaitable 은 stop_token 취소를 지원하며 Socket/File
-// 공개 API 가 그 stop_token 을 통과시킨다 — 이 둘을 묶어 "I/O 대 데드라인" 경합을 표현한다.
-// 완전 범용 N-way when_any 가 아니라, connect/read/write 타임아웃이라는 구체적 요구에 맞춘
-// 2-way 경합(I/O 작업 하나 vs 타이머 하나)이다.
-//
-// 사용:
-//   auto result = co_await Timeout(context, 5s,
-//       [&](std::stop_token _token) { return socket.Receive(buffer, _token); });
-//   if (!result) { /* 타임아웃 — request_stop() 으로 취소 요청은 이미 보냈다(RIO 경로 제외) */ }
-//   else if (result->IsError()) { /* I/O 자체 에러(취소로 인한 aborted 포함) */ }
-//
-// 안전성: 진 쪽 Task 는 Timeout 이 반환할 때 지역변수 소멸자로 파괴된다 — Task 의 소멸자는
-// 무조건 handle.destroy() 하므로 진행 중(suspend 상태) 프레임이 그대로 파괴되는데, 이게
-// 안전한 이유는 새 안전장치가 아니라 기존 계약 재사용이다(Base/Coroutine/Task.h 계약 참고):
-//   - I/O 가 진 경우: 내부 io::Awaitable 의 소멸자가 완료 전이면 handler->isAbandoned=true 로
-//     소유권을 루프에 넘긴다(UAF 없음) — request_stop() 이 먼저 실제 커널 취소도 시도한다.
-//   - 타이머가 진 경우: 내부 time::Awaitable 의 소멸자가 미발화 타이머를 wheel.Cancel() 한다.
 
 #pragma once
 #include <chrono>
@@ -40,18 +22,27 @@ BEGIN_NS(ne::io)
 		using type = U;
 	};
 
-	// 두 레이서(I/O 쪽/타이머 쪽) 중 먼저 끝난 쪽만 outer 를 깨우게 하는 공유 상태.
-	// 단일 io::Context(단일 스레드) 전제 — 원자적 동기화가 필요 없다(Io/Buffer/BufferPool.h 와
-	// 동일 전제).
+	/**
+	 * @class RaceState
+	 * @brief Timeout() 내부에서 I/O 레이서와 타이머 레이서가 공유하는 경합 상태.
+	 *
+	 * 두 레이서 중 먼저 끝난 쪽이 isDecided 를 세팅하고 outer(Timeout 코루틴 핸들)를 깨운다.
+	 *
+	 * @note 단일 io::Context(단일 스레드) 실행을 전제하므로 원자적 동기화가 필요 없다.
+	 */
 	struct RaceState
 	{
 		std::coroutine_handle<> outer;
 		bool_t isDecided{ false };
 	};
 
-	// Timeout() 이 co_await 하는 대기점 — 호출 시점에 이미 결판났으면(둘 중 하나가 동기
-	// 완료) 그대로 통과하고, 아니면 자신의 handle 을 RaceState 에 남기고 suspend 한다
-	// (나중에 레이서가 깨운다).
+	/**
+	 * @class AwaitDecision
+	 * @brief Timeout() 이 경합 결과를 기다리기 위해 co_await 하는 대기점.
+	 *
+	 * RaceState 가 이미 결정된 상태면 즉시 통과하고, 아니면 자신의 핸들을 RaceState 에 남기고
+	 * suspend 한다. 이후 승리한 레이서가 Post 를 통해 재개시킨다.
+	 */
 	struct AwaitDecision
 	{
 		RaceState& state;
@@ -61,12 +52,6 @@ BEGIN_NS(ne::io)
 		void_t await_resume() const noexcept {}
 	};
 
-	// 승리한 레이서가 outer(Timeout)를 깨우는 방법: 인라인 resume 이 아니라 반드시 Post 로 미룬다.
-	// 인라인으로 outer.resume() 하면 Timeout 이 그 자리에서 co_return 하며 지역변수인 이 racer
-	// Task(ioRacer/timerRacer)를 소멸(handle.destroy())시키는데, 그 racer 는 지금 이 스택에서
-	// 실행 중이므로(resume() 호출이 아직 반환 전) 복귀 시 이미 해제된 프레임을 건드려 use-after-free
-	// (힙 손상)가 된다. Post 는 outer 를 루프 큐에 넣어, 이 racer 스택이 완전히 풀린 뒤 다음
-	// DrainPosted 에서 안전하게 재개하게 한다 — 그때 racer 는 final_suspend 상태라 파괴가 안전하다.
 	template <typename T>
 	ne::Task<void_t> RaceIo(Context& _context, ne::Task<T> _task, RaceState& _state, std::optional<T>& _result)
 	{
@@ -85,15 +70,11 @@ BEGIN_NS(ne::io)
 		if (!_state.isDecided)
 		{
 			_state.isDecided = true;
-			(void_t)_source.request_stop();                       // I/O 쪽 stop_token 이 살아있으면 진행 중인 op 을 커널 취소 요청
-			if (_state.outer) _context.Post(_state.outer); // 인라인 resume 금지 — 위 RaceIo 주석의 UAF 이유와 동일
+			(void_t)_source.request_stop();
+			if (_state.outer) _context.Post(_state.outer);
 		}
 	}
 
-	// _makeTask(stopToken) 로 I/O Task 를 만들어 _duration 과 경합시킨다. I/O 가 먼저 끝나면 그
-	// 결과값을, 타이머가 먼저 끝나면 std::nullopt 를 반환한다.
-	// _makeTask 는 값으로 받는다(코루틴 프레임에 참조를 남기면 안 되므로) — 람다가 캡처한
-	// 참조(소켓/버퍼 등)의 수명은 호출자가 이 Timeout() 완료까지 보장해야 한다.
 	template <typename Fn>
 	[[nodiscard]] ne::Task<std::optional<typename TaskValueType<std::invoke_result_t<Fn, std::stop_token>>::type>> Timeout(Context& _context, std::chrono::milliseconds _duration, Fn _makeTask)
 	{
@@ -104,9 +85,8 @@ BEGIN_NS(ne::io)
 		std::optional<T> result;
 
 		auto ioRacer = RaceIo<T>(_context, _makeTask(source.get_token()), state, result);
-		ioRacer.Resume(); // I/O 제출까지 진행(첫 suspend 지점까지) — 동기 완료면 여기서 이미 decided=true
+		ioRacer.Resume();
 
-		// 타이머는 I/O 가 이미 동기 완료된 게 아닐 때만 등록한다(불필요한 스케줄/취소 방지).
 		if (std::optional<ne::Task<void_t>> timerRacer; !state.isDecided)
 		{
 			timerRacer.emplace(RaceTimer(_context, _duration, state, source));

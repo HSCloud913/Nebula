@@ -79,12 +79,12 @@ TEST(IoContextTest, DispatchesCompletionToCoroutine)
 	const char payload[] = "level1-iocontext-dispatch";
 	const std::size_t length = sizeof(payload) - 1;
 
-	Request write{ .op = OpCode::WRITE, .handle = reinterpret_cast<ulonglong_t>(file), .buffer = const_cast<lpstr_t>(payload), .length = length, .offset = 0 };
+	Request write{ .requestKind = RequestKind::WRITE, .handle = reinterpret_cast<ulonglong_t>(file), .buffer = const_cast<lpstr_t>(payload), .length = length, .offset = 0 };
 	auto writeTask = SubmitOp(context, write);
 	EXPECT_EQ(DriveUntilReady(context, writeTask), static_cast<longlong_t>(length));
 
 	char buffer[64]{};
-	Request read{ .op = OpCode::READ, .handle = reinterpret_cast<ulonglong_t>(file), .buffer = buffer, .length = length, .offset = 0 };
+	Request read{ .requestKind = RequestKind::READ, .handle = reinterpret_cast<ulonglong_t>(file), .buffer = buffer, .length = length, .offset = 0 };
 	auto readTask = SubmitOp(context, read);
 	EXPECT_EQ(DriveUntilReady(context, readTask), static_cast<longlong_t>(length));
 	EXPECT_EQ(std::memcmp(buffer, payload, length), 0);
@@ -107,9 +107,8 @@ TEST(IoContextTest, PostResumesOnLoop)
 TEST(IoContextTest, TimerWheelIntegration)
 {
 	IocpEngine engine;
-	Context context{ engine };
 	ne::time::TimerWheel wheel;
-	context.SetTimerWheel(&wheel);
+	Context context{ engine, &wheel };
 
 	std::atomic<bool_t> fired{ false };
 	(void_t)wheel.Schedule(std::chrono::milliseconds{ 50 }, [&] { fired.store(true, std::memory_order_release); });

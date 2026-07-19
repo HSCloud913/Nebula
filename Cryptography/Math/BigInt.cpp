@@ -203,6 +203,10 @@ BEGIN_NS(ne::crypto)
 	}
 
 
+	// 밀러-라빈(Miller-Rabin) 소수판별법: n-1 = 2^r * dd (dd는 홀수)로 분해한 뒤,
+	// 무작위 증인(witness) a에 대해 a^dd mod n이 1이거나, a^(dd*2^j) mod n이 n-1이 되는 j가 존재하면 "아마도 소수".
+	// 어느 증인에서도 이 조건을 만족하지 못하면 합성수로 확정할 수 있다(페르마 소정리의 확장).
+	// rounds가 많을수록 오판 확률(최대 4^-rounds)이 줄어든다.
 	bool_t BigInt::IsProbablyPrime(int_t _rounds) const
 	{
 		if (*this <= BigInt(1u)) return false;
@@ -278,6 +282,9 @@ BEGIN_NS(ne::crypto)
 		if (_rhs.IsZero()) throw std::domain_error("BigInt division by zero");
 		if (_lhs < _rhs) return std::make_pair(BigInt(), _lhs);
 
+		// 이진 long division(shift-and-subtract, restoring division):
+		// 피제수의 최상위 비트부터 한 비트씩 나머지(r)에 밀어 넣고, r이 나눗수(_rhs) 이상이면 빼면서 몫의 해당 비트를 1로 세운다.
+		// 필기 나눗셈을 10진법이 아닌 2진법으로 수행하는 것과 동일한 원리.
 		BigInt q, r;
 		for (int_t i = static_cast<int_t>(_lhs.BitLength()) - 1; i >= 0; --i)
 		{
@@ -304,6 +311,9 @@ BEGIN_NS(ne::crypto)
 		return std::make_pair(std::move(q), std::move(r));
 	}
 
+	// square-and-multiply(반복제곱) 방식의 모듈러 거듭제곱: 지수를 이진수로 보고 최하위 비트부터 순회하며
+	// base를 매 비트마다 제곱해 나가고, 해당 비트가 1일 때만 결과에 곱한다.
+	// O(exp) 대신 O(log exp)번의 곱셈으로 거듭제곱을 계산할 수 있다(RSA 등에서 큰 지수를 다루기 위한 핵심 기법).
 	BigInt BigInt::ModPow(BigInt _base, BigInt _exp, const BigInt& _mod)
 	{
 		BigInt result(1u);
@@ -319,6 +329,10 @@ BEGIN_NS(ne::crypto)
 		return result;
 	}
 
+	// 확장 유클리드 알고리즘(Extended Euclidean Algorithm): 유클리드 호제법으로 gcd를 구하는 과정에서
+	// 동시에 베주 항등식(Bezout's identity) s*_lhs + t*_rhs = gcd(_lhs, _rhs)의 계수 s를 추적한다.
+	// gcd가 1이면 s가 곧 _lhs의 모듈러 역원이 된다. BigInt는 부호 없는 크기만 저장하므로
+	// s의 실제 부호을 isOldSNegative/isSNegative 플래그로 별도 관리해 뺄셈 방향(old_s-qs vs qs-old_s)을 올바르게 선택한다.
 	BigInt BigInt::ModInverse(const BigInt& _lhs, const BigInt& _rhs)
 	{
 		BigInt old_r = _lhs, r = _rhs;

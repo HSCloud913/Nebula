@@ -27,6 +27,8 @@ static constexpr ne::byte_t InvSbox[256] = { 0x52, 0x09, 0x6a, 0xd5, 0x30, 0x36,
 											0x60, 0x51, 0x7f, 0xa9, 0x19, 0xb5, 0x4a, 0x0d, 0x2d, 0xe5, 0x7a, 0x9f, 0x93, 0xc9, 0x9c, 0xef, 0xa0, 0xe0, 0x3b, 0x4d, 0xae, 0x2a, 0xf5, 0xb0, 0xc8, 0xeb,
 											0xbb, 0x3c, 0x83, 0x53, 0x99, 0x61, 0x17, 0x2b, 0x04, 0x7e, 0xba, 0x77, 0xd6, 0x26, 0xe1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0c, 0x7d };
 
+// Rcon(라운드 상수): GF(2^8)에서 x^i를 기약다항식 0x11b로 축소한 값들.
+// 키 확장 시 매 keyWordLength번째 워드에 XOR되어, 동일한 키 워드에서 라운드마다 서로 다른 값이 나오게 한다(대칭성 제거).
 static constexpr ne::byte_t Rcon[11] = { 0x00, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36 };
 
 struct AESContext
@@ -39,8 +41,12 @@ using Block = std::array<ne::byte_t, 16>;
 
 
 
+// xtime: GF(2^8)에서 x2(즉 곱하기 2) 연산. 왼쪽으로 1비트 시프트한 뒤, 최상위 비트가 넘쳤다면(오버플로)
+// AES의 기약다항식 x^8+x^4+x^3+x+1(=0x11b)로 모듈러 축소하기 위해 0x1b를 XOR한다(최상위 비트는 이미 시프트로 잘려나감).
 static ne::byte_t xtime(const ne::byte_t _a) { return static_cast<ne::byte_t>((_a << 1) ^ ((_a & 0x80) ? 0x1b : 0x00)); }
 
+// gmul: GF(2^8) 유한체에서의 곱셈(러시안 농부 곱셈). b의 각 비트에 대해 필요하면 현재 a를 결과에 XOR하고,
+// a는 xtime으로 2를 곱해가며 다음 자리로 진행한다(일반 정수 곱셈의 "덧셈 대신 XOR, 자리올림 대신 기약다항식 축소" 버전).
 static ne::byte_t gmul(ne::byte_t _a, ne::byte_t _b)
 {
 	ne::byte_t p = 0;
@@ -75,14 +81,18 @@ static void KeyExpansion(AESContext& _context, const ne::byte_t* _key, const int
 		temp[2] = w[(i - 1) * 4 + 2];
 		temp[3] = w[(i - 1) * 4 + 3];
 
+		// 키 길이(워드 단위) 경계에 도달할 때마다 RotWord(1바이트 순환), SubWord(S-box 치환), Rcon XOR을 적용해
+		// 확장된 키 워드가 원본 키와 선형적으로 유사해지지 않도록 매 라운드 다른 값을 주입한다.
 		if (i % _keyWordLength == 0)
 		{
-			ne::byte_t t = temp[0];
+			const ne::byte_t t = temp[0];
 			temp[0] = Sbox[temp[1]] ^ Rcon[i / _keyWordLength];
 			temp[1] = Sbox[temp[2]];
 			temp[2] = Sbox[temp[3]];
 			temp[3] = Sbox[t];
 		}
+		// AES-256(keyWordLength=8) 한정 추가 규칙: 8워드 주기의 중간(오프셋 4)에서도 SubWord만 한 번 더 적용해
+		// 확산을 보강한다(키가 길어 라운드 수 대비 확장 주기가 길어지는 것을 보완).
 		else if (_keyWordLength > 6 && i % _keyWordLength == 4)
 		{
 			temp[0] = Sbox[temp[0]];
@@ -149,6 +159,8 @@ static void InvShiftRows(Block& _state)
 	_state[15] = t;
 }
 
+// 각 열을 고정 행렬 [02 03 01 01; 01 02 03 01; 01 01 02 03; 03 01 01 02]과 GF(2^8) 상에서 곱하는 연산.
+// 이 행렬은 MDS(Maximum Distance Separable) 성질을 가져 바이트 간 확산(diffusion)을 최대화한다.
 static void MixColumns(Block& _state)
 {
 	for (int c = 0; c < 4; ++c)
@@ -163,6 +175,8 @@ static void MixColumns(Block& _state)
 	}
 }
 
+// MixColumns의 역행렬 [0e 0b 0d 09; ...]을 곱한다. 이 계수들은 GF(2^8)에서 MixColumns 행렬의 역원이므로
+// InvMixColumns(MixColumns(x)) == x가 성립한다.
 static void InvMixColumns(Block& _state)
 {
 	for (int c = 0; c < 4; ++c)

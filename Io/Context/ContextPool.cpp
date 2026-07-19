@@ -22,7 +22,7 @@ BEGIN_NS(ne::io)
 	ContextPool::ContextPool(const EngineType _engineType, const std::size_t _size)
 	{
 		const std::size_t size = _size > 0 ? _size : std::max<std::size_t>(1, std::thread::hardware_concurrency());
-		workers.reserve(size); // Context 는 heap 상주라 주소가 안정적이지만, thread 멤버가 realloc 로 이동되지 않게 미리 확보.
+		workers.reserve(size);
 
 		for (std::size_t i = 0; i < size; ++i)
 		{
@@ -47,9 +47,9 @@ BEGIN_NS(ne::io)
 			}
 #endif
 			worker.timerWheel = std::make_unique<ne::time::TimerWheel>();
-			worker.context = std::make_unique<Context>(*worker.engine, worker.timerWheel.get()); // 워커마다 자기 wheel — SleepFor/Timeout 전제
+			worker.context = std::make_unique<Context>(*worker.engine, worker.timerWheel.get());
 
-			workers.push_back(std::move(worker));                   // thread 는 아직 비었으므로 이동 안전
+			workers.push_back(std::move(worker));
 		}
 	}
 
@@ -62,8 +62,6 @@ BEGIN_NS(ne::io)
 		if (isRunning) return;
 		isRunning = true;
 
-		// Context* 를 값으로 캡처(heap 상주라 안정적). Run() 은 Stop() 까지 블록한다. 스폰 직후
-		// Stop() 이 먼저 도착하는 경합은 Context 가 isStopRequested 로 흡수한다(Context.cpp 참고).
 		for (auto& worker : workers)
 		{
 			worker.thread = std::thread([context = worker.context.get()] { context->Start(); });
@@ -75,10 +73,10 @@ BEGIN_NS(ne::io)
 		if (!isRunning) return;
 		isRunning = false;
 
-		for (const auto& worker : workers) worker.context->Stop(); // 먼저 전부 정지 요청(Wake 로 각 루프를 깨움)
+		for (const auto& worker : workers) worker.context->Stop();
 		for (auto& worker : workers)
 		{
-			if (worker.thread.joinable()) worker.thread.join(); // 그 다음 join — 종료를 병렬로 진행
+			if (worker.thread.joinable()) worker.thread.join();
 		}
 	}
 

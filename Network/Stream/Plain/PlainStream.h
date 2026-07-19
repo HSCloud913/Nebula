@@ -74,7 +74,7 @@ BEGIN_NS(ne::network)
 
 		// 소켓→파일 수신(SendFile 대칭). [현재 v1] Io 레이어에 splice 류 zero-copy opcode가 없어
 		// Receive + io::File::Write 반복(non-zero-copy) 으로 구현한다 — zero-copy 가 필요해지면 Io
-		// 엔진에 전용 OpCode 를 추가하는 별도 작업으로 확장한다.
+		// 엔진에 전용 RequestKind 를 추가하는 별도 작업으로 확장한다.
 		// _file 은 io::File::Write 로 비동기 기록해야 하므로 raw 핸들이 아니라 이미 열린 io::File 을
 		// 참조로 받는다(File 은 Open() 으로만 생성되는 소유 타입이라 raw handle 을 감쌀 방법이 없다).
 		// 완료까지 호출자가 _file 을 살려둬야 한다(다른 op 들과 동일 계약).

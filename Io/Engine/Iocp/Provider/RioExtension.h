@@ -1,15 +1,6 @@
 //
 // Created by hscloud on 26. 7. 7.
 //
-// Winsock Registered I/O (RIO) 확장 선언.
-//
-// RIO 함수는 링크 심볼이 아니라 런타임에 WSAIoctl(SIO_GET_MULTIPLE_EXTENSION_FUNCTION_POINTERS,
-// WSAID_MULTIPLE_RIO) 로 획득하는 확장 테이블이다. 일부 툴체인(예: CLion 번들 mingw-w64)의
-// mswsock.h 는 RIO 타입을 정의하지 않으므로, ABI 가 고정된 이 선언을 직접 제공한다.
-// Windows SDK/MSVC 에 이미 정의돼 있으면(WSAID_MULTIPLE_RIO 존재) 이 블록은 skip 된다.
-//
-// (probe 로 검증: WSASocketW(WSA_FLAG_REGISTERED_IO) + WSAIoctl 이 112바이트 전체 테이블을
-//  non-null 로 반환함을 이 툴체인에서 확인)
 
 #pragma once
 
@@ -83,12 +74,11 @@ typedef RIO_CQ (WINAPI*LPFN_RIOCREATECOMPLETIONQUEUE)(DWORD, PRIO_NOTIFICATION_C
 typedef RIO_RQ (WINAPI*LPFN_RIOCREATEREQUESTQUEUE)(SOCKET, ULONG, ULONG, ULONG, ULONG, RIO_CQ, RIO_CQ, PVOID);
 typedef ULONG (WINAPI*LPFN_RIODEQUEUECOMPLETION)(RIO_CQ, PRIORESULT, ULONG);
 typedef VOID (WINAPI*LPFN_RIODEREGISTERBUFFER)(RIO_BUFFERID);
-typedef INT (WINAPI*LPFN_RIONOTIFY)(RIO_CQ); // 반환 0(ERROR_SUCCESS)=성공
+typedef INT (WINAPI*LPFN_RIONOTIFY)(RIO_CQ);
 typedef RIO_BUFFERID (WINAPI*LPFN_RIOREGISTERBUFFER)(PCHAR, DWORD);
 typedef BOOL (WINAPI*LPFN_RIORESIZECOMPLETIONQUEUE)(RIO_CQ, DWORD);
 typedef BOOL (WINAPI*LPFN_RIORESIZEREQUESTQUEUE)(RIO_RQ, DWORD, DWORD);
 
-// 멤버 순서는 SDK 레이아웃과 정확히 일치해야 한다 — ws2_32 이 offset 으로 채운다.
 typedef struct _RIO_EXTENSION_FUNCTION_TABLE
 {
 	DWORD cbSize;
@@ -112,8 +102,6 @@ typedef struct _RIO_EXTENSION_FUNCTION_TABLE
 
 #endif // WSAID_MULTIPLE_RIO
 
-// mswsock.h 가 WSAID_MULTIPLE_RIO 는 정의하면서(즉 위 블록은 skip) 이 IOCTL 상수는 빠뜨린 SDK
-// 조합이 실측 확인됨 — WSAID_MULTIPLE_RIO 유무와 무관하게 독립적으로 폴백을 둔다.
 #ifndef SIO_GET_MULTIPLE_EXTENSION_FUNCTION_POINTERS
 #define SIO_GET_MULTIPLE_EXTENSION_FUNCTION_POINTERS _WSAIORW(IOC_WS2, 36)
 #endif

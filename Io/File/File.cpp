@@ -18,7 +18,6 @@
 
 namespace
 {
-	// file_t(HANDLE/int)를 Request.handle(64비트)로 정규화.
 	[[nodiscard]] ne::ulonglong_t ToHandleValue(const ne::io::file_t _handle) noexcept
 	{
 #if defined(_WIN32)
@@ -61,7 +60,6 @@ BEGIN_NS(ne::io)
 				break;
 		}
 
-		// FILE_FLAG_OVERLAPPED: IOCP 비동기 I/O 전제.
 		const file_t raw = ::CreateFileA(path.c_str(), access, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, disposition, FILE_FLAG_OVERLAPPED, nullptr);
 		if (raw == INVALID_HANDLE_VALUE)
 			return IoResult<File>::Error(IoError{ ne::OsError{ ne::LastOsError() } }.Context("[File/Open]"));
@@ -92,7 +90,7 @@ BEGIN_NS(ne::io)
 
 	ne::Result<void_t, IoError> File::Close()
 	{
-		handle = FileHandle{}; // 기존 핸들 silently close 후 무효화
+		handle = FileHandle{};
 		return ne::Result<void_t, IoError>::Ok();
 	}
 
@@ -100,14 +98,14 @@ BEGIN_NS(ne::io)
 
 	ne::Task<IoResult<std::size_t>> File::Read(std::span<ne::byte_t> _buffer, const ulonglong_t _offset, std::stop_token _stopToken)
 	{
-		const Request request{ .op = OpCode::READ, .handle = ToHandleValue(handle.Get()), .buffer = _buffer.data(), .length = _buffer.size(), .offset = _offset };
+		const Request request{ .requestKind = RequestKind::READ, .handle = ToHandleValue(handle.Get()), .buffer = _buffer.data(), .length = _buffer.size(), .offset = _offset };
 
 		co_return co_await Awaitable{ *context, request, std::move(_stopToken) };
 	}
 
 	ne::Task<IoResult<std::size_t>> File::Write(std::span<const ne::byte_t> _buffer, const ulonglong_t _offset, std::stop_token _stopToken)
 	{
-		const Request request{ .op = OpCode::WRITE, .handle = ToHandleValue(handle.Get()), .buffer = const_cast<ne::byte_t*>(_buffer.data()), .length = _buffer.size(), .offset = _offset };
+		const Request request{ .requestKind = RequestKind::WRITE, .handle = ToHandleValue(handle.Get()), .buffer = const_cast<ne::byte_t*>(_buffer.data()), .length = _buffer.size(), .offset = _offset };
 
 		co_return co_await Awaitable{ *context, request, std::move(_stopToken) };
 	}
@@ -115,14 +113,14 @@ BEGIN_NS(ne::io)
 
 	ne::Task<IoResult<std::size_t>> File::Readv(const BufferChain& _chain, const ulonglong_t _offset, std::stop_token _stopToken)
 	{
-		const Request request{ .op = OpCode::READ, .handle = ToHandleValue(handle.Get()), .length = _chain.TotalSize(), .offset = _offset, .chain = &_chain };
+		const Request request{ .requestKind = RequestKind::READ, .handle = ToHandleValue(handle.Get()), .length = _chain.TotalSize(), .offset = _offset, .chain = &_chain };
 
 		co_return co_await Awaitable{ *context, request, std::move(_stopToken) };
 	}
 
 	ne::Task<IoResult<std::size_t>> File::Writev(const BufferChain& _chain, const ulonglong_t _offset, std::stop_token _stopToken)
 	{
-		const Request request{ .op = OpCode::WRITE, .handle = ToHandleValue(handle.Get()), .length = _chain.TotalSize(), .offset = _offset, .chain = &_chain };
+		const Request request{ .requestKind = RequestKind::WRITE, .handle = ToHandleValue(handle.Get()), .length = _chain.TotalSize(), .offset = _offset, .chain = &_chain };
 
 		co_return co_await Awaitable{ *context, request, std::move(_stopToken) };
 	}

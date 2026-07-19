@@ -6,8 +6,6 @@
 #include "Base/Type.h"
 
 BEGIN_NS(ne)
-	// JsonObject/JsonArray 는 JsonValue 를 원소로 갖는다(불완전형 허용). Json.h 의 인라인 Stringify 가
-	// 완전한 JsonValue 를 필요로 하므로, 순환 include 를 피하려 공용 typedef 를 여기에 둔다(Json.h 는 이 헤더를 include).
 	class JsonValue;
 	typedef std::map<string_t, JsonValue> JsonObject;
 	typedef std::vector<JsonValue> JsonArray;
@@ -29,6 +27,15 @@ BEGIN_NS(ne)
 
 	class Json;
 
+	/**
+	 * @class JsonValue
+	 * @brief JSON 값 하나(null/bool/숫자/문자열/객체/배열)를 담는 variant 기반 래퍼입니다.
+	 *
+	 * 실제 타입은 JsonType 으로 구분되며, 숫자는 부호/크기별로 NUMBER/POSITIVE_NUMBER/
+	 * LARGE_NUMBER/POSITIVE_LARGE_NUMBER/REAL 다섯 종류로 세분화되어 있습니다. Is*() 로
+	 * 현재 타입을 확인한 뒤 As*() 로 값을 꺼내며, 타입이 다르면 std::bad_variant_access 가
+	 * 발생합니다.
+	 */
 	class JsonValue final
 	{
 		friend class Json;
@@ -196,6 +203,7 @@ BEGIN_NS(ne)
 		}
 
 	public:
+		/** @brief 이 값이 객체(OBJECT)일 때 키 목록을 반환합니다. 객체가 아니면 빈 벡터를 반환합니다. */
 		[[nodiscard]] std::vector<string_t> ObjectKeys() const;
 
 	protected:
@@ -203,17 +211,30 @@ BEGIN_NS(ne)
 		// 중첩 깊이를 제한한다. 초과 시 무효(INVALID) JsonValue 로 실패시킨다.
 		static constexpr int_t MaxParseDepth = 256;
 
+		/** @brief 재귀 하강 파서의 진입점입니다. _depth 가 MaxParseDepth 를 넘으면 무효 값으로 실패시킵니다. */
 		static JsonValue Parse(lpcstr_t* _data, int_t _depth = 0);
+
+		/** @brief 부호 없는 정수부 숫자를 파싱합니다. 오버플로 시 _isOverflow 를 true 로 세팅합니다. */
 		static ulonglong_t ParseNumber(lpcstr_t* _data, bool_t& _isOverflow);
+
+		/** @brief 소수점 이하 자릿수를 0.xxx 형태의 실수로 파싱합니다. */
 		static double_t ParseReal(lpcstr_t* _data);
+
+		/** @brief 여는 큰따옴표 다음부터 닫는 큰따옴표까지 이스케이프(\\uXXXX 포함)를 해석해 문자열로 파싱합니다. */
 		static bool_t ParseString(lpcstr_t* _data, string_t& _str);
 
 	public:
+		/** @brief 이 값을 JSON 문자열로 직렬화합니다. _isPrettyPrint 가 true 면 들여쓰기와 줄바꿈을 포함합니다. */
 		[[nodiscard]] string_t Stringify(const bool_t _isPrettyPrint = false) const;
 
 	private:
+		/** @brief 들여쓰기 깊이에 해당하는 공백 문자열을 만듭니다. */
 		static string_t Indent(size_t _depth);
+
+		/** @brief 제어문자/특수문자를 이스케이프 처리해 문자열을 JSON 문자열 리터럴로 만듭니다. */
 		static string_t StringifyString(const string_t& _str);
+
+		/** @brief Stringify() 의 재귀 구현체입니다. _indentDepth 가 0이면 압축, 0보다 크면 들여쓰기 출력을 합니다. */
 		[[nodiscard]] string_t OnStringify(const size_t _indentDepth) const;
 	};
 

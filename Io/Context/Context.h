@@ -1,12 +1,6 @@
 //
 // Created by hscloud on 26. 7. 8.
 //
-// Level 1 — Executor + 이벤트 루프. 단일 스레드 전제(thread-per-core 는 이후 확장).
-// 엔진을 구동해 완료를 회수하고, 각 완료의 userData(CompletionHandler*)를 통해 대기 중인
-// 코루틴을 resume 한다. 다른 스레드가 넘긴 작업은 Post() → Wake() 로 루프에 전달한다.
-//
-// 핵심 원칙(스펙 3): 코루틴이 어느 컨텍스트에 속하는지 항상 명확해야 하며, 코어 간 이동은
-// Post() 로만 명시적으로 허용한다(암묵적 마이그레이션 금지).
 
 #pragma once
 #include <atomic>
@@ -19,12 +13,15 @@
 #include "Time/Coroutine/Awaitable.h"
 
 BEGIN_NS(ne::io)
-	// 완료 디스패치 규약. 엔진에 제출하는 Request.userData 는 이 구조체를 가리킨다 —
-	// 루프가 완료 시 result 를 채우고(completed=true) handle 을 resume 한다.
-	//
-	// mid-flight 수명 안전(스펙 4·Task.h 경고): 진행 중 I/O 상태로 코루틴 프레임이 파괴되면
-	// Level 2 awaitable 이 이 핸들러를 heap 에 두고 abandoned=true 로 표시해 소유권을 루프에 넘긴다.
-	// 루프는 완료 회수 시 abandoned 면 resume 없이 delete 하여 use-after-free 를 막는다.
+	/**
+	 * @class CompletionHandler
+	 * @brief 엔진에 제출한 I/O 요청 하나의 완료를 코루틴 재개로 연결하는 디스패치 단위.
+	 *
+	 * 엔진에 넘기는 Request.userData 는 이 구조체를 가리킨다. Context 의 이벤트 루프가 완료를
+	 * 회수하면 result 를 채우고 isCompleted 를 세운 뒤 handle 을 resume 한다. 진행 중인 I/O
+	 * 상태에서 코루틴 프레임이 먼저 파괴되면 isAbandoned 로 표시되어, 소유권이 루프로 넘어가고
+	 * 루프는 resume 대신 delete 로 정리한다.
+	 */
 	struct CompletionHandler
 	{
 		std::coroutine_handle<> handle{};
@@ -33,6 +30,15 @@ BEGIN_NS(ne::io)
 		bool_t isAbandoned{ false };
 	};
 
+	/**
+	 * @class Context
+	 * @brief 단일 스레드 위에서 구동되는 executor 겸 I/O 이벤트 루프.
+	 *
+	 * 엔진을 구동해 완료를 회수하고, 각 완료의 userData(CompletionHandler*)를 통해 대기 중인
+	 * 코루틴을 resume 한다. 타이머 휠이 있으면 매 루프에서 Tick 하며, 다른 스레드가 Post() 로
+	 * 넘긴 작업은 Wake() 로 루프를 깨워 다음 iteration 에서 처리한다. 코루틴은 자신이 속한
+	 * Context 스레드 위에서만 구동되어야 하며, 코어 간 이동은 Post() 로만 명시적으로 이뤄진다.
+	 */
 	class Context
 	{
 	public:
@@ -42,39 +48,26 @@ BEGIN_NS(ne::io)
 		NEBULA_NON_COPYABLE_MOVABLE(Context)
 
 	private:
-		static constexpr int_t MaxBatch = 128; // WaitCompletions 한 번에 회수할 완료 상한
+		static constexpr int_t MaxBatch = 128;
 
 	private:
 		IEngine& engine;
-		ne::time::TimerWheel* timerWheel;                   // optional — 있으면 루프가 Tick/타임아웃 반영
-		std::mutex postMutex;                               // postedHandles 보호(다른 스레드 Post)
-		std::vector<std::coroutine_handle<>> postedHandles; // Post 로 넘어와 다음 루프에서 resume 될 작업
+		ne::time::TimerWheel* timerWheel;
+		std::mutex postMutex;
+		std::vector<std::coroutine_handle<>> postedHandles;
 		std::atomic<bool_t> isRunning{ false };
-		// Run() 이 실제로 시작하기 전에(다른 스레드가 스폰 직후 곧장) Stop() 이 먼저 도착하면,
-		// Run() 진입부의 running=true 세팅이 그 Stop() 을 덮어써 무기한 대기에 빠질 수 있다 —
-		// 그 경합을 잡기 위한 플래그(자세한 내용은 Context.cpp 참고).
 		std::atomic<bool_t> isStopRequested{ false };
 
 	public:
-		// 완료/타이머/Post 작업이 소진되도록 Stop() 까지 계속 루프한다.
 		void_t Start();
-		// Start() 루프를 종료시킨다(다음 iteration 에서 빠져나옴).
 		void_t Stop() noexcept;
 
-		// 한 번의 루프: 완료를 _timeout 동안 대기·디스패치하고 타이머 Tick + Post 작업을 처리한다.
-		// 완료를 하나라도 디스패치했으면 true.
 		bool_t RunOnce(std::chrono::milliseconds _timeout);
-		// 다른 스레드(또는 콜백)에서 코루틴을 이 컨텍스트 루프에 재개 예약한다 — Wake() 로 루프를 깨운다.
 		void_t Post(std::coroutine_handle<> _handle);
 
-		// time::Awaitable(SleepFor) 을 감싸 wheel 핸들 관리를 감춘다 — co_await context.SleepFor(500ms).
-		// 선결조건: SetTimerWheel() 로 wheel 이 먼저 물려 있어야 한다(안 그러면 assert — 결선을 잊은
-		// 프로그래머 실수이지 런타임에 값으로 복구할 상황이 아니다). RunOnce 가 이미 그 wheel 을 Tick 하고
-		// 있으므로(EffectiveTimeout), 이 래퍼는 Schedule/Cancel 만 새로 얹는다.
 		[[nodiscard]] ne::time::Awaitable SleepFor(std::chrono::milliseconds _duration) const noexcept;
 
 	private:
-		// timerWheel 이 있으면 다음 만료까지, 없으면 _timeout 을 그대로 유효 타임아웃으로 계산.
 		[[nodiscard]] std::chrono::milliseconds EffectiveTimeout(std::chrono::milliseconds _timeout) const noexcept;
 		void_t DrainPosted();
 

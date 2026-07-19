@@ -40,10 +40,6 @@ BEGIN_NS(ne::io)
 
 
 
-	/*--------------------------------------------------*/
-
-
-
 	BufferPool::BufferPool(std::vector<ne::byte_t>&& _storage, RegisteredBuffer&& _buffer, const std::size_t _slotSize, const std::size_t _slotCount) noexcept
 		: storage(std::move(_storage))
 		, buffer(std::move(_buffer))

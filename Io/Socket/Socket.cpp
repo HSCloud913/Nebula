@@ -103,12 +103,11 @@ BEGIN_NS(ne::io)
 
 	ne::Task<IoResult<Socket>> Socket::Accept(const bool_t _isRegisteredIo, std::stop_token _stopToken)
 	{
-		const Request request{ .op = OpCode::ACCEPT, .handle = static_cast<ulonglong_t>(handle.Get()), .isRegisteredIo = _isRegisteredIo };
+		const Request request{ .requestKind = RequestKind::ACCEPT, .handle = static_cast<ulonglong_t>(handle.Get()), .isRegisteredIo = _isRegisteredIo };
 
 		auto result = co_await Awaitable{ *context, request, std::move(_stopToken) };
 		if (result.IsError()) co_return IoResult<Socket>::Error(std::move(result.Error()).Context("[Socket/Accept]"));
 
-		// 성공 시 완료 result 값은 accept 소켓 핸들. 반환 소켓의 RIO 여부는 요청한 값과 일치시킨다.
 		co_return Attach(static_cast<socket_t>(result.Value()), *context, _isRegisteredIo);
 	}
 
@@ -120,7 +119,7 @@ BEGIN_NS(ne::io)
 		int_t addressLength = 0;
 		if (!ParseAddress(_ip, _port, address, addressLength)) co_return ne::Result<void_t, IoError>::Error(IoError{ IoErrorKind::INVALID_BUFFER, "invalid ip" }.Context("[Socket/Connect]"));
 
-		const Request request{ .op = OpCode::CONNECT, .handle = static_cast<ulonglong_t>(handle.Get()), .address = &address, .addressLength = addressLength };
+		const Request request{ .requestKind = RequestKind::CONNECT, .handle = static_cast<ulonglong_t>(handle.Get()), .address = &address, .addressLength = addressLength };
 
 		if (auto result = co_await Awaitable{ *context, request, std::move(_stopToken) }; result.IsError())
 			co_return ne::Result<void_t, IoError>::Error(std::move(result.Error()).Context("[Socket/Connect]"));
@@ -132,14 +131,14 @@ BEGIN_NS(ne::io)
 
 	ne::Task<IoResult<std::size_t>> Socket::Receive(std::span<ne::byte_t> _buffer, std::stop_token _stopToken)
 	{
-		const Request request{ .op = OpCode::RECEIVE, .handle = static_cast<ulonglong_t>(handle.Get()), .buffer = _buffer.data(), .length = _buffer.size() };
+		const Request request{ .requestKind = RequestKind::RECEIVE, .handle = static_cast<ulonglong_t>(handle.Get()), .buffer = _buffer.data(), .length = _buffer.size() };
 
 		co_return co_await Awaitable{ *context, request, std::move(_stopToken) };
 	}
 
 	ne::Task<IoResult<std::size_t>> Socket::Send(std::span<const ne::byte_t> _buffer, std::stop_token _stopToken)
 	{
-		const Request request{ .op = OpCode::SEND, .handle = static_cast<ulonglong_t>(handle.Get()), .buffer = const_cast<ne::byte_t*>(_buffer.data()), .length = _buffer.size() };
+		const Request request{ .requestKind = RequestKind::SEND, .handle = static_cast<ulonglong_t>(handle.Get()), .buffer = const_cast<ne::byte_t*>(_buffer.data()), .length = _buffer.size() };
 
 		co_return co_await Awaitable{ *context, request, std::move(_stopToken) };
 	}
@@ -147,14 +146,14 @@ BEGIN_NS(ne::io)
 
 	ne::Task<IoResult<std::size_t>> Socket::Receivev(const BufferChain& _chain, std::stop_token _stopToken)
 	{
-		const Request request{ .op = OpCode::RECEIVE, .handle = static_cast<ulonglong_t>(handle.Get()), .length = _chain.TotalSize(), .chain = &_chain };
+		const Request request{ .requestKind = RequestKind::RECEIVE, .handle = static_cast<ulonglong_t>(handle.Get()), .length = _chain.TotalSize(), .chain = &_chain };
 
 		co_return co_await Awaitable{ *context, request, std::move(_stopToken) };
 	}
 
 	ne::Task<IoResult<std::size_t>> Socket::Sendv(const BufferChain& _chain, std::stop_token _stopToken)
 	{
-		const Request request{ .op = OpCode::SEND, .handle = static_cast<ulonglong_t>(handle.Get()), .length = _chain.TotalSize(), .chain = &_chain };
+		const Request request{ .requestKind = RequestKind::SEND, .handle = static_cast<ulonglong_t>(handle.Get()), .length = _chain.TotalSize(), .chain = &_chain };
 
 		co_return co_await Awaitable{ *context, request, std::move(_stopToken) };
 	}
@@ -162,7 +161,7 @@ BEGIN_NS(ne::io)
 
 	ne::Task<ne::Result<void_t, IoError>> Socket::WaitReadable(std::stop_token _stopToken)
 	{
-		const Request request{ .op = OpCode::WAIT_READABLE, .handle = static_cast<ulonglong_t>(handle.Get()) };
+		const Request request{ .requestKind = RequestKind::WAIT_READABLE, .handle = static_cast<ulonglong_t>(handle.Get()) };
 
 		if (auto result = co_await Awaitable{ *context, request, std::move(_stopToken) }; result.IsError())
 			co_return ne::Result<void_t, IoError>::Error(std::move(result.Error()).Context("[Socket/WaitReadable]"));
@@ -172,7 +171,7 @@ BEGIN_NS(ne::io)
 
 	ne::Task<ne::Result<void_t, IoError>> Socket::WaitWritable(std::stop_token _stopToken)
 	{
-		const Request request{ .op = OpCode::WAIT_WRITABLE, .handle = static_cast<ulonglong_t>(handle.Get()) };
+		const Request request{ .requestKind = RequestKind::WAIT_WRITABLE, .handle = static_cast<ulonglong_t>(handle.Get()) };
 
 		if (auto result = co_await Awaitable{ *context, request, std::move(_stopToken) }; result.IsError())
 			co_return ne::Result<void_t, IoError>::Error(std::move(result.Error()).Context("[Socket/WaitWritable]"));
@@ -183,17 +182,15 @@ BEGIN_NS(ne::io)
 
 	ne::Task<IoResult<std::size_t>> Socket::SendZeroCopy(const BufferHandle _handle, std::span<const ne::byte_t> _buffer, std::stop_token _stopToken)
 	{
-		// 제출 전에 값으로 실패시켜 non-RIO 소켓의 모호한 OS 에러를 피한다.
 		if (!context->Engine().Supports(Capability::SEND_MEM_ZERO_COPY))
 			co_return IoResult<std::size_t>::Error(IoError{ IoErrorKind::UNSUPPORTED, "engine does not support zero-copy send" }.Context("[Socket/SendZeroCopy]"));
 
 #if defined(_WIN32)
-		// Windows(RIO): 이 소켓이 WSA_FLAG_REGISTERED_IO 로 만들어져 있어야 한다(Create/Accept 의 opt-in).
 		if (!isRegisteredIo)
 			co_return IoResult<std::size_t>::Error(IoError{ IoErrorKind::UNSUPPORTED, "socket is not registered-IO (use Create(..., true) or Accept(true))" }.Context("[Socket/SendZeroCopy]"));
 #endif
 
-		const Request request{ .op = OpCode::SEND_ZERO_COPY, .handle = static_cast<ulonglong_t>(handle.Get()), .buffer = const_cast<ne::byte_t*>(_buffer.data()), .length = _buffer.size(),
+		const Request request{ .requestKind = RequestKind::SEND_ZERO_COPY, .handle = static_cast<ulonglong_t>(handle.Get()), .buffer = const_cast<ne::byte_t*>(_buffer.data()), .length = _buffer.size(),
 								.bufferId = _handle.value };
 
 		co_return co_await Awaitable{ *context, request, std::move(_stopToken) };
@@ -207,7 +204,7 @@ BEGIN_NS(ne::io)
 		const ulonglong_t auxHandle = static_cast<ulonglong_t>(_file);
 #endif
 
-		const Request request{ .op = OpCode::SEND_FILE, .handle = static_cast<ulonglong_t>(handle.Get()), .length = _length, .offset = _offset, .auxHandle = auxHandle };
+		const Request request{ .requestKind = RequestKind::SEND_FILE, .handle = static_cast<ulonglong_t>(handle.Get()), .length = _length, .offset = _offset, .auxHandle = auxHandle };
 
 		co_return co_await Awaitable{ *context, request, std::move(_stopToken) };
 	}
@@ -219,7 +216,7 @@ BEGIN_NS(ne::io)
 		int_t addressLength = 0;
 		if (!ParseAddress(_ip, _port, address, addressLength)) co_return IoResult<std::size_t>::Error(IoError{ IoErrorKind::INVALID_BUFFER, "invalid ip" }.Context("[Socket/SendTo]"));
 
-		const Request request{ .op = OpCode::SEND_TO, .handle = static_cast<ulonglong_t>(handle.Get()), .buffer = const_cast<ne::byte_t*>(_buffer.data()), .length = _buffer.size(), .address = &address,
+		const Request request{ .requestKind = RequestKind::SEND_TO, .handle = static_cast<ulonglong_t>(handle.Get()), .buffer = const_cast<ne::byte_t*>(_buffer.data()), .length = _buffer.size(), .address = &address,
 								.addressLength = addressLength };
 
 		co_return co_await Awaitable{ *context, request, std::move(_stopToken) };
@@ -230,7 +227,7 @@ BEGIN_NS(ne::io)
 		sockaddr_storage fromAddress{};
 		auto fromAddressLength = static_cast<int_t>(sizeof(fromAddress));
 
-		const Request request{ .op = OpCode::RECEIVE_FROM, .handle = static_cast<ulonglong_t>(handle.Get()), .buffer = _buffer.data(), .length = _buffer.size(), .fromAddress = &fromAddress,
+		const Request request{ .requestKind = RequestKind::RECEIVE_FROM, .handle = static_cast<ulonglong_t>(handle.Get()), .buffer = _buffer.data(), .length = _buffer.size(), .fromAddress = &fromAddress,
 								.fromAddressLength = &fromAddressLength };
 
 		auto result = co_await Awaitable{ *context, request, std::move(_stopToken) };
@@ -279,9 +276,6 @@ BEGIN_NS(ne::io)
 
 	ne::Result<void_t, IoError> Socket::Shutdown()
 	{
-		// send 방향만 닫는다(half-close) — 상대는 recv 에서 EOF(0)를 보고, 이쪽은 남은 수신을 계속 읽을 수
-		// 있다. TLS close_notify 후 전송종료, HTTP keep-alive 종료, FTP 데이터 연결의 graceful 종료에 쓴다.
-		// 양방향 종료는 Close() 가 담당.
 #if defined(_WIN32)
 		constexpr int_t how = SD_SEND;
 #elif defined(IS_POSIX)
@@ -294,7 +288,7 @@ BEGIN_NS(ne::io)
 
 	ne::Result<void_t, IoError> Socket::Close()
 	{
-		handle = SocketHandle{}; // 기존 소켓 silently close 후 무효화
+		handle = SocketHandle{};
 		return ne::Result<void_t, IoError>::Ok();
 	}
 

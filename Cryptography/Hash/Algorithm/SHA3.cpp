@@ -4,6 +4,8 @@
 
 
 
+// Keccak-f[1600]의 ι(iota) 스텝에서 라운드마다 state[0]에 XOR되는 라운드 상수.
+// 8비트 LFSR(x^8+x^6+x^5+x^4+1)을 반복 적용해 생성되며, 라운드 간 대칭성을 깨뜨려 슬라이드/자기유사 공격을 막는 역할을 한다.
 constexpr ne::ulonglong_t XorMasks[24] = { 0x0000000000000001ULL, 0x0000000000008082ULL, 0x800000000000808aULL, 0x8000000080008000ULL, 0x000000000000808bULL, 0x0000000080000001ULL,
 											0x8000000080008081ULL, 0x8000000000008009ULL, 0x000000000000008aULL, 0x0000000000000088ULL, 0x0000000080008009ULL, 0x000000008000000aULL,
 											0x000000008000808bULL, 0x800000000000008bULL, 0x8000000000008089ULL, 0x8000000000008003ULL, 0x8000000000008002ULL, 0x8000000000000080ULL,
@@ -116,6 +118,7 @@ BEGIN_NS(ne::crypto)
 
 		for (uint_t round = 0; round < 24; round++)
 		{
+			// Theta: 각 열(column)의 패리티를 인접 열에 XOR하여 상태 전체로 비트 변화를 확산시키는 단계.
 			ulonglong_t coefficients[5];
 			for (uint_t i = 0; i < 5; i++) { coefficients[i] = sha3Value[i] ^ sha3Value[i + 5] ^ sha3Value[i + 10] ^ sha3Value[i + 15] ^ sha3Value[i + 20]; }
 
@@ -129,7 +132,9 @@ BEGIN_NS(ne::crypto)
 				sha3Value[i + 20] ^= one;
 			}
 
-			// Rho Pi
+			// Rho Pi: Rho는 각 레인(lane)을 서로 다른 고정 오프셋만큼 회전시켜 비트를 레인 내부에서 재배치하고(비선형성 보조),
+			// Pi는 레인들을 다른 위치로 옮겨 열/행 구조를 뒤섞어 대칭성을 깨뜨린다.
+			// 아래 회전 오프셋(1,3,6,10,...)은 Keccak 스펙에 정의된 고정 테이블 값이다.
 			{
 				ulonglong_t last = sha3Value[1];
 				ulonglong_t one = sha3Value[10];
@@ -204,7 +209,7 @@ BEGIN_NS(ne::crypto)
 				sha3Value[1] = RotateLeft(last, 44);
 			}
 
-			// Chi
+			// Chi: 같은 행(row) 내에서 비선형 조합(x ^ (~y & z))을 적용하는 유일한 비선형 단계 — 해시의 안전성(역상 저항성)의 핵심.
 			for (uint_t j = 0; j < 25; j += 5)
 			{
 				const ulonglong_t one = sha3Value[j];
@@ -217,7 +222,7 @@ BEGIN_NS(ne::crypto)
 				sha3Value[j + 4] ^= two & ~one;
 			}
 
-			// Iota
+			// Iota: 라운드 상수를 state[0]에만 XOR하여 라운드마다 상태를 비대칭적으로 만든다(라운드 함수 자체의 대칭성 제거).
 			sha3Value[0] ^= XorMasks[round];
 		}
 	}

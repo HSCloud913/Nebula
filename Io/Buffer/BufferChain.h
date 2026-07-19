@@ -12,7 +12,13 @@
 #endif
 
 BEGIN_NS(ne::io)
-	// BufferView 연결 리스트 — scatter/gather I/O 지원.
+	/**
+	 * @class BufferChain
+	 * @brief BufferView 들을 순서대로 엮은 scatter/gather I/O 버퍼 목록.
+	 *
+	 * 각 세그먼트는 비소유 BufferView 이며, BufferChain 자체도 메모리를 소유하지 않는다.
+	 * Suffix() 로 앞부분을 건너뛴 나머지 체인을 재구성할 수 있어 partial write 재시도에 쓰인다.
+	 */
 	class BufferChain
 	{
 	public:
@@ -24,11 +30,9 @@ BEGIN_NS(ne::io)
 		std::vector<BufferView> segments;
 
 	public:
-		void_t Append(BufferView _view) { segments.push_back(_view); } // 경량 객체이므로 매개변수를 const 참조할 필요가 없음
+		void_t Append(BufferView _view) { segments.push_back(_view); }
 		void_t Clear() { segments.clear(); }
 
-		// 앞에서 _skipBytes 만큼 건너뛴 나머지를 새 체인으로 반환 (세그먼트 재슬라이스, 소유권 없음 —
-		// BufferView 와 동일 원칙). Sendv() 가 partial write 를 반환했을 때 남은 부분만 재시도하는 용도.
 		[[nodiscard]] BufferChain Suffix(const std::size_t _skipBytes) const
 		{
 			BufferChain result;

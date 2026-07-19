@@ -1,10 +1,6 @@
 //
 // Created by hscloud on 26. 7. 10.
 //
-// Level 3.5 — 등록 버퍼(zero-copy) RAII. RIO(Windows)/io_uring Fixed Buffer(Linux) 처럼 사전
-// 등록이 필요한 엔진에서 SendZeroCopy/ReadFixed/WriteFixed 의 fast path 를 쓰기 위한 공개 표면.
-// 엔진이 등록 버퍼를 지원하지 않으면(EpollEngine/WsaPollEngine) Register() 가 IoErrorKind::UNSUPPORTED
-// 로 실패한다 — 호출자는 그 경우 일반 Send/Receive(비등록 경로)로 폴백해야 한다.
 
 #pragma once
 #include <span>
@@ -15,6 +11,18 @@
 #include "Io/Engine/IRegisteredBufferProvider.h"
 
 BEGIN_NS(ne::io)
+	/**
+	 * @class RegisteredBuffer
+	 * @brief 엔진에 사전 등록된 zero-copy 메모리 영역을 관리하는 RAII 래퍼.
+	 *
+	 * RIO(Windows)/io_uring Fixed Buffer(Linux)처럼 사전 등록이 필요한 엔진에서
+	 * SendZeroCopy/ReadFixed/WriteFixed 의 fast path 를 쓰기 위한 공개 표면이다.
+	 * 엔진이 등록 버퍼를 지원하지 않으면 Register() 가 IoErrorKind::UNSUPPORTED 로 실패하며,
+	 * 이동만 가능하고 복사할 수 없다. 소멸 시 등록을 자동으로 해제한다.
+	 *
+	 * @note 등록에 사용한 메모리 영역은 이 객체와 이로부터 만든 모든 BufferView 가 쓰이는 동안,
+	 * 그리고 소멸(등록 해제)되기 전까지 주소가 바뀌면 안 된다 — 호출자가 보장해야 한다.
+	 */
 	class RegisteredBuffer
 	{
 	private:
@@ -62,10 +70,6 @@ BEGIN_NS(ne::io)
 		std::span<ne::byte_t> region;
 
 	public:
-		// _region 을 엔진에 등록한다. 엔진이 등록 버퍼 provider 가 없으면(AsRegisteredBufferProvider()
-		// == nullptr) UNSUPPORTED. 수명 불변식(IRegisteredBufferProvider 계약과 동일): _region 은 이
-		// RegisteredBuffer 및 이걸로 만든 모든 BufferView 가 쓰이는 동안, 그리고 소멸(등록 해제)되기
-		// 전까지 주소가 바뀌면 안 된다 — 호출자가 보장한다.
 		[[nodiscard]] static IoResult<RegisteredBuffer> Register(IEngine& _engine, const std::span<ne::byte_t> _region) noexcept
 		{
 			auto* provider = _engine.AsRegisteredBufferProvider();
@@ -77,8 +81,6 @@ BEGIN_NS(ne::io)
 			return IoResult<RegisteredBuffer>::Ok(RegisteredBuffer{ *provider, result.Value(), _region });
 		}
 
-		// 등록된 영역 내부의 부분 view. _length == 0 이면 _offset 부터 끝까지. [_offset, _offset+_length)
-		// 는 region 범위를 벗어나면 안 된다(BufferView::Slice 와 동일 계약).
 		[[nodiscard]] BufferView View(const std::size_t _offset = 0, const std::size_t _length = 0) const noexcept
 		{
 			const std::size_t length = (_length == 0) ? (region.size() - _offset) : _length;
