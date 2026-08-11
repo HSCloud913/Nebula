@@ -19,7 +19,7 @@ namespace ne::network::http_1::internal
 		// 상태 없는 Client 의 요청 기본 헤더를 채운다(Host / Connection: close / Content-Length).
 		void_t ApplyClientDefaults(http::Request& _request, const http::Endpoint& _endpoint)
 		{
-			if (!_request.headers.Has("Host")) _request.headers.Set("Host", _endpoint.host);
+			if (!_request.headers.Has("Host")) _request.headers.Set("Host", http::Authority(_endpoint));
 			if (!_request.headers.Has("Connection")) _request.headers.Set("Connection", "close");
 			if (!_request.body.IsEmpty() && !_request.headers.Has("Content-Length")) _request.headers.Set("Content-Length", std::to_string(_request.body.Size()));
 		}
@@ -70,7 +70,7 @@ namespace ne::network::http_1::internal
 		if (auto sent = co_await SendRequestOver(*stream, _request, _stopToken); sent.IsError()) co_return R::Error(std::move(sent.Error()));
 
 		MessageReader reader(*stream);
-		auto response = co_await reader.ReadResponse(_stopToken);
+		auto response = co_await reader.ReadResponse(_request.method, _stopToken);
 
 		(void_t)stream->Close();
 
@@ -114,7 +114,7 @@ namespace ne::network::http_1::internal
 		if (auto sent = co_await SendRequestOver(*stream, _request, _stopToken); sent.IsError()) co_return R::Error(std::move(sent.Error()));
 
 		MessageReader reader(*stream);
-		auto streamed = co_await reader.ReadResponseStreaming(_sink, _stopToken); // _sink 는 이 프레임이 소유(수명 안전)
+		auto streamed = co_await reader.ReadResponseStreaming(_sink, _request.method, _stopToken); // _sink 는 이 프레임이 소유(수명 안전)
 
 		(void_t)stream->Close();
 

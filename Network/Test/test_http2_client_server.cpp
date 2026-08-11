@@ -232,6 +232,44 @@ TEST(Http2ClientServerTest, GetReturnsHandlerResponse)
 	StopServer(context, running);
 }
 
+// ── 초기 흐름제어 윈도우(65535)를 넘는 응답도 온전히 전달된다 ──
+//
+// 예전 서버는 스트림 송신 윈도우를 추적하지 않고 스트림 레벨 WINDOW_UPDATE 를 버렸다. 그래서 64KB 를
+// 넘는 응답을 흐름제어를 무시하고 밀어냈고, 정상 피어는 GOAWAY(FLOW_CONTROL_ERROR)로 끊는다. 테스트가
+// 모두 수십 바이트 본문이라 이 결함이 드러나지 않았다 — CSS 파일 하나 서빙이 깨지는 수준의 문제다.
+TEST(Http2ClientServerTest, ResponseLargerThanInitialWindowIsDelivered)
+{
+	TestEngine engine;
+	ASSERT_TRUE(engine.IsValid());
+	Context context{ engine };
+
+	// 초기 윈도우 65535 의 두 배를 넘겨 최소 두 번의 WINDOW_UPDATE 왕복이 필요하게 만든다.
+	constexpr std::size_t payloadSize = 200 * 1024;
+	std::string payload(payloadSize, '\0');
+	for (std::size_t i = 0; i < payloadSize; ++i) payload[i] = static_cast<char>('a' + (i % 26));
+
+	auto builder = std::make_unique<ServerBuilder>();
+	builder->Get("/big", [payload](const http::Request&) -> ne::Task<http::HttpResult<http::Response>> { co_return http::HttpResult<http::Response>::Ok(http::Response::Text(200, payload)); });
+
+	auto runningResult = StartServer(context, std::move(builder));
+	ASSERT_TRUE(runningResult.IsOk()) << runningResult.Error().What();
+	auto running = std::move(runningResult.Value());
+
+	ClientSession session = http::Connect(Endpoint{ "127.0.0.1", running.port, false }, context, http::Version::HTTP_2);
+	auto requestTask = session.Send(http::Get("/big"));
+	auto result = DriveClient(context, requestTask, running.serveTask);
+
+	ASSERT_TRUE(result.IsOk()) << result.Error().What();
+	EXPECT_EQ(result.Value().statusCode, 200);
+
+	const std::string received = BodyToString(result.Value().body);
+	ASSERT_EQ(received.size(), payloadSize) << "본문이 잘렸다 — 흐름제어 창이 열리기를 기다리지 못한 것이다";
+	EXPECT_EQ(received, payload);
+
+	session.Close();
+	StopServer(context, running);
+}
+
 TEST(Http2ClientServerTest, PostBodyIsEchoedToHandler)
 {
 	TestEngine engine;

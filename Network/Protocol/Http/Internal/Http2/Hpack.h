@@ -49,8 +49,10 @@ namespace ne::network::http_2::internal
 	class HpackDecoder
 	{
 	public:
-		explicit HpackDecoder(const std::size_t _maxDynamicTableSize = DefaultHeaderTableSize) noexcept
-			: maxDynamicSize(_maxDynamicTableSize) {}
+		explicit HpackDecoder(const std::size_t _maxDynamicTableSize = DefaultHeaderTableSize, const std::size_t _maxHeaderListSize = 32 * 1024) noexcept
+			: maxDynamicSize(_maxDynamicTableSize)
+			, advertisedDynamicSize(_maxDynamicTableSize)
+			, maxHeaderListSize(_maxHeaderListSize) {}
 
 	private:
 		struct Entry
@@ -63,6 +65,15 @@ namespace ne::network::http_2::internal
 		std::deque<Entry> dynamicTable; // front = 가장 최근 삽입(인덱스 62)
 		std::size_t dynamicSize{ 0 };
 		std::size_t maxDynamicSize;
+
+		// 우리가 SETTINGS_HEADER_TABLE_SIZE 로 허용한 상한. 피어의 Dynamic Table Size Update 가 이보다
+		// 큰 값을 요구하면 RFC 7541 §6.3 상 디코딩 오류다 — 검사하지 않으면 피어가 임의 크기의 테이블을
+		// 우리 메모리에 만들게 할 수 있다.
+		std::size_t advertisedDynamicSize;
+
+		// 디코딩 **결과** 헤더 목록의 크기 상한. 압축 블록만 제한하면 소용없다 — 작은 인덱스 참조가
+		// 동적 테이블의 큰 항목으로 반복 펼쳐져 수십 MB 가 될 수 있다(HPACK bomb).
+		std::size_t maxHeaderListSize;
 
 	public:
 		[[nodiscard]] std::optional<HeaderList> Decode(std::span<const byte_t> _block);

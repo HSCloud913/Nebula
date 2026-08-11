@@ -12,6 +12,7 @@
 #include <vector>
 #include "Base/Coroutine/Event.h"
 #include "Network/Protocol/Http/Internal/Http1/Parser.h"
+#include "Network/Protocol/Http/Internal/Timeout.h"
 #include "Network/Stream/PlainStream.h"
 #include "Util/StringFormat.h"
 
@@ -60,7 +61,8 @@ namespace ne::network::http_1::internal
 		ne::Task<http::HttpResult<void_t>> SendReadErrorResponse(IStream& _stream, const http::HttpError& _error, std::stop_token _stopToken);
 
 		// 하나의 응답을 직렬화해 스트림으로 보낸다(헤드 + 본문 — 스트리밍 본문이면 chunked).
-		ne::Task<http::HttpResult<void_t>> SendResponse(IStream& _stream, const http::Response& _response, std::stop_token _stopToken)
+		// _suppressBody 가 true 면 헤드만 보낸다(HEAD 응답 — 헤더는 GET 과 동일해야 하고 본문만 없다).
+		ne::Task<http::HttpResult<void_t>> SendResponse(IStream& _stream, const http::Response& _response, const bool_t _suppressBody, std::stop_token _stopToken)
 		{
 			using R = http::HttpResult<void_t>;
 
@@ -69,6 +71,8 @@ namespace ne::network::http_1::internal
 
 			const string_t head = std::move(builtHead.Value());
 			if (auto sent = co_await _stream.Send(ne::memory::BufferView{ const_cast<byte_t*>(reinterpret_cast<const byte_t*>(head.data())), head.size() }, _stopToken); sent.IsError()) co_return R::Error(http::HttpError(std::move(sent.Error())).Context("[Server/SendResponse]"));
+
+			if (_suppressBody) co_return R::Ok();
 
 			if (_response.body.IsStreaming()) co_return co_await SendChunkedBody(_stream, *_response.body.Producer(), std::move(_stopToken));
 
@@ -96,13 +100,13 @@ namespace ne::network::http_1::internal
 			http::Response response = http::Response::Status(status);
 			response.headers.Set("Content-Length", "0");
 			response.headers.Set("Connection", "close");
-			co_return co_await SendResponse(_stream, response, std::move(_stopToken));
+			co_return co_await SendResponse(_stream, response, false, std::move(_stopToken));
 		}
 	}
 
 
 
-	ne::Task<http::HttpResult<void_t>> Server::HandleEstablished(std::unique_ptr<IStream> _stream, std::stop_token _stopToken) const
+	ne::Task<http::HttpResult<void_t>> Server::HandleEstablished(std::unique_ptr<IStream> _stream, ne::io::Context& _context, std::stop_token _stopToken) const
 	{
 		using R = http::HttpResult<void_t>;
 
@@ -111,9 +115,21 @@ namespace ne::network::http_1::internal
 		// 리더는 연결당 하나 — 요청 사이에 버퍼에 남은 바이트(다음 요청의 시작)를 이어서 소비한다.
 		MessageReader reader(*stream, limits);
 
+		std::size_t handled = 0;
+
 		while (!_stopToken.stop_requested())
 		{
-			auto request = co_await reader.ReadRequest(_stopToken);
+			// 연결당 요청 수 상한 — 무한 keep-alive 로 연결을 붙잡아 두는 것을 막는다.
+			if (limits.maxRequestsPerConnection > 0 && handled >= limits.maxRequestsPerConnection) break;
+
+			// 읽기 데드라인. 첫 요청은 헤더 대기(headerTimeout)부터 시작하고, keep-alive 재사용 시에는
+			// 다음 요청이 시작되기까지의 유휴 시간(idleTimeout)이 포함된다. 본문까지 한 번에 읽으므로
+			// bodyTimeout 을 더해 하나의 예산으로 쓴다 — 파서 내부 단계별 데드라인은 후속 과제.
+			const auto readBudget = (handled == 0 ? limits.headerTimeout : limits.idleTimeout) + limits.bodyTimeout;
+
+			auto request = co_await http::internal::WithTimeout(_context, readBudget, [&reader](std::stop_token _token) { return reader.ReadRequest(std::move(_token)); });
+			++handled;
+
 			if (request.IsError())
 			{
 				// keep-alive 연결에서 피어가 조용히 닫으면(CONNECTION_CLOSED) 정상 종료로 본다.
@@ -147,7 +163,11 @@ namespace ne::network::http_1::internal
 			const bool_t keepAlive = !clientWantsClose && !_stopToken.stop_requested();
 			res.headers.Set("Connection", keepAlive ? "keep-alive" : "close");
 
-			if (auto sent = co_await SendResponse(*stream, res, _stopToken); sent.IsError())
+			// HEAD 응답에 본문을 실으면 keep-alive 프레이밍이 깨져 이후 모든 응답이 오염된다.
+			// Content-Length 는 GET 과 동일하게 유지하고(RFC 9110 §9.3.2) 본문 전송만 생략한다.
+			const bool_t suppressBody = request.Value().method == http::Method::HEAD;
+
+			if (auto sent = co_await SendResponse(*stream, res, suppressBody, _stopToken); sent.IsError())
 			{
 				(void_t)stream->Close();
 				co_return R::Error(std::move(sent.Error()));

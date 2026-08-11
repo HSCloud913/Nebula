@@ -11,9 +11,13 @@
 
 namespace ne::io
 {
-	Context::Context(IEngine& _engine, ne::time::TimerWheel* _timerWheel) noexcept
+	Context::Context(IEngine& _engine, ne::time::TimerWheel* _timerWheel)
 		: engine(_engine)
-		, timerWheel(_timerWheel) {}
+		, ownedTimerWheel(_timerWheel == nullptr ? std::make_unique<ne::time::TimerWheel>() : nullptr)
+		, timerWheel(_timerWheel != nullptr ? _timerWheel : ownedTimerWheel.get()) {}
+
+	// TimerWheel 이 불완전 타입이 아니어야 unique_ptr 소멸이 가능하므로 여기(.cpp)에서 정의한다.
+	Context::~Context() = default;
 
 
 
@@ -94,7 +98,7 @@ namespace ne::io
 
 	ne::time::Awaitable Context::SleepFor(const std::chrono::milliseconds _duration) const noexcept
 	{
-		assert(timerWheel != nullptr && "Context::SleepFor requires SetTimerWheel() before use");
+		// 생성자가 항상 휠을 확보하므로 nullptr 일 수 없다.
 		return ne::time::SleepFor(*timerWheel, _duration);
 	}
 

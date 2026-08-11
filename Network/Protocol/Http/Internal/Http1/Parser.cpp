@@ -111,7 +111,7 @@ namespace ne::network::http_1::internal
 		co_return R::Ok(std::move(result));
 	}
 
-	ne::Task<http::HttpResult<http::Body>> MessageReader::ReadBody(const http::Headers& _headers, std::stop_token _stopToken)
+	ne::Task<http::HttpResult<http::Body>> MessageReader::ReadBody(const http::Headers& _headers, const bool_t _allowUntilClose, std::stop_token _stopToken)
 	{
 		using R = http::HttpResult<http::Body>;
 
@@ -119,9 +119,21 @@ namespace ne::network::http_1::internal
 
 		if (const auto contentLength = _headers.Get("Content-Length"))
 		{
+			// 중복 Content-Length 는 프론트엔드/백엔드가 서로 다른 값을 채택하는 전형적인 요청 스머글링
+			// 벡터다. Headers::Get 은 첫 값을 돌려주므로 검사 없이는 더 작은 값을 조용히 쓰게 된다.
+			if (const auto all = _headers.GetAll("Content-Length"); all.size() > 1)
+			{
+				for (const auto& value : all) if (value != *contentLength) co_return R::Error(http::HttpError(http::HttpErrorKind::MALFORMED_MESSAGE, "conflicting Content-Length").Context("[MessageReader/ReadBody]"));
+			}
+
 			std::size_t length = 0;
-			const auto [ptr, ec] = std::from_chars(contentLength->data(), contentLength->data() + contentLength->size(), length);
-			if (ec != std::errc{}) co_return R::Error(http::HttpError(http::HttpErrorKind::MALFORMED_MESSAGE, "invalid Content-Length").Context("[MessageReader/ReadBody]"));
+			const char* first = contentLength->data();
+			const char* last = first + contentLength->size();
+			const auto [ptr, ec] = std::from_chars(first, last, length);
+
+			// from_chars 는 접두 숫자만 읽고 멈춘다 — ptr != last 를 검사하지 않으면 "5abc" 가 5 로
+			// 통과한다(RFC 9112 §6.1 은 DIGIT 이외를 거부하도록 요구한다).
+			if (ec != std::errc{} || ptr != last) co_return R::Error(http::HttpError(http::HttpErrorKind::MALFORMED_MESSAGE, "invalid Content-Length").Context("[MessageReader/ReadBody]"));
 			if (length > limits.maxBodyBytes) co_return R::Error(http::HttpError(http::HttpErrorKind::BODY_TOO_LARGE).Context("[MessageReader/ReadBody]"));
 
 			auto bytes = co_await ReadExact(length, _stopToken);
@@ -130,7 +142,39 @@ namespace ne::network::http_1::internal
 			co_return R::Ok(http::Body{ std::move(bytes.Value()) });
 		}
 
+		// 응답에 길이 프레이밍이 없으면 "연결이 닫힐 때까지" 가 본문이다. 예전에는 빈 본문을 돌려줘
+		// HTTP/1.0 류 응답의 데이터를 조용히 버렸다.
+		if (_allowUntilClose) co_return co_await ReadBodyUntilClose(_stopToken);
+
 		co_return R::Ok(http::Body{});
+	}
+
+	ne::Task<http::HttpResult<http::Body>> MessageReader::ReadBodyUntilClose(std::stop_token _stopToken)
+	{
+		using R = http::HttpResult<http::Body>;
+
+		std::vector<byte_t> result;
+
+		while (true)
+		{
+			// 버퍼에 이미 들어와 있는 만큼을 먼저 흡수한다.
+			if (dataStart < dataEnd)
+			{
+				result.insert(result.end(), buffer.begin() + static_cast<std::ptrdiff_t>(dataStart), buffer.begin() + static_cast<std::ptrdiff_t>(dataEnd));
+				dataStart = dataEnd;
+
+				if (result.size() > limits.maxBodyBytes) co_return R::Error(http::HttpError(http::HttpErrorKind::BODY_TOO_LARGE).Context("[MessageReader/ReadBodyUntilClose]"));
+			}
+
+			// Fill 은 상대가 닫으면 CONNECTION_CLOSED 를 돌려준다 — 이 경로에서는 그것이 정상 종료다.
+			auto filled = co_await Fill(_stopToken);
+			if (filled.IsError())
+			{
+				if (filled.Error().Kind() == http::HttpErrorKind::CONNECTION_CLOSED) co_return R::Ok(http::Body{ std::move(result) });
+
+				co_return R::Error(std::move(filled.Error()));
+			}
+		}
 	}
 
 	ne::Task<http::HttpResult<http::Body>> MessageReader::ReadChunkedBody(std::stop_token _stopToken)
@@ -201,14 +245,30 @@ namespace ne::network::http_1::internal
 		if (headers.IsError()) co_return R::Error(std::move(headers.Error()));
 		request.headers = std::move(headers.Value());
 
-		auto body = co_await ReadBody(request.headers, _stopToken);
+		auto body = co_await ReadBody(request.headers, false, _stopToken);
 		if (body.IsError()) co_return R::Error(std::move(body.Error()));
 		request.body = std::move(body.Value());
 
 		co_return R::Ok(std::move(request));
 	}
 
-	ne::Task<http::HttpResult<http::Response>> MessageReader::ReadResponse(std::stop_token _stopToken)
+	ne::Task<http::HttpResult<http::Response>> MessageReader::ReadResponse(const http::Method _requestMethod, std::stop_token _stopToken)
+	{
+		using R = http::HttpResult<http::Response>;
+
+		// 1xx 는 최종 응답이 아니다 — 상태줄+헤더만 소비하고 다음 응답을 계속 읽는다(본문은 없다).
+		while (true)
+		{
+			auto response = co_await ReadOneResponse(_requestMethod, _stopToken);
+			if (response.IsError()) co_return R::Error(std::move(response.Error()));
+
+			if (response.Value().statusCode >= 100 && response.Value().statusCode < 200) continue;
+
+			co_return R::Ok(std::move(response.Value()));
+		}
+	}
+
+	ne::Task<http::HttpResult<http::Response>> MessageReader::ReadOneResponse(const http::Method _requestMethod, std::stop_token _stopToken)
 	{
 		using R = http::HttpResult<http::Response>;
 
@@ -235,40 +295,64 @@ namespace ne::network::http_1::internal
 		if (headers.IsError()) co_return R::Error(std::move(headers.Error()));
 		response.headers = std::move(headers.Value());
 
-		auto body = co_await ReadBody(response.headers, _stopToken);
+		// HEAD/1xx/204/304 는 프레이밍 헤더가 무엇이든 본문이 없다. 이것을 무시하고 Content-Length 를
+		// 믿으면 서버가 절대 보내지 않을 바이트를 기다리며 멈춘다.
+		if (ResponseHasNoBody(response.statusCode, _requestMethod)) co_return R::Ok(std::move(response));
+
+		auto body = co_await ReadBody(response.headers, true, _stopToken);
 		if (body.IsError()) co_return R::Error(std::move(body.Error()));
 		response.body = std::move(body.Value());
 
 		co_return R::Ok(std::move(response));
 	}
 
-	ne::Task<http::HttpResult<bool_t>> MessageReader::ReadResponseStreaming(const http::ResponseCallbacks& _sink, std::stop_token _stopToken)
+	ne::Task<http::HttpResult<bool_t>> MessageReader::ReadResponseStreaming(const http::ResponseCallbacks& _sink, const http::Method _requestMethod, std::stop_token _stopToken)
 	{
 		using R = http::HttpResult<bool_t>;
 
-		auto line = co_await ReadLine(_stopToken);
-		if (line.IsError()) co_return R::Error(std::move(line.Error()));
-
-		const auto& text = line.Value();
-		const auto sp1 = text.find(' ');
-		const auto sp2 = sp1 == string_t::npos ? string_t::npos : text.find(' ', sp1 + 1);
-		if (sp1 == string_t::npos) co_return R::Error(http::HttpError(http::HttpErrorKind::MALFORMED_MESSAGE, "malformed status line").Context("[MessageReader/ReadResponseStreaming]"));
-
-		const string_view_t version(text.data(), sp1);
-		if (!version.starts_with("HTTP/1.")) co_return R::Error(http::HttpError(http::HttpErrorKind::UNSUPPORTED_VERSION, string_t(version)).Context("[MessageReader/ReadResponseStreaming]"));
-
 		int_t statusCode = 0;
-		const string_t codeText = sp2 == string_t::npos ? text.substr(sp1 + 1) : text.substr(sp1 + 1, sp2 - sp1 - 1);
-		if (const auto [ptr, ec] = std::from_chars(codeText.data(), codeText.data() + codeText.size(), statusCode); ec != std::errc{}) co_return R::Error(http::HttpError(http::HttpErrorKind::MALFORMED_MESSAGE, "invalid status code").Context("[MessageReader/ReadResponseStreaming]"));
+		string_t reason;
+		http::Headers headers;
 
-		const string_t reason = sp2 == string_t::npos ? string_t{} : text.substr(sp2 + 1);
+		// 1xx(정보) 응답은 최종 응답이 아니므로 사용자 콜백에 올리지 않고 건너뛴다.
+		while (true)
+		{
+			auto line = co_await ReadLine(_stopToken);
+			if (line.IsError()) co_return R::Error(std::move(line.Error()));
 
-		auto headers = co_await ReadHeaders(_stopToken);
-		if (headers.IsError()) co_return R::Error(std::move(headers.Error()));
+			const auto& text = line.Value();
+			const auto sp1 = text.find(' ');
+			const auto sp2 = sp1 == string_t::npos ? string_t::npos : text.find(' ', sp1 + 1);
+			if (sp1 == string_t::npos) co_return R::Error(http::HttpError(http::HttpErrorKind::MALFORMED_MESSAGE, "malformed status line").Context("[MessageReader/ReadResponseStreaming]"));
 
-		if (_sink.onHead && !_sink.onHead(statusCode, reason, headers.Value())) co_return R::Ok(false); // 헤드 단계에서 조기 중단
+			const string_view_t version(text.data(), sp1);
+			if (!version.starts_with("HTTP/1.")) co_return R::Error(http::HttpError(http::HttpErrorKind::UNSUPPORTED_VERSION, string_t(version)).Context("[MessageReader/ReadResponseStreaming]"));
 
-		co_return co_await StreamBody(headers.Value(), _sink, _stopToken);
+			statusCode = 0;
+			const string_t codeText = sp2 == string_t::npos ? text.substr(sp1 + 1) : text.substr(sp1 + 1, sp2 - sp1 - 1);
+			if (const auto [ptr, ec] = std::from_chars(codeText.data(), codeText.data() + codeText.size(), statusCode); ec != std::errc{}) co_return R::Error(http::HttpError(http::HttpErrorKind::MALFORMED_MESSAGE, "invalid status code").Context("[MessageReader/ReadResponseStreaming]"));
+
+			reason = sp2 == string_t::npos ? string_t{} : text.substr(sp2 + 1);
+
+			auto parsedHeaders = co_await ReadHeaders(_stopToken);
+			if (parsedHeaders.IsError()) co_return R::Error(std::move(parsedHeaders.Error()));
+
+			if (statusCode >= 100 && statusCode < 200) continue;
+
+			headers = std::move(parsedHeaders.Value());
+			break;
+		}
+
+		if (_sink.onHead && !_sink.onHead(statusCode, reason, headers)) co_return R::Ok(false); // 헤드 단계에서 조기 중단
+
+		// HEAD/204/304 는 본문이 없다 — 프레이밍 헤더를 믿고 읽으면 오지 않을 바이트를 기다린다.
+		if (ResponseHasNoBody(statusCode, _requestMethod))
+		{
+			if (_sink.onBody) (void_t)_sink.onBody({}); // EOF 통지
+			co_return R::Ok(true);
+		}
+
+		co_return co_await StreamBody(headers, _sink, _stopToken);
 	}
 
 	ne::Task<http::HttpResult<bool_t>> MessageReader::StreamBody(const http::Headers& _headers, const http::ResponseCallbacks& _sink, std::stop_token _stopToken)

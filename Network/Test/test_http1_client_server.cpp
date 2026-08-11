@@ -224,6 +224,42 @@ TEST(Http1ClientServerTest, GetReturnsHandlerResponse)
 	StopServer(context, running);
 }
 
+// ── HEAD 는 Content-Length 를 GET 과 동일하게 받되 본문 없이 즉시 끝난다 ──
+//
+// 예전에는 (a) 클라이언트가 요청 메서드를 몰라 Content-Length 만큼의 본문을 기다렸고, (b) 서버가 HEAD
+// 에도 본문을 실어 보냈다. (a) 때문에 공개 API 인 http::Head(url) 이 실제 서버에서 멈췄고, (b) 때문에
+// keep-alive 프레이밍이 오염됐다. 두 결함이 서로를 가려 루프백 테스트에서 드러나지 않았다.
+TEST(Http1ClientServerTest, HeadReturnsHeadersWithoutBody)
+{
+	TestEngine engine;
+	ASSERT_TRUE(engine.IsValid());
+	Context context{ engine };
+
+	constexpr string_view_t payload = "body-that-must-not-be-sent";
+
+	ServerBuilder builder;
+	builder.Get("/resource", [payload](const http::Request&) -> ne::Task<http::HttpResult<http::Response>> { co_return http::HttpResult<http::Response>::Ok(http::Response::Text(200, string_t(payload))); });
+	builder.Head("/resource", [payload](const http::Request&) -> ne::Task<http::HttpResult<http::Response>> { co_return http::HttpResult<http::Response>::Ok(http::Response::Text(200, string_t(payload))); });
+
+	auto runningResult = StartServer(context, std::move(builder));
+	ASSERT_TRUE(runningResult.IsOk()) << runningResult.Error().What();
+	auto running = std::move(runningResult.Value());
+
+	auto requestTask = http::Head(LoopbackUrl(running.port, "/resource")).Send(context);
+	auto result = DriveClient(context, requestTask, running.serveTask);
+
+	ASSERT_TRUE(result.IsOk()) << result.Error().What();
+	EXPECT_EQ(result.Value().statusCode, 200);
+
+	// 헤더는 GET 과 같아야 하고(RFC 9110 §9.3.2), 본문은 없어야 한다.
+	const auto contentLength = result.Value().headers.Get("Content-Length");
+	ASSERT_TRUE(contentLength.has_value());
+	EXPECT_EQ(*contentLength, std::to_string(payload.size()));
+	EXPECT_TRUE(BodyToString(result.Value().body).empty());
+
+	StopServer(context, running);
+}
+
 TEST(Http1ClientServerTest, PostBodyIsDeliveredToHandler)
 {
 	TestEngine engine;

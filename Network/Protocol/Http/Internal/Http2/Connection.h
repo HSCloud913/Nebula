@@ -65,6 +65,14 @@ namespace ne::network::http_2::internal
 		std::int32_t peerInitialWindow{ DefaultInitialWindowSize };
 		std::int64_t connSendWindow{ DefaultInitialWindowSize }; // 연결 레벨 송신 윈도우
 
+		// 우리가 광고한 MAX_FRAME_SIZE. 피어가 이보다 큰 프레임을 보내면 RFC 9113 §4.2 상 FRAME_SIZE_ERROR
+		// 이며, 검사하지 않으면 24비트 길이(최대 16MB)를 그대로 믿고 버퍼를 늘리는 메모리 증폭이 된다.
+		std::uint32_t localMaxFrameSize{ DefaultMaxFrameSize };
+
+		// 우리가 광고한 MAX_HEADER_LIST_SIZE. 압축 블록 크기만 제한해서는 부족하다 — 8KB 의 인덱스 참조가
+		// 수십 MB 로 펼쳐질 수 있으므로(HPACK bomb) 디코딩 **결과** 크기도 제한해야 한다.
+		std::size_t localMaxHeaderListSize{ 32 * 1024 };
+
 	protected:
 		// inbuf 에 (inpos 기준) 최소 _need 바이트를 확보. false=EOF.
 		[[nodiscard]] ne::Task<ne::io::IoResult<bool_t>> FillAtLeast(std::size_t _need, std::stop_token _stopToken);
@@ -78,8 +86,19 @@ namespace ne::network::http_2::internal
 		[[nodiscard]] ne::Task<ne::io::IoResult<void_t>> SendWindowUpdate(std::uint32_t _streamId, std::uint32_t _increment, std::stop_token _stopToken);
 		[[nodiscard]] ne::Task<ne::io::IoResult<void_t>> SendPingAck(std::span<const byte_t> _opaque8, std::stop_token _stopToken);
 
-		// 우리 쪽 로컬 SETTINGS(INITIAL_WINDOW_SIZE 등). 서브클래스가 채운다.
-		[[nodiscard]] static std::vector<SettingsEntry> LocalSettings();
+		// 우리 쪽 로컬 SETTINGS. 피어에게 우리의 수용 한계를 알린다 — 광고하지 않으면 피어는 기본값을
+		// 가정하고, 우리는 그 기본값을 강제할 근거도 잃는다.
+		[[nodiscard]] std::vector<SettingsEntry> LocalSettings() const;
+
+		/**
+		 * @brief 피어의 SETTINGS 프레임을 적용한다(ACK 프레임은 호출자가 걸러낸다).
+		 *
+		 * @note INITIAL_WINDOW_SIZE 변경은 RFC 9113 §6.9.2 상 **이미 열린 모든 스트림의 송신 윈도우에
+		 * 차분으로 반영**해야 한다. 새 스트림에만 적용하면, 피어가 윈도우를 줄였을 때 우리가 초과 전송해
+		 * FLOW_CONTROL_ERROR 를 맞는다. 차분 반영은 스트림 맵을 가진 서브클래스가 해야 하므로
+		 * _windowDelta 로 돌려준다.
+		 */
+		void_t ApplyPeerSettings(const RawFrame& _frame, std::int64_t& _windowDelta) noexcept;
 
 	public:
 		[[nodiscard]] bool_t IsOpen() const noexcept { return stream != nullptr && stream->IsOpen(); }
@@ -204,6 +223,11 @@ namespace ne::network::http_2::internal
 			bool_t headersDone{ false };
 			bool_t endStream{ false };
 			bool_t rejected{ false }; // 크기 초과로 RST 됨 — 남은 프레임은 무시
+
+			// 스트림 레벨 송신 윈도우. 이것을 추적하지 않으면 초기 윈도우(65535)를 넘는 응답을 그대로
+			// 밀어내 정상 피어(브라우저/curl/nghttp2)가 GOAWAY(FLOW_CONTROL_ERROR)로 연결을 끊는다.
+			std::int64_t sendWindow{ DefaultInitialWindowSize };
+			ne::Event windowReady; // WINDOW_UPDATE 수신 시 신호 — 응답 송신 루프가 기다린다
 		};
 
 		Http2Handler handler;
@@ -211,14 +235,36 @@ namespace ne::network::http_2::internal
 		std::unordered_map<std::uint32_t, std::unique_ptr<Stream>> streams;
 		bool_t goaway{ false };
 
+		// 핸들러 디스패치를 프레임 루프와 **분리**하기 위한 상태. 예전에는 Run() 안에서 DispatchStream 을
+		// 그 자리에서 co_await 했다. 그러면 핸들러가 대기하는 동안 프레임을 한 개도 읽지 못해 (a) 다른
+		// 스트림이 전혀 진행되지 않고(멀티플렉싱 부재), (b) 응답이 흐름제어 창을 기다릴 때 그 창을 열어 줄
+		// WINDOW_UPDATE 를 읽지 못해 **교착**한다.
+		std::size_t activeDispatches{ 0 };
+		ne::Event dispatchesDone;
+		std::vector<ne::Task<void_t>> dispatchTasks; // 완료된 프레임은 다음 디스패치 때 회수
+
 	public:
 		/** @brief 이 연결을 완결까지 처리합니다(요청/응답 반복). 피어가 닫거나 stop 되면 종료. */
 		[[nodiscard]] ne::Task<http::HttpResult<void_t>> Run(std::stop_token _stopToken);
 
 	private:
+		// 실제 프레임 읽기/디스패치 루프. Run() 이 이것을 감싸 진행 중인 디스패치를 배수한 뒤 반환한다.
+		[[nodiscard]] ne::Task<http::HttpResult<void_t>> RunFrameLoop(std::stop_token _stopToken);
 		[[nodiscard]] ne::Task<http::HttpResult<void_t>> DispatchStream(std::uint32_t _streamId, std::stop_token _stopToken);
+		// DispatchStream 을 감싸 완료 시 activeDispatches 를 줄이고 마지막이면 dispatchesDone 을 신호한다.
+		[[nodiscard]] ne::Task<void_t> RunDispatch(std::uint32_t _streamId, std::stop_token _stopToken);
 		[[nodiscard]] ne::Task<http::HttpResult<void_t>> SendResponse(std::uint32_t _streamId, http::Response _response, std::stop_token _stopToken);
 		// 스트리밍 본문을 DATA 프레임으로 당겨 보낸다. 생산자 실패 시 해당 스트림만 RST_STREAM(연결 유지).
 		[[nodiscard]] ne::Task<http::HttpResult<void_t>> SendStreamingBody(std::uint32_t _streamId, const http::BodyProducer& _producer, std::stop_token _stopToken);
+
+		/**
+		 * @brief _data 를 연결/스트림 송신 윈도우와 MAX_FRAME_SIZE 안에서 DATA 프레임으로 전부 보낸다.
+		 *
+		 * 윈도우가 0 이면 해당 스트림의 windowReady 를 기다린다 — 드라이버가 WINDOW_UPDATE 를 받으면
+		 * 신호한다. 이 창구를 통하지 않고 DATA 를 쓰면 흐름제어를 위반해 피어가 연결을 끊는다.
+		 *
+		 * @param _endStream 마지막 조각에 END_STREAM 플래그를 실을지 여부.
+		 */
+		[[nodiscard]] ne::Task<http::HttpResult<void_t>> SendDataFlowControlled(std::uint32_t _streamId, std::span<const byte_t> _data, bool_t _endStream, std::stop_token _stopToken);
 	};
 }

@@ -49,12 +49,32 @@ namespace ne::network::http_1::internal
 
 	public:
 		[[nodiscard]] ne::Task<http::HttpResult<http::Request>> ReadRequest(std::stop_token _stopToken = {});
-		[[nodiscard]] ne::Task<http::HttpResult<http::Response>> ReadResponse(std::stop_token _stopToken = {});
+
+		/**
+		 * @brief 응답 하나를 읽는다.
+		 *
+		 * @param _requestMethod 이 응답을 유발한 요청의 메서드. **반드시 필요하다** — RFC 9112 §6.3 상
+		 * HEAD 응답은 Content-Length 가 있어도 본문이 없다. 이 정보 없이 CL 을 믿고 읽으면 실제 서버
+		 * 대부분에서 타임아웃까지 멈춘다(과거 http::Head(url).SendSync() 가 그랬다).
+		 *
+		 * @note 1xx(정보) 응답은 최종 응답이 아니므로 건너뛴다 — Cloudflare 계열은 요청하지 않아도
+		 * 103 Early Hints 를 보낸다.
+		 */
+		[[nodiscard]] ne::Task<http::HttpResult<http::Response>> ReadResponse(http::Method _requestMethod = http::Method::GET, std::stop_token _stopToken = {});
 
 		// 상태줄+헤더를 읽어 _sink.onHead 를, 본문을 조각마다 _sink.onBody 로 흘려 준다(전체 버퍼링 없음).
 		// 반환값: 본문을 끝까지 소비했으면 true(스트림이 메시지 경계 — 재사용 가능), 콜백이 false 로
 		// 조기 중단했으면 false(스트림이 본문 중간 — 재사용 불가). 전송/형식 오류는 Error.
-		[[nodiscard]] ne::Task<http::HttpResult<bool_t>> ReadResponseStreaming(const http::ResponseCallbacks& _sink, std::stop_token _stopToken = {});
+		[[nodiscard]] ne::Task<http::HttpResult<bool_t>> ReadResponseStreaming(const http::ResponseCallbacks& _sink, http::Method _requestMethod = http::Method::GET, std::stop_token _stopToken = {});
+
+	public:
+		/** @brief 상태코드/요청 메서드만으로 "본문이 있을 수 없는 응답" 인지 판정한다(RFC 9112 §6.3). */
+		[[nodiscard]] static bool_t ResponseHasNoBody(int_t _statusCode, http::Method _requestMethod) noexcept
+		{
+			if (_requestMethod == http::Method::HEAD) return true;
+
+			return _statusCode == 204 || _statusCode == 304 || (_statusCode >= 100 && _statusCode < 200);
+		}
 
 	private:
 		// 스트림에서 더 읽어 buffer 뒤에 채운다. 상대가 EOF 로 닫으면 CONNECTION_CLOSED 를 반환한다.
@@ -69,9 +89,19 @@ namespace ne::network::http_1::internal
 		// 빈 줄(CRLF 만 있는 줄)이 나올 때까지 "Name: Value" 라인들을 읽어 Headers 로 파싱한다.
 		[[nodiscard]] ne::Task<http::HttpResult<http::Headers>> ReadHeaders(std::stop_token _stopToken);
 
-		// Content-Length 또는 Transfer-Encoding: chunked 헤더를 보고 본문을 읽는다. 둘 다 없으면 빈 본문.
-		[[nodiscard]] ne::Task<http::HttpResult<http::Body>> ReadBody(const http::Headers& _headers, std::stop_token _stopToken);
+		// 응답 하나(1xx 포함)를 그대로 읽는다. ReadResponse 가 1xx 를 걸러내며 반복 호출한다.
+		[[nodiscard]] ne::Task<http::HttpResult<http::Response>> ReadOneResponse(http::Method _requestMethod, std::stop_token _stopToken);
+
+		/**
+		 * @brief Content-Length / Transfer-Encoding: chunked 를 보고 본문을 읽는다.
+		 * @param _allowUntilClose 둘 다 없을 때 EOF 까지 읽을지 여부. **응답에서만** true 다 — RFC 9112
+		 * §6.3 item 8. 요청에서 프레이밍이 없으면 본문이 없다는 뜻이므로 false 여야 한다(EOF 까지
+		 * 기다리면 keep-alive 연결이 멈춘다).
+		 */
+		[[nodiscard]] ne::Task<http::HttpResult<http::Body>> ReadBody(const http::Headers& _headers, bool_t _allowUntilClose, std::stop_token _stopToken);
 		[[nodiscard]] ne::Task<http::HttpResult<http::Body>> ReadChunkedBody(std::stop_token _stopToken);
+		// 상대가 연결을 닫을 때까지 읽어 남은 전부를 본문으로 삼는다(길이 프레이밍이 없는 응답).
+		[[nodiscard]] ne::Task<http::HttpResult<http::Body>> ReadBodyUntilClose(std::stop_token _stopToken);
 
 		// 정확히 _length 바이트를 읽어 반환한다(버퍼에 이미 있는 만큼 재사용 + 부족하면 Fill() 반복).
 		[[nodiscard]] ne::Task<http::HttpResult<std::vector<byte_t>>> ReadExact(std::size_t _length, std::stop_token _stopToken);

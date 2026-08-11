@@ -47,13 +47,6 @@ namespace ne::network::http
 			return connection && ne::util::StringFormat::EqualCaseInsensitive(string_view_t(*connection), string_view_t("close"));
 		}
 
-		string_t MakeAuthority(const Endpoint& _endpoint)
-		{
-			const uint16_t defaultPort = _endpoint.isSecure ? 443 : 80;
-			if (_endpoint.port == defaultPort) return _endpoint.host;
-			return _endpoint.host + ":" + std::to_string(_endpoint.port);
-		}
-
 		// 세션이 명시적 Shutdown 없이 버려질 때 연결 정리를 이벤트 루프에 위임하는 fire-and-forget 리퍼.
 		// DrainClose 의 동기 구간(stop 요청 + 스트림 Close)은 이 자리에서 즉시 실행되어 in-flight I/O 를
 		// 취소하고, 드라이버 종료를 기다린 뒤 connection 이 이 프레임과 함께 파괴된다. 루프가 더 이상
@@ -79,7 +72,7 @@ namespace ne::network::http
 		{
 			using R = HttpResult<std::unique_ptr<http_2::internal::ClientConnection>>;
 
-			auto connection = std::make_unique<http_2::internal::ClientConnection>(std::move(_stream), _context, MakeAuthority(_endpoint), _endpoint.isSecure);
+			auto connection = std::make_unique<http_2::internal::ClientConnection>(std::move(_stream), _context, Authority(_endpoint), _endpoint.isSecure);
 
 			if (auto started = co_await connection->Start(std::move(_stopToken)); started.IsError()) co_return R::Error(std::move(started.Error()));
 
@@ -379,7 +372,7 @@ namespace ne::network::http
 		// 스트리밍 본문(BodyProducer)은 서버 응답 전용 — 조용히 Content-Length: 0 으로 나가는 것을 막는다.
 		if (_request.body.IsStreaming()) co_return R::Error(HttpError(HttpErrorKind::MALFORMED_MESSAGE, "streaming request body is not supported").Context("[ClientSession/Send]"));
 
-		if (!_request.headers.Has("Host")) _request.headers.Set("Host", endpoint.host);
+		if (!_request.headers.Has("Host")) _request.headers.Set("Host", Authority(endpoint));
 		if (!_request.body.IsEmpty() && !_request.headers.Has("Content-Length")) _request.headers.Set("Content-Length", std::to_string(_request.body.Size()));
 		if (!_request.headers.Has("Connection")) _request.headers.Set("Connection", "keep-alive");
 
@@ -421,7 +414,7 @@ namespace ne::network::http
 				}
 			}
 
-			auto response = co_await reader->ReadResponse(_stopToken);
+			auto response = co_await reader->ReadResponse(_request.method, _stopToken);
 			if (response.IsError())
 			{
 				Close();

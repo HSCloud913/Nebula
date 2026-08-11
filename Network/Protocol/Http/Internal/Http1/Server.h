@@ -48,7 +48,13 @@ namespace ne::network::http_1::internal
 		http::Limits limits;
 
 	public:
-		/** @brief 이미 수립된 스트림 하나를 keep-alive 로 처리합니다 — `Connection: close` 또는 EOF 까지 반복합니다. */
-		[[nodiscard]] ne::Task<http::HttpResult<void_t>> HandleEstablished(std::unique_ptr<IStream> _stream, std::stop_token _stopToken = {}) const;
+		/**
+		 * @brief 이미 수립된 스트림 하나를 keep-alive 로 처리합니다 — `Connection: close` 또는 EOF 까지 반복합니다.
+		 *
+		 * @param _context 요청 읽기에 데드라인을 씌우기 위한 이벤트 루프. 시간 상한이 없으면 크기 상한만으로는
+		 * 방어가 되지 않습니다 — 분당 1바이트를 보내는 연결은 어떤 크기 제한도 넘지 않으면서 자원을 영구
+		 * 점유합니다(slowloris).
+		 */
+		[[nodiscard]] ne::Task<http::HttpResult<void_t>> HandleEstablished(std::unique_ptr<IStream> _stream, ne::io::Context& _context, std::stop_token _stopToken = {}) const;
 	};
 }

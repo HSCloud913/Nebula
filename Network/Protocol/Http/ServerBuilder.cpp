@@ -72,7 +72,7 @@ namespace ne::network::http
 				}
 				else
 				{
-					(void_t)co_await _http1Engine.HandleEstablished(std::move(accepted.Value().stream), std::move(_stopToken));
+					(void_t)co_await _http1Engine.HandleEstablished(std::move(accepted.Value().stream), _context, std::move(_stopToken));
 				}
 			}
 
@@ -126,6 +126,14 @@ namespace ne::network::http
 			}
 
 			std::erase_if(connections, [](const ne::Task<void_t>& _task) { return _task.IsReady(); });
+
+			// 동시 연결 상한 — 없으면 accept 루프가 무한정 코루틴 프레임과 버퍼를 쌓는다. 초과분은
+			// 즉시 닫아 클라이언트가 바로 알 수 있게 한다(대기열에 넣어 늦게 실패시키는 것보다 낫다).
+			if (limits.maxConnections > 0 && active >= limits.maxConnections)
+			{
+				(void_t)accepted.Value().Close();
+				continue;
+			}
 
 			++active;
 			connections.push_back(RunConnection(std::move(accepted.Value()), _context, tlsConfig, version, http1Engine, handler, limits, connectionStop.get_token(), active, allDone));

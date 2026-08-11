@@ -53,9 +53,47 @@ namespace ne::network::http_2::internal
 
 	// ───────────────────────── Connection (base) ─────────────────────────
 
-	std::vector<SettingsEntry> Connection::LocalSettings()
+	std::vector<SettingsEntry> Connection::LocalSettings() const
 	{
-		return { { SettingsId::ENABLE_PUSH, 0 } }; // 서버 푸시 미지원
+		// 광고하지 않으면 피어는 프로토콜 기본값(MAX_FRAME_SIZE 16384 등)을 가정하는데, 우리 쪽에
+		// 강제 로직이 없으면 그 가정을 어겨도 아무 일이 일어나지 않는다. 여기서 명시적으로 알리고
+		// ReadFrame/HPACK 이 같은 값을 강제한다.
+		return {
+			{ SettingsId::ENABLE_PUSH, 0 }, // 서버 푸시 미지원
+			{ SettingsId::MAX_FRAME_SIZE, localMaxFrameSize },
+			{ SettingsId::MAX_HEADER_LIST_SIZE, static_cast<std::uint32_t>(localMaxHeaderListSize) },
+		};
+	}
+
+	void_t Connection::ApplyPeerSettings(const RawFrame& _frame, std::int64_t& _windowDelta) noexcept
+	{
+		_windowDelta = 0;
+
+		for (std::size_t offset = 0; offset + 6 <= _frame.payload.size(); offset += 6)
+		{
+			const auto id = static_cast<SettingsId>(ReadUint16(std::span<const byte_t>(_frame.payload).subspan(offset, 2)));
+			const std::uint32_t value = ReadUint32(std::span<const byte_t>(_frame.payload).subspan(offset + 2, 4));
+
+			switch (id)
+			{
+				case SettingsId::INITIAL_WINDOW_SIZE:
+				{
+					// 최대 2^31-1 을 넘는 값은 FLOW_CONTROL_ERROR 지만, 여기서는 클램프해 진행한다.
+					const auto next = static_cast<std::int32_t>(value > 0x7FFFFFFFu ? 0x7FFFFFFFu : value);
+					_windowDelta = static_cast<std::int64_t>(next) - static_cast<std::int64_t>(peerInitialWindow);
+					peerInitialWindow = next;
+					break;
+				}
+				case SettingsId::MAX_FRAME_SIZE:
+					// 규격 허용 범위(16384~2^24-1)를 벗어난 값은 무시한다.
+					if (value >= DefaultMaxFrameSize && value <= 0xFFFFFFu) peerMaxFrameSize = value;
+					break;
+				default:
+					// HEADER_TABLE_SIZE 는 우리 인코더가 동적 테이블을 아예 쓰지 않으므로 영향이 없고,
+					// ENABLE_PUSH/MAX_CONCURRENT_STREAMS/MAX_HEADER_LIST_SIZE 는 송신 측 제약이다.
+					break;
+			}
+		}
 	}
 
 	ne::Task<ne::io::IoResult<bool_t>> Connection::FillAtLeast(const std::size_t _need, std::stop_token _stopToken)
@@ -98,6 +136,10 @@ namespace ne::network::http_2::internal
 
 		const auto parsed = ParseFrameHeader(std::span<const byte_t>(inbuf).subspan(inpos, FrameHeaderSize));
 		const std::uint32_t length = parsed->length;
+
+		// 길이 필드는 24비트라 최대 16MB 를 표현한다. 우리가 광고한 MAX_FRAME_SIZE 를 강제하지 않으면
+		// 피어가 연결당 16MB 버퍼를 강제로 할당시킬 수 있다(RFC 9113 §4.2 상으로도 FRAME_SIZE_ERROR).
+		if (length > localMaxFrameSize) co_return R::Error(ne::io::IoError{ ne::io::IoErrorKind::INVALID_BUFFER, "peer frame exceeds advertised SETTINGS_MAX_FRAME_SIZE" }.Context("[Http2/ReadFrame]"));
 
 		auto full = co_await FillAtLeast(FrameHeaderSize + length, _stopToken);
 		if (full.IsError()) co_return R::Error(std::move(full.Error()));
@@ -316,13 +358,20 @@ namespace ne::network::http_2::internal
 				case FrameType::SETTINGS:
 				{
 					if (frame.header.HasFlag(FLAG_ACK)) break;
-					for (std::size_t offset = 0; offset + 6 <= frame.payload.size(); offset += 6)
+
+					std::int64_t windowDelta = 0;
+					ApplyPeerSettings(frame, windowDelta);
+
+					// 이미 열린 스트림의 송신 윈도우도 차분으로 조정한다(RFC 9113 §6.9.2).
+					if (windowDelta != 0)
 					{
-						const auto id = static_cast<SettingsId>(ReadUint16(std::span<const byte_t>(frame.payload).subspan(offset, 2)));
-						const std::uint32_t value = ReadUint32(std::span<const byte_t>(frame.payload).subspan(offset + 2, 4));
-						if (id == SettingsId::INITIAL_WINDOW_SIZE) peerInitialWindow = static_cast<std::int32_t>(value);
-						else if (id == SettingsId::MAX_FRAME_SIZE) peerMaxFrameSize = value;
+						for (auto& [id, slot] : streams)
+						{
+							slot->sendWindow += windowDelta;
+							if (slot->sendWindow > 0) slot->windowReady.SignalDeferred(context);
+						}
 					}
+
 					if (auto ack = co_await SendSettings(true, token); ack.IsError()) { FailAll(http::HttpError(std::move(ack.Error()))); co_return; }
 					break;
 				}
@@ -513,6 +562,62 @@ namespace ne::network::http_2::internal
 
 	// ───────────────────────── ServerConnection ─────────────────────────
 
+	ne::Task<void_t> ServerConnection::RunDispatch(const std::uint32_t _streamId, std::stop_token _stopToken)
+	{
+		// 스트림 하나의 처리 실패가 연결 전체를 끊지 않도록 에러는 삼킨다(h2 의 장점 — DispatchStream 이
+		// 필요하면 해당 스트림만 RST_STREAM 한다).
+		(void_t)co_await DispatchStream(_streamId, std::move(_stopToken));
+
+		// SignalDeferred: Run() 은 깨어나면 이 태스크의 프레임을 회수하므로, 이 프레임이 완전히 끝난
+		// 뒤(다음 tick) 재개되도록 지연 신호한다 — 실행 중인 프레임 파괴 방지.
+		if (--activeDispatches == 0) dispatchesDone.SignalDeferred(context);
+	}
+
+	ne::Task<http::HttpResult<void_t>> ServerConnection::SendDataFlowControlled(const std::uint32_t _streamId, const std::span<const byte_t> _data, const bool_t _endStream, std::stop_token _stopToken)
+	{
+		using R = http::HttpResult<void_t>;
+
+		const auto iterator = streams.find(_streamId);
+		if (iterator == streams.end()) co_return R::Ok(); // RST 등으로 이미 사라진 스트림
+		Stream& stream = *iterator->second;
+
+		// 빈 본문이라도 END_STREAM 을 실은 DATA 프레임 하나는 보내야 스트림이 종결된다.
+		if (_data.empty())
+		{
+			if (!_endStream) co_return R::Ok();
+
+			std::vector<byte_t> frame;
+			AppendData(frame, _streamId, {}, true);
+
+			co_return (co_await WriteRaw(std::move(frame), _stopToken)).IsError() ? R::Error(http::HttpError(http::HttpErrorKind::TRANSPORT, "write failed").Context("[Http2Server/SendData]")) : R::Ok();
+		}
+
+		std::size_t offset = 0;
+		while (offset < _data.size())
+		{
+			// 세 상한(프레임 크기 / 연결 윈도우 / 스트림 윈도우) 중 가장 작은 값만큼 보낼 수 있다.
+			const std::int64_t available = std::min<std::int64_t>({ static_cast<std::int64_t>(peerMaxFrameSize), connSendWindow, stream.sendWindow, static_cast<std::int64_t>(_data.size() - offset) });
+			if (available <= 0)
+			{
+				co_await stream.windowReady; // 드라이버가 WINDOW_UPDATE 수신 시 신호
+				continue;
+			}
+
+			const auto chunk = static_cast<std::size_t>(available);
+			const bool_t last = _endStream && (offset + chunk) >= _data.size();
+
+			std::vector<byte_t> frame;
+			AppendData(frame, _streamId, _data.subspan(offset, chunk), last);
+			if (auto written = co_await WriteRaw(std::move(frame), _stopToken); written.IsError()) co_return R::Error(http::HttpError(std::move(written.Error())).Context("[Http2Server/SendData]"));
+
+			connSendWindow -= available;
+			stream.sendWindow -= available;
+			offset += chunk;
+		}
+
+		co_return R::Ok();
+	}
+
 	ne::Task<http::HttpResult<void_t>> ServerConnection::SendStreamingBody(const std::uint32_t _streamId, const http::BodyProducer& _producer, std::stop_token _stopToken)
 	{
 		using R = http::HttpResult<void_t>;
@@ -532,23 +637,10 @@ namespace ne::network::http_2::internal
 			const std::vector<byte_t>& data = chunk.Value();
 			if (data.empty()) // EOF — 빈 DATA 프레임에 END_STREAM 을 실어 종결
 			{
-				std::vector<byte_t> frame;
-				AppendData(frame, _streamId, {}, true);
-				if (auto written = co_await WriteRaw(std::move(frame), _stopToken); written.IsError()) co_return R::Error(http::HttpError(std::move(written.Error())).Context("[Http2Server/SendStreamingBody]"));
-				co_return R::Ok();
+				co_return co_await SendDataFlowControlled(_streamId, {}, true, std::move(_stopToken));
 			}
 
-			std::size_t offset = 0;
-			while (offset < data.size())
-			{
-				const std::size_t part = std::min<std::size_t>(peerMaxFrameSize, data.size() - offset);
-
-				std::vector<byte_t> frame;
-				AppendData(frame, _streamId, std::span<const byte_t>(data).subspan(offset, part), false);
-				if (auto written = co_await WriteRaw(std::move(frame), _stopToken); written.IsError()) co_return R::Error(http::HttpError(std::move(written.Error())).Context("[Http2Server/SendStreamingBody]"));
-
-				offset += part;
-			}
+			if (auto sent = co_await SendDataFlowControlled(_streamId, data, false, _stopToken); sent.IsError()) co_return R::Error(std::move(sent.Error()).Context("[Http2Server/SendStreamingBody]"));
 		}
 	}
 
@@ -582,18 +674,9 @@ namespace ne::network::http_2::internal
 
 		if (streaming) co_return co_await SendStreamingBody(_streamId, *_response.body.Producer(), std::move(_stopToken));
 
-		std::size_t offset = 0;
-		while (offset < body.size())
-		{
-			const std::size_t chunk = std::min<std::size_t>(peerMaxFrameSize, body.size() - offset);
-			const bool_t last = (offset + chunk) >= body.size();
-
-			std::vector<byte_t> frame;
-			AppendData(frame, _streamId, std::span<const byte_t>(body).subspan(offset, chunk), last);
-			if (auto written = co_await WriteRaw(std::move(frame), _stopToken); written.IsError()) co_return R::Error(http::HttpError(std::move(written.Error())).Context("[Http2Server/SendResponse]"));
-
-			offset += chunk;
-		}
+		// 본문이 없으면 위 HEADERS 에 이미 END_STREAM 이 실렸다 — 여기서 빈 DATA 를 더 보내면 이미 닫힌
+		// 스트림에 프레임을 쓰는 프로토콜 위반이 된다.
+		if (hasBody) if (auto sent = co_await SendDataFlowControlled(_streamId, body, true, _stopToken); sent.IsError()) co_return R::Error(std::move(sent.Error()).Context("[Http2Server/SendResponse]"));
 
 		co_return R::Ok();
 	}
@@ -625,6 +708,22 @@ namespace ne::network::http_2::internal
 
 	ne::Task<http::HttpResult<void_t>> ServerConnection::Run(std::stop_token _stopToken)
 	{
+		// 스트림 디스패치가 별도 태스크로 도는 만큼, 어떤 경로로 루프를 빠져나가든 그것들이 전부 끝난
+		// 뒤에 반환해야 한다 — 진행 중인 디스패치를 문 채 반환하면 호출자가 이 연결을 파괴할 때 그
+		// 태스크들이 파괴된 객체를 참조한다.
+		std::stop_source dispatchStop;
+		std::stop_callback forwardStop{ _stopToken, [&dispatchStop] { dispatchStop.request_stop(); } };
+
+		auto result = co_await RunFrameLoop(dispatchStop.get_token());
+
+		dispatchStop.request_stop();
+		while (activeDispatches > 0) co_await dispatchesDone;
+
+		co_return result;
+	}
+
+	ne::Task<http::HttpResult<void_t>> ServerConnection::RunFrameLoop(std::stop_token _stopToken)
+	{
 		using R = http::HttpResult<void_t>;
 
 		// 클라이언트 연결 preface 확인
@@ -648,7 +747,24 @@ namespace ne::network::http_2::internal
 			{
 				case FrameType::SETTINGS:
 				{
-					if (!frame.header.HasFlag(FLAG_ACK)) if (auto ack = co_await SendSettings(true, _stopToken); ack.IsError()) co_return R::Error(http::HttpError(std::move(ack.Error())));
+					if (frame.header.HasFlag(FLAG_ACK)) break;
+
+					// 예전에는 ACK 만 보내고 피어 SETTINGS 를 **완전히 무시**했다 — 그래서 클라이언트가
+					// 알려준 INITIAL_WINDOW_SIZE/MAX_FRAME_SIZE 가 아무 효과도 없었다.
+					std::int64_t windowDelta = 0;
+					ApplyPeerSettings(frame, windowDelta);
+
+					// INITIAL_WINDOW_SIZE 변경은 이미 열린 스트림에도 차분으로 반영해야 한다(RFC 9113 §6.9.2).
+					if (windowDelta != 0)
+					{
+						for (auto& [id, slot] : streams)
+						{
+							slot->sendWindow += windowDelta;
+							if (slot->sendWindow > 0) slot->windowReady.SignalDeferred(context);
+						}
+					}
+
+					if (auto ack = co_await SendSettings(true, _stopToken); ack.IsError()) co_return R::Error(http::HttpError(std::move(ack.Error())));
 					break;
 				}
 				case FrameType::PING:
@@ -658,7 +774,25 @@ namespace ne::network::http_2::internal
 				}
 				case FrameType::WINDOW_UPDATE:
 				{
-					if (frame.payload.size() >= 4 && frame.header.streamId == 0) connSendWindow += ReadUint32(frame.payload) & 0x7FFFFFFFu;
+					if (frame.payload.size() < 4) break;
+
+					const std::int64_t increment = ReadUint32(frame.payload) & 0x7FFFFFFFu;
+					if (frame.header.streamId == 0)
+					{
+						connSendWindow += increment;
+
+						// 연결 윈도우가 열리면 그것을 기다리던 모든 스트림을 깨워야 한다.
+						for (auto& [id, slot] : streams) slot->windowReady.SignalDeferred(context);
+						break;
+					}
+
+					// 스트림 레벨 WINDOW_UPDATE 를 예전에는 통째로 버렸다 — 그래서 초기 윈도우를 소진한
+					// 뒤 피어가 창을 열어줘도 서버가 그 사실을 몰랐다.
+					if (const auto iterator = streams.find(frame.header.streamId); iterator != streams.end())
+					{
+						iterator->second->sendWindow += increment;
+						iterator->second->windowReady.SignalDeferred(context);
+					}
 					break;
 				}
 				case FrameType::GOAWAY:
@@ -731,8 +865,26 @@ namespace ne::network::http_2::internal
 
 					if (stream.headersDone && stream.endStream)
 					{
-						if (stream.rejected) streams.erase(streamId); // 이미 RST 로 거부 — 디스패치 없이 정리
-						else if (auto dispatched = co_await DispatchStream(streamId, _stopToken); dispatched.IsError()) co_return R::Error(std::move(dispatched.Error()));
+						if (stream.rejected) { streams.erase(streamId); } // 이미 RST 로 거부 — 디스패치 없이 정리
+						else if (limits.maxConcurrentStreams > 0 && activeDispatches >= limits.maxConcurrentStreams)
+						{
+							// 동시 스트림 상한 초과 — REFUSED_STREAM 은 클라이언트가 안전하게 재시도할 수 있다.
+							streams.erase(streamId);
+
+							std::vector<byte_t> rst;
+							AppendRstStream(rst, streamId, ErrorCode::REFUSED_STREAM);
+							if (auto written = co_await WriteRaw(std::move(rst), _stopToken); written.IsError()) co_return R::Error(http::HttpError(std::move(written.Error())));
+						}
+						else
+						{
+							// 디스패치를 **별도 태스크로 분리**한다. 그래야 핸들러가 대기하는 동안에도 이
+							// 루프가 계속 프레임을 읽어 다른 스트림을 진행시키고 WINDOW_UPDATE 를 회수한다.
+							std::erase_if(dispatchTasks, [](const ne::Task<void_t>& _task) { return _task.IsReady(); });
+
+							++activeDispatches;
+							dispatchTasks.push_back(RunDispatch(streamId, _stopToken));
+							dispatchTasks.back().Resume();
+						}
 					}
 					break;
 				}

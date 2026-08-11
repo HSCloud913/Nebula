@@ -304,6 +304,14 @@ namespace ne::network::http_2::internal
 	{
 		HeaderList result;
 		std::size_t pos = 0;
+		std::size_t decodedSize = 0; // RFC 7541 §4.1 기준 누적 크기 — HPACK bomb 방어
+
+		// 방금 디코딩한 헤더 하나를 누적 크기에 반영하고 상한 초과를 알린다.
+		const auto exceedsListLimit = [&](const HpackHeader& _header)
+		{
+			decodedSize += _header.name.size() + _header.value.size() + 32;
+			return decodedSize > maxHeaderListSize;
+		};
 
 		while (pos < _block.size())
 		{
@@ -317,6 +325,7 @@ namespace ne::network::http_2::internal
 				string_t name, value;
 				if (!Lookup(static_cast<std::size_t>(index), name, value)) return std::nullopt;
 				result.push_back(HpackHeader{ std::move(name), std::move(value) });
+				if (exceedsListLimit(result.back())) return std::nullopt;
 			}
 			else if (first & 0x40) // 01xxxxxx : Literal with Incremental Indexing
 			{
@@ -335,11 +344,17 @@ namespace ne::network::http_2::internal
 
 				AddToDynamicTable(name, value);
 				result.push_back(HpackHeader{ std::move(name), std::move(value) });
+				if (exceedsListLimit(result.back())) return std::nullopt;
 			}
 			else if (first & 0x20) // 001xxxxx : Dynamic Table Size Update
 			{
 				std::uint64_t size = 0;
 				if (!DecodeInteger(_block, pos, 5, size)) return std::nullopt;
+
+				// 우리가 광고한 상한을 넘는 요구는 RFC 7541 §6.3 상 디코딩 오류다. 그대로 받아들이면
+				// 피어가 임의 크기(최대 2^64)의 동적 테이블을 우리 메모리에 만들게 할 수 있다.
+				if (size > advertisedDynamicSize) return std::nullopt;
+
 				SetMaxDynamicSize(static_cast<std::size_t>(size));
 			}
 			else // 0000xxxx / 0001xxxx : Literal without Indexing / Never Indexed
@@ -357,6 +372,7 @@ namespace ne::network::http_2::internal
 
 				if (!DecodeStringLiteral(_block, pos, value)) return std::nullopt;
 				result.push_back(HpackHeader{ std::move(name), std::move(value) });
+				if (exceedsListLimit(result.back())) return std::nullopt;
 			}
 		}
 

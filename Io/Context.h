@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <coroutine>
+#include <memory>
 #include <mutex>
 #include <vector>
 #include "Base/Type.h"
@@ -70,8 +71,16 @@ namespace ne::io
 	class Context final : public IExecutor
 	{
 	public:
-		explicit Context(IEngine& _engine, ne::time::TimerWheel* _timerWheel = nullptr) noexcept;
-		~Context() override = default;
+		/**
+		 * @param _timerWheel 공유할 타이머 휠(예: ContextPool 이 워커마다 소유한 것). nullptr 이면
+		 * **이 Context 가 자체 타이머 휠을 소유한다.**
+		 *
+		 * @note 예전에는 nullptr 이면 타이머가 아예 없어 SleepFor()/Timeout() 이 assert 로 죽었다.
+		 * 타이머는 데드라인의 전제이고 데드라인은 서버 보안 장치의 전제이므로, "타이머 없는 Context" 는
+		 * 값싼 편의가 아니라 함정이었다. 휠 자체는 빈 힙 + 빈 셋이라 소유 비용이 사실상 없다.
+		 */
+		explicit Context(IEngine& _engine, ne::time::TimerWheel* _timerWheel = nullptr);
+		~Context() override;
 
 		NEBULA_NON_COPYABLE_MOVABLE(Context)
 
@@ -95,7 +104,8 @@ namespace ne::io
 
 	private:
 		IEngine& engine;
-		ne::time::TimerWheel* timerWheel;
+		std::unique_ptr<ne::time::TimerWheel> ownedTimerWheel; // 주입받지 않았을 때만 채워진다
+		ne::time::TimerWheel* timerWheel;                      // 주입본 또는 ownedTimerWheel
 		std::mutex postMutex;
 		std::vector<std::coroutine_handle<>> postedHandles;
 		std::atomic<RunState> state{ RunState::IDLE };
