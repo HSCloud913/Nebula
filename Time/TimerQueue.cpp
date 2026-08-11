@@ -2,7 +2,7 @@
 // Created by hscloud on 26. 6. 30.
 //
 
-#include "Time/Timer/TimerWheel.h"
+#include "Time/TimerQueue.h"
 
 #include <algorithm>
 #include <limits>
@@ -16,14 +16,24 @@ namespace ne::time
 	// live는 "아직 취소되지 않은 타이머 id" 집합이다. Cancel은 힙을 건드리지 않고 live에서만 제거하므로 O(1)이며,
 	// 힙에 남은 취소된 엔트리는 Tick에서 팝될 때 live에 없음을 확인하고 그냥 버려진다.
 	// 힙 재구성(compaction)은 dead 엔트리 비율이 일정 이상일 때만 수행해 메모리 증가를 억제한다.
-	ulonglong_t TimerWheel::Schedule(const std::chrono::milliseconds _delay, std::function<void_t()> _callback)
+	ulonglong_t TimerQueue::Schedule(const std::chrono::milliseconds _delay, std::function<void_t()> _callback) { return ScheduleAt(_delay, 0, std::move(_callback)); }
+
+	ulonglong_t TimerQueue::ScheduleRepeating(const std::chrono::milliseconds _period, std::function<void_t()> _callback)
+	{
+		// 주기가 0 이하면 Tick 한 번에 무한히 재발화하게 되므로 예약을 거부한다.
+		if (_period.count() <= 0) return 0;
+
+		return ScheduleAt(_period, static_cast<ulonglong_t>(_period.count()), std::move(_callback));
+	}
+
+	ulonglong_t TimerQueue::ScheduleAt(const std::chrono::milliseconds _delay, const ulonglong_t _periodMs, std::function<void_t()> _callback)
 	{
 		const ulonglong_t id = nextId.fetch_add(1, std::memory_order_relaxed);
 		const ulonglong_t delay = _delay.count() > 0 ? static_cast<ulonglong_t>(_delay.count()) : 0;
 		const ulonglong_t tick = ElapsedMs() + delay;
 
 		std::lock_guard lock(mutex);
-		heap.push_back({ id, tick, std::move(_callback) });
+		heap.push_back({ id, tick, std::move(_callback), _periodMs });
 		std::ranges::push_heap(heap, LaterExpiry{});
 		live.insert(id);
 
@@ -31,13 +41,13 @@ namespace ne::time
 	}
 
 	// 지연 삭제: live 에서만 제거한다. 힙 엔트리는 만료 시 Tick 이 live 에 없음을 보고 스킵·폐기.
-	bool_t TimerWheel::Cancel(const ulonglong_t _id)
+	bool_t TimerQueue::Cancel(const ulonglong_t _id)
 	{
 		std::lock_guard lock(mutex);
 		return live.erase(_id) > 0;
 	}
 
-	void_t TimerWheel::Tick()
+	void_t TimerQueue::Tick()
 	{
 		const ulonglong_t target = ElapsedMs();
 
@@ -51,8 +61,21 @@ namespace ne::time
 				TimerEntry entry = std::move(heap.back());
 				heap.pop_back();
 
-				if (live.erase(entry.id) > 0) fired.push_back(std::move(entry)); // 살아있으면 발화 예약
-				// else: 이미 취소된 케이스. live 를 늘리지 않으므로 세트는 항상 유효 타이머만 유지.
+				if (live.erase(entry.id) == 0) continue; // 이미 취소됨 — 조용히 버린다
+
+				// 반복 타이머는 같은 id 로 다음 경계에 다시 넣는다(id 를 유지해야 Cancel 이 계속 통한다).
+				// 밀린 주기를 몰아 실행하지 않도록, target 을 넘긴 첫 경계까지 건너뛴다.
+				if (entry.periodMs > 0)
+				{
+					ulonglong_t next = entry.expireTick + entry.periodMs;
+					while (next <= target) next += entry.periodMs;
+
+					heap.push_back(TimerEntry{ entry.id, next, entry.callback, entry.periodMs });
+					std::ranges::push_heap(heap, LaterExpiry{});
+					live.insert(entry.id);
+				}
+
+				fired.push_back(std::move(entry));
 			}
 
 			// 취소로 남은 dead 엔트리(만료 전이라 아직 힙에 있음)가 과반이면 힙을 재구성해 메모리 증가를 막는다.
@@ -71,7 +94,7 @@ namespace ne::time
 	}
 
 
-	int_t TimerWheel::NextExpiryMs() const noexcept
+	int_t TimerQueue::NextExpiryMs() const noexcept
 	{
 		std::lock_guard lock(mutex);
 		if (heap.empty()) return -1;
@@ -90,7 +113,7 @@ namespace ne::time
 
 
 
-	ulonglong_t TimerWheel::ElapsedMs() const noexcept
+	ulonglong_t TimerQueue::ElapsedMs() const noexcept
 	{
 		const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(clock() - baseTime).count();
 		return ms > 0 ? static_cast<ulonglong_t>(ms) : 0;

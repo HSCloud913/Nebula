@@ -13,7 +13,7 @@
 #include "Io/Context.h"
 #include "Io/Internal/Engine/Iocp/IocpEngine.h"
 #include "Base/Coroutine/Task.h"
-#include "Time/Timer/TimerWheel.h"
+#include "Time/TimerQueue.h"
 
 using namespace ne;
 using namespace ne::io;
@@ -106,11 +106,11 @@ TEST(IoContextTest, PostResumesOnLoop)
 	EXPECT_EQ(DriveUntilReady(context, task), 42);
 }
 
-// ── TimerWheel 통합: 루프가 타임아웃을 타이머 만료로 맞추고 Tick 한다 ──
-TEST(IoContextTest, TimerWheelIntegration)
+// ── TimerQueue 통합: 루프가 타임아웃을 타이머 만료로 맞추고 Tick 한다 ──
+TEST(IoContextTest, TimerQueueIntegration)
 {
 	IocpEngine engine;
-	ne::time::TimerWheel wheel;
+	ne::time::TimerQueue wheel;
 	Context context{ engine, &wheel };
 
 	std::atomic<bool_t> fired{ false };

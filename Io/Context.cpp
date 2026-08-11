@@ -5,18 +5,18 @@
 #include "Io/Context.h"
 
 #include <cassert>
-#include "Time/Timer/TimerWheel.h"
+#include "Time/TimerQueue.h"
 
 
 
 namespace ne::io
 {
-	Context::Context(IEngine& _engine, ne::time::TimerWheel* _timerWheel)
+	Context::Context(IEngine& _engine, ne::time::TimerQueue* _timer)
 		: engine(_engine)
-		, ownedTimerWheel(_timerWheel == nullptr ? std::make_unique<ne::time::TimerWheel>() : nullptr)
-		, timerWheel(_timerWheel != nullptr ? _timerWheel : ownedTimerWheel.get()) {}
+		, ownedTimer(_timer == nullptr ? std::make_unique<ne::time::TimerQueue>() : nullptr)
+		, timer(_timer != nullptr ? _timer : ownedTimer.get()) {}
 
-	// TimerWheel 이 불완전 타입이 아니어야 unique_ptr 소멸이 가능하므로 여기(.cpp)에서 정의한다.
+	// TimerQueue 이 불완전 타입이 아니어야 unique_ptr 소멸이 가능하므로 여기(.cpp)에서 정의한다.
 	Context::~Context() = default;
 
 
@@ -78,7 +78,7 @@ namespace ne::io
 			if (handle && !handle.done()) handle.resume();
 		}
 
-		if (timerWheel != nullptr) timerWheel->Tick();
+		if (timer != nullptr) timer->Tick();
 		DrainPosted();
 
 		return count > 0;
@@ -99,16 +99,16 @@ namespace ne::io
 	ne::time::Awaitable Context::SleepFor(const std::chrono::milliseconds _duration) const noexcept
 	{
 		// 생성자가 항상 휠을 확보하므로 nullptr 일 수 없다.
-		return ne::time::SleepFor(*timerWheel, _duration);
+		return ne::time::SleepFor(*timer, _duration);
 	}
 
 
 
 	std::chrono::milliseconds Context::EffectiveTimeout(const std::chrono::milliseconds _timeout) const noexcept
 	{
-		if (timerWheel == nullptr) return _timeout;
+		if (timer == nullptr) return _timeout;
 
-		const int_t nextExpiry = timerWheel->NextExpiryMs();
+		const int_t nextExpiry = timer->NextExpiryMs();
 		if (nextExpiry < 0) return _timeout;
 
 		if (_timeout.count() < 0 || nextExpiry < _timeout.count()) return std::chrono::milliseconds{ nextExpiry };

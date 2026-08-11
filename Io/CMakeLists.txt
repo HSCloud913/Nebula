@@ -66,7 +66,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 set_target_properties(${PROJECT_NAME} PROPERTIES EXPORT_NAME Io)
 install(TARGETS ${PROJECT_NAME} EXPORT NebulaTargets
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-# 실제 소스 의존: Base(타입/코루틴), Time(TimerWheel/SleepFor — Context.h 가 공개 include),
+# 실제 소스 의존: Base(타입/코루틴), Time(TimerQueue/SleepFor — Context.h 가 공개 include),
 # Memory(BufferView/BufferChain — Socket/File/Operation 이 공개 include). Concurrency 는 사용
 # 근거가 없어 링크하지 않는다(유령 의존 제거, 2026-08-02).
 target_link_libraries(${PROJECT_NAME} PUBLIC NebulaBase NebulaTime NebulaMemory)

@@ -6,7 +6,7 @@
 
 #include <algorithm>
 #include "Io/Context.h"
-#include "Time/Timer/TimerWheel.h"
+#include "Time/TimerQueue.h"
 
 #if defined(_WIN32)
 #	include "Io/Internal/Engine/Iocp/IocpEngine.h"
@@ -47,8 +47,8 @@ namespace ne::io
 				worker.engine = std::make_unique<IoUringEngine>();
 			}
 #endif
-			worker.timerWheel = std::make_unique<ne::time::TimerWheel>();
-			worker.context = std::make_unique<Context>(*worker.engine, worker.timerWheel.get());
+			worker.timer = std::make_unique<ne::time::TimerQueue>();
+			worker.context = std::make_unique<Context>(*worker.engine, worker.timer.get());
 
 			workers.push_back(std::move(worker));
 		}

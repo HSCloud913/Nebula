@@ -13,7 +13,7 @@
 #include "Io/Internal/Engine/Iocp/IocpEngine.h"
 #include "Io/Coroutine/Timeout.h"
 #include "Base/Coroutine/WhenAny.h"
-#include "Time/Timer/TimerWheel.h"
+#include "Time/TimerQueue.h"
 
 using namespace ne;
 using namespace ne::io;
@@ -395,7 +395,7 @@ TEST(SocketLevel3Test, TimeoutIoWins)
 	const WsaScope wsa;
 	IocpEngine engine;
 	ASSERT_TRUE(engine.IsValid());
-	ne::time::TimerWheel wheel;
+	ne::time::TimerQueue wheel;
 	Context context{ engine, &wheel }; // SleepFor(=Timeout 의 타이머 레이서) 전제
 
 	SOCKET rawA = INVALID_SOCKET;
@@ -427,7 +427,7 @@ TEST(SocketLevel3Test, TimeoutTimerWins)
 	const WsaScope wsa;
 	IocpEngine engine;
 	ASSERT_TRUE(engine.IsValid());
-	ne::time::TimerWheel wheel;
+	ne::time::TimerQueue wheel;
 	Context context{ engine, &wheel };
 
 	SOCKET rawA = INVALID_SOCKET;
@@ -461,7 +461,7 @@ TEST(SocketLevel3Test, WhenAnyShortestWins)
 	const WsaScope wsa;
 	IocpEngine engine;
 	ASSERT_TRUE(engine.IsValid());
-	ne::time::TimerWheel wheel;
+	ne::time::TimerQueue wheel;
 	Context context{ engine, &wheel };
 
 	std::vector<ne::Task<int_t>> tasks;
@@ -484,7 +484,7 @@ TEST(SocketLevel3Test, WhenAnySingleTask)
 	const WsaScope wsa;
 	IocpEngine engine;
 	ASSERT_TRUE(engine.IsValid());
-	ne::time::TimerWheel wheel;
+	ne::time::TimerQueue wheel;
 	Context context{ engine, &wheel };
 
 	std::vector<ne::Task<int_t>> tasks;

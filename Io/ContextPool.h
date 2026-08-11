@@ -13,7 +13,7 @@
 
 namespace ne::time
 {
-	class TimerWheel;
+	class TimerQueue;
 }
 
 namespace ne::io
@@ -22,7 +22,7 @@ namespace ne::io
 
 	/**
 	 * @class ContextPool
-	 * @brief thread-per-core 실행기 풀. 워커마다 독립된 엔진/Context/TimerWheel/스레드를 소유한다.
+	 * @brief thread-per-core 실행기 풀. 워커마다 독립된 엔진/Context/TimerQueue/스레드를 소유한다.
 	 *
 	 * 각 Context 는 단일 스레드 전제로 동작하므로 워커 간 코어 공유나 자원 공유가 없다.
 	 * 코루틴/소켓은 자신이 속한 Context 스레드 위에서만 구동해야 하며, 코어 간 이동이 필요하면
@@ -41,7 +41,7 @@ namespace ne::io
 		struct Worker
 		{
 			std::unique_ptr<IEngine> engine;
-			std::unique_ptr<ne::time::TimerWheel> timerWheel;
+			std::unique_ptr<ne::time::TimerQueue> timer;
 			std::unique_ptr<Context> context;
 			std::thread thread;
 		};

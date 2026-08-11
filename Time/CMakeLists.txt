@@ -8,12 +8,14 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(HEADERS
-    Coroutine/Awaitable.h
-    Timer/TimerWheel.h
+    HttpDate.h
+    Sleep.h
+    TimerQueue.h
 )
 
 set(SOURCES
-    Timer/TimerWheel.cpp
+    HttpDate.cpp
+    TimerQueue.cpp
 )
 
 add_library(${PROJECT_NAME} STATIC ${HEADERS} ${SOURCES})

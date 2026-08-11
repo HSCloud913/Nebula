@@ -12,14 +12,14 @@
 
 namespace ne::time
 {
-	class TimerWheel;
+	class TimerQueue;
 }
 
 namespace ne::io
 {
 	/**
 	 * @class Runtime
-	 * @brief 단일 스레드 I/O 런타임 파사드입니다. 엔진·타이머 휠·Context 를 RAII 하나로 묶습니다.
+	 * @brief 단일 스레드 I/O 런타임 파사드입니다. 엔진·타이머 큐·Context 를 RAII 하나로 묶습니다.
 	 *
 	 * EngineType 만 주면 MakeEngine 으로 플랫폼 최적 엔진을 골라 Context 를 구성합니다. 가장 흔한
 	 * 사용은 BlockOn(task) — 주어진 코루틴을 이 Context 위에서 완료까지 구동하고 결과를 반환합니다
@@ -37,7 +37,7 @@ namespace ne::io
 
 	private:
 		std::unique_ptr<IEngine> engine;
-		std::unique_ptr<ne::time::TimerWheel> timerWheel;
+		std::unique_ptr<ne::time::TimerQueue> timer;
 		std::unique_ptr<Context> context;
 
 	public:

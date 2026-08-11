@@ -10,7 +10,7 @@
 // 과거에는 Base/Type.h 가 <windows.h> 를 끌어와 저장소 전체 번역 단위에 퍼졌습니다(2026-08-11 분리).
 //
 // @note NOMINMAX 가 없으면 windows.h 의 max/min 매크로가 std::max/std::min 호출을 텍스트 치환해,
-//       전혀 무관한 파일에서 알아보기 힘든 구문 오류를 냅니다(과거 PoolAllocator/TimerWheel 에서 겪음).
+//       전혀 무관한 파일에서 알아보기 힘든 구문 오류를 냅니다(과거 PoolAllocator/TimerQueue 에서 겪음).
 //       가드를 각 파일에 흩뿌리지 않고 여기 한 곳에 모아 두는 것이 이 헤더의 존재 이유입니다.
 // @note Winsock 을 쓰는 파일은 이 헤더가 아니라 "Base/WinsockApi.h" 를 include 하세요. <winsock2.h> 를
 //       직접 include 하면 그것이 NOMINMAX 없이 windows.h 를 끌어와(MSVC 확인) 가드가 무력화됩니다.

@@ -20,7 +20,7 @@
 #include "Base/Coroutine/Task.h"
 #include "Io/Context.h"
 #include "Io/Socket.h"
-#include "Time/Timer/TimerWheel.h"
+#include "Time/TimerQueue.h"
 #include "Network/Protocol/Http/ResponseCallbacks.h"
 #include "Network/Protocol/Http/ClientBuilder.h"
 #include "Network/Protocol/Http/ServerBuilder.h"
@@ -670,8 +670,7 @@ TEST(Http1ClientServerTest, RequestTimeoutReturnsTimeoutError)
 {
 	TestEngine engine;
 	ASSERT_TRUE(engine.IsValid());
-	ne::time::TimerWheel wheel;
-	Context context{ engine, &wheel }; // Timeout/SleepFor 는 타이머 휠 전제
+	Context context{ engine }; // Context 가 타이머 큐를 기본 소유한다
 
 	// 핸들러가 클라이언트 타임아웃보다 오래 지연 → 클라이언트는 시한 초과로 끝나야 한다.
 	ServerBuilder builder;

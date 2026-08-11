@@ -51,6 +51,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
                       NebulaMemory
                       NebulaUtil
                       NebulaIo
+                      NebulaTime # HTTP-date(Date/Last-Modified) 포맷 — NebulaIo 를 통한 전이 의존에 기대지 않는다
 )
 target_link_libraries(${PROJECT_NAME} PRIVATE NebulaConcurrency)
 

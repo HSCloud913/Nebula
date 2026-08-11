@@ -5,7 +5,7 @@
 #include "Io/Runtime.h"
 
 #include "Io/Engine.h"
-#include "Time/Timer/TimerWheel.h"
+#include "Time/TimerQueue.h"
 
 
 
@@ -13,8 +13,8 @@ namespace ne::io
 {
 	Runtime::Runtime(const EngineType _type)
 		: engine(MakeEngine(_type))
-		, timerWheel(std::make_unique<ne::time::TimerWheel>())
-		, context(std::make_unique<Context>(*engine, timerWheel.get()))
+		, timer(std::make_unique<ne::time::TimerQueue>())
+		, context(std::make_unique<Context>(*engine, timer.get()))
 	{
 	}
 
