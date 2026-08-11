@@ -194,6 +194,9 @@ namespace ne::io
 		// 취소 SQE 제출을 여기서 대신 수행한다.
 		SubmitPendingCancels();
 
+		// 지난 번 SQ 부족으로 무장에 실패했다면 여기서 만회한다(그러지 않으면 Wake() 가 영구 무효).
+		if (!isWakePollArmed) ArmWakePoll();
+
 		// io_uring_wait_cqe(_timeout) 로 최소 1개의 CQE 가 준비될 때까지만 블로킹 대기한다.
 		io_uring_cqe* firstCqe = nullptr;
 		if (_timeout.count() < 0) { (void_t)::io_uring_wait_cqe(&ring, &firstCqe); }
@@ -214,12 +217,16 @@ namespace ne::io
 			io_uring_cqe* cqe = cqes[i];
 			const ulonglong_t userData = ::io_uring_cqe_get_data64(cqe);
 
-			// Wake()/취소용 poll SQE 의 완료는 사용자에게 노출할 실제 I/O 결과가 아니므로 건너뛴다.
+			// wake poll 의 완료 — eventfd 를 비우고 재무장해야 한다.
 			if (userData == WakeUserData)
 			{
 				hasSeenWake = true;
 				continue;
 			}
+
+			// 취소 SQE 의 완료 — 사용자에게 노출할 결과가 아니고, wake 상태를 건드려서도 안 된다.
+			// (취소된 원본 op 의 완료는 별도 CQE 로 -ECANCELED 와 함께 따로 온다.)
+			if (userData == CancelUserData) continue;
 
 			auto* operation = reinterpret_cast<UringOperation*>(::io_uring_cqe_get_data(cqe));
 			if (operation == nullptr) continue;
@@ -308,7 +315,13 @@ namespace ne::io
 	void_t IoUringEngine::ArmWakePoll() noexcept
 	{
 		io_uring_sqe* sqe = AcquireSqe();
-		if (sqe == nullptr) return;
+		if (sqe == nullptr)
+		{
+			// SQ 가 가득 차 무장에 실패했다 — 조용히 포기하면 이후 Wake() 가 영원히 루프를 깨우지 못한다.
+			// 다음 WaitCompletions() 진입 시 재시도하도록 표시만 남긴다.
+			isWakePollArmed = false;
+			return;
+		}
 
 		// IORING_OP_POLL_ADD 는 epoll 과 마찬가지로 1회성 알림이라, 완료될 때마다 다시 등록해야
 		// 다음 Wake() 신호를 놓치지 않는다. user_data 를 WakeUserData 로 고정해 실제 UringOperation*
@@ -316,6 +329,8 @@ namespace ne::io
 		::io_uring_prep_poll_add(sqe, wakeEventFd, POLLIN);
 		::io_uring_sqe_set_data64(sqe, WakeUserData);
 		(void_t)::io_uring_submit(&ring);
+
+		isWakePollArmed = true;
 	}
 
 	void_t IoUringEngine::SubmitPendingCancels() noexcept
@@ -342,7 +357,10 @@ namespace ne::io
 				// io_uring_prep_cancel 의 두 번째 인자는 취소 대상을 식별하는 값으로, 원본 요청을
 				// 제출할 때 user_data 로 등록해 둔 operation 포인터와 동일한 값을 넘겨야 매칭된다.
 				::io_uring_prep_cancel(sqe, operation, 0);
-				::io_uring_sqe_set_data64(sqe, WakeUserData);
+
+				// wake 와 **다른** 마커를 쓴다. 예전에는 WakeUserData 를 공유해, 취소 완료가 wake 로
+				// 오인되어 eventfd 를 비우고(진짜 Wake() 유실) poll 을 중복 무장했다.
+				::io_uring_sqe_set_data64(sqe, CancelUserData);
 				(void_t)::io_uring_submit(&ring);
 			}
 		}

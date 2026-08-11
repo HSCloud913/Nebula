@@ -121,16 +121,14 @@ namespace ne::network::http_1::internal
 
 		while (!_stopToken.stop_requested())
 		{
-			// 연결당 요청 수 상한 — 무한 keep-alive 로 연결을 붙잡아 두는 것을 막는다.
-			if (limits.maxRequestsPerConnection > 0 && handled >= limits.maxRequestsPerConnection) break;
-
 			// 읽기 데드라인. 첫 요청은 헤더 대기(headerTimeout)부터 시작하고, keep-alive 재사용 시에는
 			// 다음 요청이 시작되기까지의 유휴 시간(idleTimeout)이 포함된다. 본문까지 한 번에 읽으므로
 			// bodyTimeout 을 더해 하나의 예산으로 쓴다 — 파서 내부 단계별 데드라인은 후속 과제.
 			const auto readBudget = (handled == 0 ? limits.headerTimeout : limits.idleTimeout) + limits.bodyTimeout;
 
+			// 타임아웃 시 리더 상태는 메시지 중간에 멈춰 있다. 아래 모든 에러 경로가 연결을 닫으므로
+			// 그 상태가 재사용되지 않는다 — 타임아웃을 비치명적으로 바꾸려면 리더도 함께 버려야 한다.
 			auto request = co_await http::internal::WithTimeout(_context, readBudget, [&reader](std::stop_token _token) { return reader.ReadRequest(std::move(_token)); });
-			++handled;
 
 			if (request.IsError())
 			{
@@ -162,7 +160,14 @@ namespace ne::network::http_1::internal
 			if (res.body.IsStreaming()) { if (!res.headers.Has("Transfer-Encoding")) res.headers.Set("Transfer-Encoding", "chunked"); }
 			else if (!res.headers.Has("Content-Length") && !res.headers.Has("Transfer-Encoding")) res.headers.Set("Content-Length", std::to_string(res.body.Size()));
 
-			const bool_t keepAlive = !clientWantsClose && !_stopToken.stop_requested();
+			++handled;
+
+			// 연결당 요청 수 상한에 도달했다면 **이 응답에** close 를 실어야 한다. 루프 상단에서 조용히
+			// break 하면 방금 keep-alive 를 약속한 클라이언트가 다음 요청을 보내다 FIN 과 경합해 잃는다
+			// (비멱등 요청은 안전하게 재시도할 수도 없다).
+			const bool_t reachedRequestLimit = limits.maxRequestsPerConnection > 0 && handled >= limits.maxRequestsPerConnection;
+
+			const bool_t keepAlive = !clientWantsClose && !reachedRequestLimit && !_stopToken.stop_requested();
 			res.headers.Set("Connection", keepAlive ? "keep-alive" : "close");
 
 			// RFC 9110 §6.6.1: 시계를 가진 오리진 서버는 Date 를 보내야 한다(캐시/조건부 요청의 기준).

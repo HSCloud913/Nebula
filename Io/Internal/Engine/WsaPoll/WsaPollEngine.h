@@ -53,8 +53,15 @@ namespace ne::io
 		bool_t isValid{ false };
 		std::mutex mutex;
 		std::unordered_map<void_t*, PendingOperation> pending;
-		std::unordered_map<ulonglong_t, void_t*> readWaiter;
-		std::unordered_map<ulonglong_t, void_t*> writeWaiter;
+
+		// fd → 그 방향으로 대기 중인 op 들(제출 순서 FIFO).
+		//
+		// 예전에는 fd 당 userData 하나만 담는 맵이었다. 같은 방향으로 두 번째 op 이 들어오면 첫 번째를
+		// **덮어써** 그 op 은 pending 에 남은 채 영원히 완료되지 않았고(코루틴 영구 대기 + 핸들러 누수),
+		// Deregister 도 방향당 하나만 정리해 소켓을 닫아도 누수가 남았다. 한 소켓에 읽기와 WaitReadable
+		// 을 동시에 걸거나, 처리량을 위해 Accept 를 여러 개 걸면 바로 밟는다.
+		std::unordered_map<ulonglong_t, std::vector<void_t*>> readWaiter;
+		std::unordered_map<ulonglong_t, std::vector<void_t*>> writeWaiter;
 		std::vector<Completion> ready;
 		std::vector<void_t*> pendingCancels;
 

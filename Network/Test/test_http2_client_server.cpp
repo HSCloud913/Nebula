@@ -20,6 +20,8 @@
 #include "Io/Socket.h"
 #include "Network/Protocol/Http/ClientBuilder.h"
 #include "Network/Protocol/Http/ServerBuilder.h"
+#include "Network/Protocol/Http/Internal/Http2/Frame.h"
+#include "Network/Protocol/Http/Internal/Http2/Hpack.h"
 
 #if defined(_WIN32)
 #include "Base/WinsockApi.h"
@@ -495,6 +497,100 @@ TEST(Http2ClientServerTest, DroppedSessionIsReapedByLoop)
 
 	fresh.Close();
 	StopServer(context, running);
+}
+
+
+
+// ── 흐름제어 창을 열어 주지 않는 클라이언트가 스트림을 리셋해도 서버가 교착/손상되지 않는다 ──
+//
+// 이 시나리오는 우리 클라이언트로는 만들 수 없다(항상 WINDOW_UPDATE 를 준다). 원시 소켓으로 직접
+// h2 프레임을 짜서, 서버가 **반드시 windowReady 에 잠긴 상태**를 만든 뒤 RST_STREAM 을 던진다.
+//
+// 회귀 대상 두 가지:
+//  (1) 스트림을 단순 erase 하면 Stream(과 그 안의 Event)이 파괴되어 대기 코루틴이 영원히 잠든다 →
+//      activeDispatches 가 0 이 되지 못해 Run() 이 반환하지 못하고, 나중에 Event::Awaiter 소멸자가
+//      해제된 메모리에 쓴다. 지금은 DiscardStream 이 closed 표시 + 기상 후 제거하고, Stream 을
+//      shared_ptr 로 잡아 대기자가 안전하게 물러난다.
+//  (2) 종료 시(stop) 창을 기다리는 디스패치를 아무도 깨우지 않으면 Serve 가 영구 대기한다.
+TEST(Http2ClientServerTest, HostileClientResetDuringFlowControlWaitDoesNotHangServer)
+{
+	using namespace ne::network::http_2::internal;
+
+	TestEngine engine;
+	ASSERT_TRUE(engine.IsValid());
+	Context context{ engine };
+
+	// 서버가 한 번에 다 보낼 수 없도록 초기 윈도우보다 훨씬 큰 응답을 준비한다.
+	const std::string payload(512 * 1024, 'x');
+
+	auto builder = std::make_unique<ServerBuilder>();
+	builder->Get("/huge", [payload](const http::Request&) -> ne::Task<http::HttpResult<http::Response>> { co_return http::HttpResult<http::Response>::Ok(http::Response::Text(200, payload)); });
+
+	auto runningResult = StartServer(context, std::move(builder));
+	ASSERT_TRUE(runningResult.IsOk()) << runningResult.Error().What();
+	auto running = std::move(runningResult.Value());
+	running.serveTask.Resume();
+
+	auto clientResult = Socket::Create(context, AF_INET);
+	ASSERT_TRUE(clientResult.IsOk()) << clientResult.Error().What();
+	Socket raw = std::move(clientResult.Value());
+
+	auto connectTask = raw.Connect("127.0.0.1", running.port);
+	connectTask.Resume();
+	for (int_t i = 0; i < 20 && !connectTask.IsReady(); ++i) (void_t)context.RunOnce(std::chrono::milliseconds{ 5 });
+	ASSERT_TRUE(connectTask.IsReady());
+	ASSERT_TRUE(connectTask.await_resume().IsOk());
+
+	// preface + SETTINGS(INITIAL_WINDOW_SIZE 를 아주 작게) — 서버의 스트림 창이 곧 소진된다.
+	std::vector<byte_t> out;
+	out.insert(out.end(), ConnectionPreface.begin(), ConnectionPreface.end());
+	const SettingsEntry entries[] = { { SettingsId::INITIAL_WINDOW_SIZE, 1024 } };
+	AppendSettings(out, entries);
+
+	// GET /huge (END_STREAM) — 스트림 1
+	HpackEncoder encoder;
+	HeaderList headers;
+	headers.push_back(HpackHeader{ ":method", "GET" });
+	headers.push_back(HpackHeader{ ":scheme", "http" });
+	headers.push_back(HpackHeader{ ":path", "/huge" });
+	headers.push_back(HpackHeader{ ":authority", "127.0.0.1" });
+
+	std::vector<byte_t> block;
+	encoder.Encode(headers, block);
+	AppendHeaderBlock(out, 1, block, true, DefaultMaxFrameSize);
+
+	auto sendTask = raw.Send(std::span<const byte_t>{ out.data(), out.size() });
+	sendTask.Resume();
+	for (int_t i = 0; i < 20 && !sendTask.IsReady(); ++i) (void_t)context.RunOnce(std::chrono::milliseconds{ 5 });
+	ASSERT_TRUE(sendTask.IsReady());
+	ASSERT_TRUE(sendTask.await_resume().IsOk());
+
+	// 서버가 응답을 시작해 창을 소진하고 windowReady 에 잠길 시간을 준다. WINDOW_UPDATE 는 **주지 않는다.**
+	byte_t sink[16 * 1024]{};
+	for (int_t round = 0; round < 30; ++round)
+	{
+		auto receiveTask = raw.Receive(std::span<byte_t>{ sink, sizeof(sink) });
+		receiveTask.Resume();
+		for (int_t i = 0; i < 6 && !receiveTask.IsReady(); ++i) (void_t)context.RunOnce(std::chrono::milliseconds{ 5 });
+
+		if (!receiveTask.IsReady()) break; // 더 보낼 창이 없어 서버가 멈춤 = 원하는 상태
+		if (receiveTask.await_resume().IsError()) break;
+	}
+
+	// 이제 스트림을 리셋한다 — 서버는 흐름제어 대기 중에 이 프레임을 받는다.
+	std::vector<byte_t> rst;
+	AppendRstStream(rst, 1, ErrorCode::CANCEL);
+	auto rstTask = raw.Send(std::span<const byte_t>{ rst.data(), rst.size() });
+	rstTask.Resume();
+	for (int_t i = 0; i < 20 && !rstTask.IsReady(); ++i) (void_t)context.RunOnce(std::chrono::milliseconds{ 5 });
+
+	for (int_t i = 0; i < 40; ++i) (void_t)context.RunOnce(std::chrono::milliseconds{ 5 });
+
+	(void_t)raw.Close();
+
+	// 교착하지 않았다면 stop 요청에 반응해 Serve 가 반환한다.
+	StopServer(context, running);
+	EXPECT_TRUE(running.serveTask.IsReady()) << "Serve 가 반환하지 않았다 — 흐름제어 대기 중인 디스패치가 깨어나지 못했다";
 }
 
 

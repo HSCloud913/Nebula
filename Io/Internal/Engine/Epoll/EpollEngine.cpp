@@ -79,8 +79,7 @@ namespace ne::io
 		std::lock_guard lock(mutex);
 
 		pending[_request.userData] = PendingOperation{ _request, isWrite };
-		if (isWrite) writeWaiter[fd] = _request.userData;
-		else readWaiter[fd] = _request.userData;
+		(isWrite ? writeWaiter : readWaiter)[fd].push_back(_request.userData);
 
 		UpdateEpoll(fd);
 	}
@@ -133,44 +132,58 @@ namespace ne::io
 				if (isWrite && !(events[i].events & (EPOLLOUT | EPOLLERR | EPOLLHUP))) continue;
 				if (!isWrite && !(events[i].events & (EPOLLIN | EPOLLERR | EPOLLHUP))) continue;
 
-				PendingOperation operation;
-				bool_t isFound = false;
+				// 이 fd/방향의 대기 큐를 앞에서부터 처리한다. 통지 한 번에 여러 op 이 완료될 수 있으므로
+				// 완료되는 동안 계속 진행하고, 아직 준비되지 않은 첫 op 에서 멈춘다(FIFO 순서 보존).
+				while (count < _max)
 				{
-					std::lock_guard lock(mutex);
-
-					auto& waiter = isWrite ? writeWaiter : readWaiter;
-					const auto iterator = waiter.find(fd);
-					if (iterator == waiter.end()) continue;
-
-					void_t* userData = iterator->second;
-
-					const auto pendingIterator = pending.find(userData);
-					if (pendingIterator == pending.end())
+					PendingOperation operation;
+					void_t* userData = nullptr;
+					bool_t isFound = false;
 					{
-						// waiter 에는 남아 있지만 pending 에는 없는 경우(이미 취소/처리된 뒤 stale) 정리만 하고 건너뛴다.
-						waiter.erase(iterator);
-						continue;
+						std::lock_guard lock(mutex);
+
+						auto& waiter = isWrite ? writeWaiter : readWaiter;
+						const auto iterator = waiter.find(fd);
+						if (iterator == waiter.end() || iterator->second.empty()) break;
+
+						userData = iterator->second.front();
+
+						const auto pendingIterator = pending.find(userData);
+						if (pendingIterator == pending.end())
+						{
+							// waiter 에는 남아 있지만 pending 에는 없는 stale 항목 — 버리고 다음을 본다.
+							iterator->second.erase(iterator->second.begin());
+							if (iterator->second.empty()) waiter.erase(iterator);
+							UpdateEpoll(fd);
+							continue;
+						}
+
+						operation = pendingIterator->second;
+						isFound = true;
+					}
+					if (!isFound) continue;
+
+					// 재시도(_isRetry=true) 로 실제 수행. 여전히 EAGAIN 이면(false) 다음 알림까지 그대로 대기.
+					longlong_t result = 0;
+					if (!Perform(operation.request, true, result)) break;
+
+					{
+						std::lock_guard lock(mutex);
+
+						auto& waiter = isWrite ? writeWaiter : readWaiter;
+						if (const auto iterator = waiter.find(fd); iterator != waiter.end())
+						{
+							std::erase(iterator->second, userData);
+							if (iterator->second.empty()) waiter.erase(iterator);
+						}
+						pending.erase(userData);
+						UpdateEpoll(fd);
 					}
 
-					operation = pendingIterator->second;
-					isFound = true;
+					_out[count].userData = userData;
+					_out[count].result = result;
+					++count;
 				}
-				if (!isFound) continue;
-
-				// 재시도(_isRetry=true) 로 실제 수행. 여전히 EAGAIN 이면(false) 다음 알림까지 그대로 대기.
-				longlong_t result = 0;
-				if (!Perform(operation.request, true, result)) continue;
-
-				{
-					std::lock_guard lock(mutex);
-					(isWrite ? writeWaiter : readWaiter).erase(fd);
-					pending.erase(operation.request.userData);
-					UpdateEpoll(fd);
-				}
-
-				_out[count].userData = operation.request.userData;
-				_out[count].result = result;
-				++count;
 			}
 		}
 
@@ -439,19 +452,19 @@ namespace ne::io
 		// 영영 오지 않아 abandoned 핸들러가 누수된다. 여기서 fd 기준으로 waiter/pending 을 정리하고
 		// 합성 완료(ECANCELED)를 만들어 루프가 회수·해제하게 한다. pending 을 함께 지워, 이후
 		// ProcessCancels 가 같은 userData 를 중복 완료시키지 않도록 한다(pending 존재검사로 skip).
-		if (const auto iterator = readWaiter.find(fd); iterator != readWaiter.end())
+		// 이 fd 에 걸린 **모든** 대기 op 을 비운다 — 예전에는 방향당 하나만 정리해 나머지가 누수됐다.
+		for (auto* waiter : { &readWaiter, &writeWaiter })
 		{
-			void_t* userData = iterator->second;
-			readWaiter.erase(iterator);
-			pending.erase(userData);
-			ready.push_back(Completion{ userData, -static_cast<longlong_t>(ECANCELED) });
-		}
-		if (const auto iterator = writeWaiter.find(fd); iterator != writeWaiter.end())
-		{
-			void_t* userData = iterator->second;
-			writeWaiter.erase(iterator);
-			pending.erase(userData);
-			ready.push_back(Completion{ userData, -static_cast<longlong_t>(ECANCELED) });
+			const auto iterator = waiter->find(fd);
+			if (iterator == waiter->end()) continue;
+
+			for (void_t* userData : iterator->second)
+			{
+				pending.erase(userData);
+				ready.push_back(Completion{ userData, -static_cast<longlong_t>(ECANCELED) });
+			}
+
+			waiter->erase(iterator);
 		}
 
 		// Deregister 는 Socket 이 핸들을 닫기 직전에 호출되므로 fd 는 아직 열려 있다 — 커널 epoll
@@ -463,8 +476,8 @@ namespace ne::io
 	{
 		// waiter 맵 상태만이 진실의 원천(source of truth)이며, 이 함수는 그 상태를 epoll 커널 자료구조에 동기화한다.
 		uint32_t events = 0;
-		if (readWaiter.contains(_fd)) events |= EPOLLIN;
-		if (writeWaiter.contains(_fd)) events |= EPOLLOUT;
+		if (const auto iterator = readWaiter.find(_fd); iterator != readWaiter.end() && !iterator->second.empty()) events |= EPOLLIN;
+		if (const auto iterator = writeWaiter.find(_fd); iterator != writeWaiter.end() && !iterator->second.empty()) events |= EPOLLOUT;
 
 		if (events == 0)
 		{
@@ -495,9 +508,15 @@ namespace ne::io
 			const auto iterator = pending.find(userData);
 			if (iterator == pending.end()) continue; // 이미 완료되었거나 존재하지 않는 요청은 무시.
 
+			// **그 op 하나만** 큐에서 뺀다 — 방향 전체를 지우면 같은 fd 의 다른 대기 op 이 함께 사라져
+			// 영구 미완료가 된다(예전 코드의 결함).
 			const int_t fd = static_cast<int_t>(iterator->second.request.handle);
-			if (iterator->second.isWrite) writeWaiter.erase(fd);
-			else readWaiter.erase(fd);
+			auto& waiter = iterator->second.isWrite ? writeWaiter : readWaiter;
+			if (const auto waiterIterator = waiter.find(fd); waiterIterator != waiter.end())
+			{
+				std::erase(waiterIterator->second, userData);
+				if (waiterIterator->second.empty()) waiter.erase(waiterIterator);
+			}
 			pending.erase(iterator);
 			UpdateEpoll(fd);
 

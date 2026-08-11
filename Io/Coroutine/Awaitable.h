@@ -3,6 +3,7 @@
 //
 
 #pragma once
+#include <cassert>
 #include <coroutine>
 #include <cstddef>
 #include <cstring>
@@ -53,6 +54,10 @@ namespace ne::io
 				delete handler;
 				return;
 			}
+
+			// 루프가 이 배치에서 이미 완료를 회수했다면 커널은 op 을 들고 있지 않다 — 취소를 요청하면
+			// 나중에 그 요청이 같은 주소에 새로 할당된 무관한 op 을 취소한다.
+			if (handler->isHarvested) return;
 
 			// 아직 커널이 op 을 들고 있다 — 취소를 요청해야 handler 소유 메모리에 대한 쓰기가 멈춘다.
 			// 취소는 (합성) 완료를 만들고, 루프가 그 완료를 회수할 때 ABANDONED 를 보고 해제한다.
@@ -130,6 +135,14 @@ namespace ne::io
 		 */
 		void_t RelocateAddressScratch() noexcept
 		{
+			// 한 op 이 읽기(address)와 쓰기(fromAddress) 방향을 동시에 쓰면 아래 두 블록이 같은
+			// addressLength 를 서로 덮어쓴다. 현재 RequestKind 중 그런 것은 없고, 생기면 여기서 잡는다.
+			assert(!(request.address != nullptr && request.fromAddress != nullptr) && "address 와 fromAddress 를 동시에 쓰는 op 은 지원하지 않는다");
+
+			// 저장소보다 큰 sockaddr 은 조용히 넘기면 안 된다 — 그러면 request.address 가 호출자 프레임을
+			// 계속 가리켜, 이 함수가 막으려던 use-after-free 가 그대로 남는다.
+			assert((request.address == nullptr || static_cast<std::size_t>(request.addressLength) <= CompletionHandler::AddressStorageSize) && "sockaddr 이 CompletionHandler::addressStorage 보다 크다");
+
 			if (request.address != nullptr && request.addressLength > 0 && static_cast<std::size_t>(request.addressLength) <= CompletionHandler::AddressStorageSize)
 			{
 				std::memcpy(handler->addressStorage, request.address, static_cast<std::size_t>(request.addressLength));

@@ -95,3 +95,35 @@ TEST(HttpDateTest, HandlesLeapDay)
 	EXPECT_TRUE(ParseHttpDate("Mon, 29 Feb 2016 12:00:00 GMT").has_value());
 	EXPECT_FALSE(ParseHttpDate("Sun, 29 Feb 2100 12:00:00 GMT").has_value()); // 100 배수, 400 배수 아님
 }
+
+// ── 표현 불가한 연도는 형식을 깨는 대신 빈 문자열로 알린다 ──
+//
+// system_clock 은 4자리를 넘는 연도를 표현할 수 있어, 고정 폭 버퍼에서 조용히 잘리면 무효한
+// Date 헤더가 만들어진다(29자 형식이 "…GM" 으로 끊긴다).
+TEST(HttpDateTest, RejectsYearsOutsideFourDigits)
+{
+	using namespace std::chrono;
+
+	// system_clock 의 표현 범위는 구현마다 다르다 — MSVC 는 100ns 틱으로 서기 3만 년대까지 담지만,
+	// MinGW 는 나노초 틱이라 1677~2262 밖에 안 된다. 5자리 연도를 만들 수 없는 플랫폼에서는 이 가드가
+	// 애초에 도달 불가능하므로 검증을 건너뛴다(억지로 만들면 오버플로로 다른 값이 나온다).
+	const auto maxYear = static_cast<int>(year_month_day{ floor<days>(system_clock::time_point::max()) }.year());
+	if (maxYear <= 9999) GTEST_SKIP() << "이 플랫폼의 system_clock 은 4자리 연도를 넘길 수 없다(최대 " << maxYear << "년)";
+
+	EXPECT_TRUE(FormatHttpDate(system_clock::time_point::max()).empty());
+
+	// 표현 범위 안의 정상 시각은 항상 고정 폭 29자다.
+	EXPECT_EQ(FormatHttpDate(Utc(2026, 8, 11, 12, 0, 0)).size(), 29u);
+}
+
+// ── from_chars 가 받아들이는 부호 붙은 필드를 거부한다 ──
+//
+// 검사가 없으면 "-8:49:37" 이 8시간 이전으로, "-123" 이 기원전 연도로 통과했다.
+TEST(HttpDateTest, RejectsSignedFields)
+{
+	EXPECT_FALSE(ParseHttpDate("Sun, 06 Nov 1994 -8:49:37 GMT").has_value());
+	EXPECT_FALSE(ParseHttpDate("Sun, 06 Nov 1994 08:-9:37 GMT").has_value());
+	EXPECT_FALSE(ParseHttpDate("Sun, 06 Nov 1994 08:49:-7 GMT").has_value());
+	EXPECT_FALSE(ParseHttpDate("Sun, -6 Nov 1994 08:49:37 GMT").has_value());
+	EXPECT_FALSE(ParseHttpDate("Sun, 06 Nov -123 08:49:37 GMT").has_value());
+}

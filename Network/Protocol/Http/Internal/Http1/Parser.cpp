@@ -117,24 +117,12 @@ namespace ne::network::http_1::internal
 
 		if (const auto transferEncoding = _headers.Get("Transfer-Encoding"); transferEncoding && ne::util::StringFormat::EqualCaseInsensitive(string_view_t(*transferEncoding), string_view_t("chunked"))) co_return co_await ReadChunkedBody(_stopToken);
 
-		if (const auto contentLength = _headers.Get("Content-Length"))
+		if (_headers.Get("Content-Length"))
 		{
-			// 중복 Content-Length 는 프론트엔드/백엔드가 서로 다른 값을 채택하는 전형적인 요청 스머글링
-			// 벡터다. Headers::Get 은 첫 값을 돌려주므로 검사 없이는 더 작은 값을 조용히 쓰게 된다.
-			if (const auto all = _headers.GetAll("Content-Length"); all.size() > 1)
-			{
-				for (const auto& value : all) if (value != *contentLength) co_return R::Error(http::HttpError(http::HttpErrorKind::MALFORMED_MESSAGE, "conflicting Content-Length").Context("[MessageReader/ReadBody]"));
-			}
+			auto parsed = ParseContentLength(_headers);
+			if (parsed.IsError()) co_return R::Error(std::move(parsed.Error()).Context("[MessageReader/ReadBody]"));
 
-			std::size_t length = 0;
-			const char* first = contentLength->data();
-			const char* last = first + contentLength->size();
-			const auto [ptr, ec] = std::from_chars(first, last, length);
-
-			// from_chars 는 접두 숫자만 읽고 멈춘다 — ptr != last 를 검사하지 않으면 "5abc" 가 5 로
-			// 통과한다(RFC 9112 §6.1 은 DIGIT 이외를 거부하도록 요구한다).
-			if (ec != std::errc{} || ptr != last) co_return R::Error(http::HttpError(http::HttpErrorKind::MALFORMED_MESSAGE, "invalid Content-Length").Context("[MessageReader/ReadBody]"));
-			if (length > limits.maxBodyBytes) co_return R::Error(http::HttpError(http::HttpErrorKind::BODY_TOO_LARGE).Context("[MessageReader/ReadBody]"));
+			const std::size_t length = parsed.Value();
 
 			auto bytes = co_await ReadExact(length, _stopToken);
 			if (bytes.IsError()) co_return R::Error(std::move(bytes.Error()));
@@ -252,12 +240,54 @@ namespace ne::network::http_1::internal
 		co_return R::Ok(std::move(request));
 	}
 
+	http::HttpResult<std::size_t> MessageReader::ParseContentLength(const http::Headers& _headers) const
+	{
+		using R = http::HttpResult<std::size_t>;
+
+		const auto contentLength = _headers.Get("Content-Length");
+		if (!contentLength) return R::Error(http::HttpError(http::HttpErrorKind::MALFORMED_MESSAGE, "missing Content-Length"));
+
+		// 중복 Content-Length 는 프론트엔드/백엔드가 서로 다른 값을 채택하는 전형적인 요청 스머글링
+		// 벡터다. Headers::Get 은 첫 값을 돌려주므로 검사 없이는 더 작은 값을 조용히 쓰게 된다.
+		if (const auto all = _headers.GetAll("Content-Length"); all.size() > 1)
+		{
+			for (const auto& value : all) if (value != *contentLength) return R::Error(http::HttpError(http::HttpErrorKind::MALFORMED_MESSAGE, "conflicting Content-Length"));
+		}
+
+		std::size_t length = 0;
+		const char* first = contentLength->data();
+		const char* last = first + contentLength->size();
+		const auto [ptr, ec] = std::from_chars(first, last, length);
+
+		// from_chars 는 접두 숫자만 읽고 멈춘다 — ptr != last 를 검사하지 않으면 "5abc" 가 5 로
+		// 통과한다(RFC 9112 §6.1 은 DIGIT 이외를 거부하도록 요구한다).
+		if (ec != std::errc{} || ptr != last) return R::Error(http::HttpError(http::HttpErrorKind::MALFORMED_MESSAGE, "invalid Content-Length"));
+		if (length > limits.maxBodyBytes) return R::Error(http::HttpError(http::HttpErrorKind::BODY_TOO_LARGE));
+
+		return R::Ok(length);
+	}
+
+	bool_t MessageReader::ResponseWillClose(const http::Headers& _headers, const string_view_t _version)
+	{
+		const auto connection = _headers.Get("Connection");
+
+		// 명시적 close 가 최우선.
+		if (connection && ne::util::StringFormat::EqualCaseInsensitive(string_view_t(*connection), string_view_t("close"))) return true;
+
+		// HTTP/1.0 은 keep-alive 를 명시하지 않으면 닫는 것이 기본이다.
+		if (_version == "HTTP/1.0") return !(connection && ne::util::StringFormat::EqualCaseInsensitive(string_view_t(*connection), string_view_t("keep-alive")));
+
+		// HTTP/1.1 은 지속 연결이 기본 — 닫지 않는다고 본다.
+		return false;
+	}
+
 	ne::Task<http::HttpResult<http::Response>> MessageReader::ReadResponse(const http::Method _requestMethod, std::stop_token _stopToken)
 	{
 		using R = http::HttpResult<http::Response>;
 
 		// 1xx 는 최종 응답이 아니다 — 상태줄+헤더만 소비하고 다음 응답을 계속 읽는다(본문은 없다).
-		while (true)
+		// 상한을 두는 이유: 1xx 를 무한히 흘려보내는 피어에게 영구히 붙잡히지 않기 위해서다.
+		for (int_t informational = 0; informational <= MaxInformationalResponses; ++informational)
 		{
 			auto response = co_await ReadOneResponse(_requestMethod, _stopToken);
 			if (response.IsError()) co_return R::Error(std::move(response.Error()));
@@ -266,6 +296,8 @@ namespace ne::network::http_1::internal
 
 			co_return R::Ok(std::move(response.Value()));
 		}
+
+		co_return R::Error(http::HttpError(http::HttpErrorKind::MALFORMED_MESSAGE, "too many informational (1xx) responses").Context("[MessageReader/ReadResponse]"));
 	}
 
 	ne::Task<http::HttpResult<http::Response>> MessageReader::ReadOneResponse(const http::Method _requestMethod, std::stop_token _stopToken)
@@ -299,7 +331,12 @@ namespace ne::network::http_1::internal
 		// 믿으면 서버가 절대 보내지 않을 바이트를 기다리며 멈춘다.
 		if (ResponseHasNoBody(response.statusCode, _requestMethod)) co_return R::Ok(std::move(response));
 
-		auto body = co_await ReadBody(response.headers, true, _stopToken);
+		// "프레이밍이 없으면 EOF 까지" 는 **연결이 닫힐 응답에만** 적용된다(RFC 9112 §6.3 item 8).
+		// keep-alive 응답에 그것을 적용하면, 프레임을 잘못 만든 서버가 연결을 닫지 않는 한 영원히
+		// 기다린다 — 클라이언트 기본 타임아웃이 없으므로 곧 영구 정지다.
+		const bool_t willClose = ResponseWillClose(response.headers, version);
+
+		auto body = co_await ReadBody(response.headers, willClose, _stopToken);
 		if (body.IsError()) co_return R::Error(std::move(body.Error()));
 		response.body = std::move(body.Value());
 
@@ -314,8 +351,9 @@ namespace ne::network::http_1::internal
 		string_t reason;
 		http::Headers headers;
 
-		// 1xx(정보) 응답은 최종 응답이 아니므로 사용자 콜백에 올리지 않고 건너뛴다.
-		while (true)
+		// 1xx(정보) 응답은 최종 응답이 아니므로 사용자 콜백에 올리지 않고 건너뛴다(상한은 버퍼링 경로와 동일).
+		bool_t haveFinal = false;
+		for (int_t informational = 0; informational <= MaxInformationalResponses && !haveFinal; ++informational)
 		{
 			auto line = co_await ReadLine(_stopToken);
 			if (line.IsError()) co_return R::Error(std::move(line.Error()));
@@ -340,8 +378,10 @@ namespace ne::network::http_1::internal
 			if (statusCode >= 100 && statusCode < 200) continue;
 
 			headers = std::move(parsedHeaders.Value());
-			break;
+			haveFinal = true;
 		}
+
+		if (!haveFinal) co_return R::Error(http::HttpError(http::HttpErrorKind::MALFORMED_MESSAGE, "too many informational (1xx) responses").Context("[MessageReader/ReadResponseStreaming]"));
 
 		if (_sink.onHead && !_sink.onHead(statusCode, reason, headers)) co_return R::Ok(false); // 헤드 단계에서 조기 중단
 
@@ -361,15 +401,16 @@ namespace ne::network::http_1::internal
 
 		if (const auto transferEncoding = _headers.Get("Transfer-Encoding"); transferEncoding && ne::util::StringFormat::EqualCaseInsensitive(string_view_t(*transferEncoding), string_view_t("chunked"))) co_return co_await StreamChunkedBody(_sink, _stopToken);
 
-		if (const auto contentLength = _headers.Get("Content-Length"))
+		if (_headers.Get("Content-Length"))
 		{
-			std::size_t length = 0;
-			if (const auto [ptr, ec] = std::from_chars(contentLength->data(), contentLength->data() + contentLength->size(), length); ec != std::errc{}) co_return R::Error(http::HttpError(http::HttpErrorKind::MALFORMED_MESSAGE, "invalid Content-Length").Context("[MessageReader/StreamBody]"));
+			// 버퍼링 경로와 **같은** 검증을 쓴다(엄격한 자릿수 검사 + 중복 충돌 + 크기 상한).
+			auto parsed = ParseContentLength(_headers);
+			if (parsed.IsError()) co_return R::Error(std::move(parsed.Error()).Context("[MessageReader/StreamBody]"));
 
-			co_return co_await StreamFixedBody(length, _sink, _stopToken);
+			co_return co_await StreamFixedBody(parsed.Value(), _sink, _stopToken);
 		}
 
-		co_return R::Ok(true); // 본문 없음
+		co_return R::Ok(true); // 본문 없음(스트리밍 경로는 keep-alive 판정을 못 하므로 EOF 까지 읽지 않는다)
 	}
 
 	ne::Task<http::HttpResult<bool_t>> MessageReader::StreamFixedBody(const std::size_t _length, const http::ResponseCallbacks& _sink, std::stop_token _stopToken)

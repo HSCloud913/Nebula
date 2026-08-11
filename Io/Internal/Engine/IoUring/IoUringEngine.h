@@ -42,7 +42,13 @@ namespace ne::io
 
 	private:
 		static constexpr int_t MaxBatch = 128;
+		// wake 용 poll SQE 전용 마커. 실제 UringOperation* 값과 겹치지 않게 최상위 값을 쓴다.
 		static constexpr ulonglong_t WakeUserData = ~0ULL;
+
+		// 취소(ASYNC_CANCEL) SQE 전용 마커. **wake 와 반드시 달라야 한다** — 같은 값을 쓰면 취소 완료가
+		// wake 신호로 오인되어, 진짜 Wake() 를 삼키고(eventfd 를 비워 버림) 이미 무장된 poll 위에 또
+		// 무장해 poll SQE 가 링 수명 동안 누적된다(Wake() 하나가 N 개의 CQE 를 만들고 SQ/CQ 용량을 잠식).
+		static constexpr ulonglong_t CancelUserData = ~1ULL;
 
 		struct UringOperation
 		{
@@ -58,6 +64,10 @@ namespace ne::io
 		io_uring ring{};
 		bool_t isValid{ false };
 		int_t wakeEventFd{ -1 };
+
+		// wake poll 이 현재 무장되어 있는지. SQ 가 가득 차 무장에 실패했을 때 다음 WaitCompletions()
+		// 에서 만회하기 위한 표시다 — 놓치면 Wake() 가 영구히 루프를 깨우지 못한다.
+		bool_t isWakePollArmed{ false };
 		std::mutex mutex;
 		std::unordered_map<void_t*, UringOperation*> inflight;
 		std::vector<void_t*> pendingCancels;

@@ -40,6 +40,10 @@ namespace ne::network::http_1::internal
 	private:
 		static constexpr std::size_t ReadChunkSize = 8 * 1024;
 
+		// 1xx(정보) 응답을 무한히 흘려보내 클라이언트를 붙잡아 두는 것을 막는 상한. 실사용에서 최종
+		// 응답 전에 오는 1xx 는 한두 개다.
+		static constexpr int_t MaxInformationalResponses = 8;
+
 	private:
 		ne::network::IStream* stream;
 		http::Limits limits;
@@ -68,6 +72,14 @@ namespace ne::network::http_1::internal
 		[[nodiscard]] ne::Task<http::HttpResult<bool_t>> ReadResponseStreaming(const http::ResponseCallbacks& _sink, http::Method _requestMethod = http::Method::GET, std::stop_token _stopToken = {});
 
 	public:
+		/**
+		 * @brief 이 응답을 보낸 뒤 서버가 연결을 닫을 것인지 판정한다.
+		 *
+		 * "길이 프레이밍이 없으면 EOF 까지 본문" 규칙(RFC 9112 §6.3 item 8)을 적용할 수 있는지의 기준이다.
+		 * keep-alive 응답에 그 규칙을 쓰면 무한 대기가 된다.
+		 */
+		[[nodiscard]] static bool_t ResponseWillClose(const http::Headers& _headers, string_view_t _version);
+
 		/** @brief 상태코드/요청 메서드만으로 "본문이 있을 수 없는 응답" 인지 판정한다(RFC 9112 §6.3). */
 		[[nodiscard]] static bool_t ResponseHasNoBody(int_t _statusCode, http::Method _requestMethod) noexcept
 		{
@@ -91,6 +103,16 @@ namespace ne::network::http_1::internal
 
 		// 응답 하나(1xx 포함)를 그대로 읽는다. ReadResponse 가 1xx 를 걸러내며 반복 호출한다.
 		[[nodiscard]] ne::Task<http::HttpResult<http::Response>> ReadOneResponse(http::Method _requestMethod, std::stop_token _stopToken);
+
+		/**
+		 * @brief Content-Length 값을 엄격하게 파싱한다(버퍼링/스트리밍 두 경로 공용).
+		 *
+		 * 한 곳에 모은 이유: 예전에는 버퍼링 경로만 엄격했고 스트리밍 경로는 접두 숫자만 읽어 "5abc" 를
+		 * 통과시켰다. 같은 공개 API 를 지탱하는 두 경로의 보안 강도가 달라선 안 된다.
+		 *
+		 * @return 유효하면 길이, 형식 위반/중복 불일치/상한 초과면 에러.
+		 */
+		[[nodiscard]] http::HttpResult<std::size_t> ParseContentLength(const http::Headers& _headers) const;
 
 		/**
 		 * @brief Content-Length / Transfer-Encoding: chunked 를 보고 본문을 읽는다.

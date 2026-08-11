@@ -52,6 +52,15 @@ namespace ne::io
 		longlong_t result{ 0 };
 		std::atomic<HandlerState> state{ HandlerState::PENDING };
 
+		// 루프가 이 op 의 완료를 엔진에서 이미 **회수**했는지. 커널이 더 이상 op 을 들고 있지 않다는 뜻이다.
+		//
+		// 필요한 이유: 한 배치 안에서 앞쪽 완료를 resume 하다가 뒤쪽 완료의 대기자가 파괴되는 일이 있다
+		// (연결 teardown 등). 그때 상태는 아직 PENDING 이므로 소멸자가 Cancel 을 요청하는데, 그 op 은 이미
+		// 엔진의 추적 맵에서 빠져 있다. 곧 이 핸들러가 해제되고 같은 주소에 새 핸들러가 할당되면, 뒤늦게
+		// 처리되는 그 취소 요청이 **무관한 새 op** 을 취소해 버린다. 회수 사실을 미리 표시해 취소 자체를
+		// 생략한다. 루프 스레드에서만 읽고 쓰므로(대기자 파괴도 그 스레드에서 일어난다) 원자성은 불필요하다.
+		bool_t isHarvested{ false };
+
 		alignas(8) byte_t addressStorage[AddressStorageSize]{};
 		int_t addressLength{ 0 };
 	};

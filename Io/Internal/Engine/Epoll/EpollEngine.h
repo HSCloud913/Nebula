@@ -55,8 +55,10 @@ namespace ne::io
 		bool_t isValid{ false };
 		std::mutex mutex;
 		std::unordered_map<void_t*, PendingOperation> pending;
-		std::unordered_map<int_t, void_t*> readWaiter;
-		std::unordered_map<int_t, void_t*> writeWaiter;
+		// fd → 그 방향으로 대기 중인 op 들(제출 순서 FIFO). 예전에는 fd 당 하나만 담아, 같은 방향의
+		// 두 번째 op 이 첫 번째를 덮어써 그 op 이 영원히 완료되지 않았다(코루틴 영구 대기 + 핸들러 누수).
+		std::unordered_map<int_t, std::vector<void_t*>> readWaiter;
+		std::unordered_map<int_t, std::vector<void_t*>> writeWaiter;
 		std::vector<Completion> ready;
 		std::vector<void_t*> pendingCancels;
 

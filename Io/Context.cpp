@@ -56,6 +56,13 @@ namespace ne::io
 		Completion completions[MaxBatch];
 		const int_t count = engine.WaitCompletions(completions, MaxBatch, EffectiveTimeout(_timeout));
 
+		// 처리 전에 배치 전체를 "회수됨" 으로 표시한다. 아래 resume 중에 배치 뒤쪽 op 의 대기자가 파괴될
+		// 수 있는데, 그 op 은 이미 엔진에서 빠졌으므로 취소를 요청하면 안 된다(CompletionHandler 주석 참고).
+		for (int_t i = 0; i < count; ++i)
+		{
+			if (auto* handler = static_cast<CompletionHandler*>(completions[i].userData); handler != nullptr) handler->isHarvested = true;
+		}
+
 		for (int_t i = 0; i < count; ++i)
 		{
 			auto* handler = static_cast<CompletionHandler*>(completions[i].userData);

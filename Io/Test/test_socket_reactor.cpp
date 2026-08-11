@@ -184,4 +184,76 @@ TEST(SocketReactorTest, PendingReceiveDoesNotBlockTheLoop)
 	EXPECT_EQ(std::memcmp(buffer, payload, length), 0);
 }
 
+// ── 같은 소켓·같은 방향으로 동시에 두 개의 Receive 를 걸어도 둘 다 완료된다 ──
+//
+// 회귀 대상: 리액터 엔진의 readWaiter/writeWaiter 가 fd 당 하나만 담는 맵이었다. 두 번째 op 이
+// 첫 번째를 **덮어써** 그 op 은 pending 에 남은 채 영원히 완료되지 않았다(코루틴 영구 대기 +
+// 핸들러 누수). 지금은 fd 당 FIFO 큐이며, 통지 한 번에 여러 op 이 완료될 수 있다.
+TEST(SocketReactorTest, TwoConcurrentReceivesOnSameSocketBothComplete)
+{
+	const WsaScope wsa;
+	WsaPollEngine engine;
+	ASSERT_TRUE(engine.IsValid());
+	Context context{ engine };
+
+	auto listenerResult = Socket::Create(context, AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	ASSERT_TRUE(listenerResult.IsOk());
+	Socket listener = std::move(listenerResult.Value());
+	ASSERT_TRUE(listener.Bind("127.0.0.1", 0).IsOk());
+	ASSERT_TRUE(listener.Listen(1).IsOk());
+
+	auto clientResult = Socket::Create(context, AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	ASSERT_TRUE(clientResult.IsOk());
+	Socket client = std::move(clientResult.Value());
+
+	auto acceptTask = listener.Accept();
+	auto connectTask = client.Connect("127.0.0.1", listener.LocalPort());
+	acceptTask.Resume();
+	connectTask.Resume();
+
+	auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+	while ((!acceptTask.IsReady() || !connectTask.IsReady()) && std::chrono::steady_clock::now() < deadline) (void_t)context.RunOnce(std::chrono::milliseconds{ 10 });
+	ASSERT_TRUE(acceptTask.IsReady() && connectTask.IsReady());
+	ASSERT_TRUE(connectTask.await_resume().IsOk());
+
+	auto acceptResult = acceptTask.await_resume();
+	ASSERT_TRUE(acceptResult.IsOk());
+	Socket accepted = std::move(acceptResult.Value());
+
+	// 데이터가 없는 상태에서 같은 소켓에 Receive 를 **두 개** 제출한다.
+	ne::byte_t first[4]{};
+	ne::byte_t second[4]{};
+	auto firstTask = accepted.Receive(std::span<ne::byte_t>{ first, sizeof(first) });
+	auto secondTask = accepted.Receive(std::span<ne::byte_t>{ second, sizeof(second) });
+	firstTask.Resume();
+	secondTask.Resume();
+
+	for (int_t i = 0; i < 3; ++i) (void_t)context.RunOnce(std::chrono::milliseconds{ 5 });
+	EXPECT_FALSE(firstTask.IsReady());
+	EXPECT_FALSE(secondTask.IsReady());
+
+	// 두 요청 분량을 한 번에 보낸다 — 큐 방식이면 통지 한 번으로 둘 다 완료될 수 있다.
+	constexpr char payload[] = "AAAABBBB";
+	auto sendTask = client.Send(std::span<const ne::byte_t>{ reinterpret_cast<const ne::byte_t*>(payload), 8 });
+	ASSERT_TRUE(Drive(context, sendTask));
+	ASSERT_TRUE(sendTask.await_resume().IsOk());
+
+	deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+	while ((!firstTask.IsReady() || !secondTask.IsReady()) && std::chrono::steady_clock::now() < deadline) (void_t)context.RunOnce(std::chrono::milliseconds{ 10 });
+
+	ASSERT_TRUE(firstTask.IsReady()) << "첫 Receive 가 완료되지 않았다";
+	ASSERT_TRUE(secondTask.IsReady()) << "두 번째 Receive 가 완료되지 않았다 — fd 당 대기 슬롯이 하나면 유실된다";
+
+	auto firstResult = firstTask.await_resume();
+	auto secondResult = secondTask.await_resume();
+	ASSERT_TRUE(firstResult.IsOk()) << firstResult.Error().What();
+	ASSERT_TRUE(secondResult.IsOk()) << secondResult.Error().What();
+
+	// 제출 순서(FIFO)대로 앞 4바이트/뒤 4바이트를 받는다.
+	EXPECT_EQ(firstResult.Value(), 4u);
+	EXPECT_EQ(secondResult.Value(), 4u);
+	EXPECT_EQ(std::memcmp(first, "AAAA", 4), 0);
+	EXPECT_EQ(std::memcmp(second, "BBBB", 4), 0);
+}
+
 #endif // _WIN32

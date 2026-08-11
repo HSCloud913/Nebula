@@ -57,6 +57,12 @@ namespace ne::time
 		const hh_mm_ss time{ floor<seconds>(_timePoint - days_) };
 		const weekday day{ days_ };
 
+		// IMF-fixdate 는 4자리 연도만 표현한다. system_clock 은 서기 31000년 대까지 표현할 수 있어
+		// time_point::max() 같은 값을 넣으면 5자리가 되고, 고정 폭 버퍼에서 조용히 잘려 무효한 Date
+		// 헤더가 만들어진다. 표현 불가한 값은 형식을 깨는 대신 빈 문자열로 알린다.
+		const int_t year = static_cast<int_t>(date.year());
+		if (year < 1 || year > 9999) return string_t{};
+
 		// 표 조회 + 고정 폭 포맷 — strftime 은 로케일에 따라 요일/월 이름이 바뀌어 쓸 수 없다.
 		char buffer[FixdateLength + 1]{};
 		(void)std::snprintf(buffer,
@@ -65,7 +71,7 @@ namespace ne::time
 							DayNames[day.c_encoding()].data(),
 							static_cast<int>(static_cast<unsigned>(date.day())),
 							MonthNames[static_cast<unsigned>(date.month()) - 1].data(),
-							static_cast<int>(date.year()),
+							static_cast<int>(year),
 							static_cast<int>(time.hours().count()),
 							static_cast<int>(time.minutes().count()),
 							static_cast<int>(time.seconds().count()));
@@ -92,8 +98,12 @@ namespace ne::time
 		int_t day = 0, year = 0, hour = 0, minute = 0, second = 0;
 		if (!ReadFixedDigits(_text, 5, 2, day) || !ReadFixedDigits(_text, 12, 4, year) || !ReadFixedDigits(_text, 17, 2, hour) || !ReadFixedDigits(_text, 20, 2, minute) || !ReadFixedDigits(_text, 23, 2, second)) return std::nullopt;
 
+		// from_chars 는 선행 "-" 를 받아들이므로 음수 검사가 **DaysInMonth 호출보다 먼저** 와야 한다
+		// ("Sun, 06 Nov -123 08:49:37 GMT" 가 통과했고, 음수 연도로 윤년 계산까지 했다).
+		if (day < 1 || year < 1 || hour < 0 || minute < 0 || second < 0) return std::nullopt;
+
 		const int_t month = *monthIndex + 1;
-		if (day < 1 || day > DaysInMonth(year, month)) return std::nullopt;
+		if (day > DaysInMonth(year, month)) return std::nullopt;
 
 		// 초 60 은 윤초 표기다 — 거부하지 않고 59 로 클램프한다(system_clock 에 윤초가 없다).
 		if (hour > 23 || minute > 59 || second > 60) return std::nullopt;
