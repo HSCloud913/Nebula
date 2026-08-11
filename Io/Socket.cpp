@@ -6,7 +6,7 @@
 
 #include <utility>
 #include "Io/Context.h"
-#include "Io/Coroutine/Awaitable.h"
+#include "Io/Coroutine/IoOperation.h"
 #include "Base/Error.h"
 
 #if defined(_WIN32)
@@ -163,7 +163,7 @@ namespace ne::io
 	{
 		const Request request{ .requestKind = RequestKind::ACCEPT, .handle = static_cast<ulonglong_t>(handle.Get()), .isRegisteredIo = _isRegisteredIo };
 
-		auto result = co_await Awaitable{ *context, request, std::move(_stopToken) };
+		auto result = co_await IoOperation{ *context, request, std::move(_stopToken) };
 		if (result.IsError()) co_return IoResult<Socket>::Error(std::move(result.Error()).Context("[Socket/Accept]"));
 
 		co_return Attach(static_cast<socket_t>(result.Value()), *context, _isRegisteredIo);
@@ -179,7 +179,7 @@ namespace ne::io
 
 		const Request request{ .requestKind = RequestKind::CONNECT, .handle = static_cast<ulonglong_t>(handle.Get()), .address = &address, .addressLength = addressLength };
 
-		if (auto result = co_await Awaitable{ *context, request, std::move(_stopToken) }; result.IsError()) co_return IoResult<void_t>::Error(std::move(result.Error()).Context("[Socket/Connect]"));
+		if (auto result = co_await IoOperation{ *context, request, std::move(_stopToken) }; result.IsError()) co_return IoResult<void_t>::Error(std::move(result.Error()).Context("[Socket/Connect]"));
 
 		co_return IoResult<void_t>::Ok();
 	}
@@ -190,7 +190,7 @@ namespace ne::io
 	{
 		const Request request{ .requestKind = RequestKind::RECEIVE, .handle = static_cast<ulonglong_t>(handle.Get()), .buffer = _buffer.data(), .length = _buffer.size() };
 
-		auto result = co_await Awaitable{ *context, request, std::move(_stopToken) };
+		auto result = co_await IoOperation{ *context, request, std::move(_stopToken) };
 		co_return result;
 	}
 
@@ -198,7 +198,7 @@ namespace ne::io
 	{
 		const Request request{ .requestKind = RequestKind::SEND, .handle = static_cast<ulonglong_t>(handle.Get()), .buffer = const_cast<ne::byte_t*>(_buffer.data()), .length = _buffer.size() };
 
-		auto result = co_await Awaitable{ *context, request, std::move(_stopToken) };
+		auto result = co_await IoOperation{ *context, request, std::move(_stopToken) };
 		co_return result;
 	}
 
@@ -207,7 +207,7 @@ namespace ne::io
 	{
 		const Request request{ .requestKind = RequestKind::RECEIVE, .handle = static_cast<ulonglong_t>(handle.Get()), .length = _chain.TotalSize(), .chain = &_chain };
 
-		auto result = co_await Awaitable{ *context, request, std::move(_stopToken) };
+		auto result = co_await IoOperation{ *context, request, std::move(_stopToken) };
 		co_return result;
 	}
 
@@ -215,7 +215,7 @@ namespace ne::io
 	{
 		const Request request{ .requestKind = RequestKind::SEND, .handle = static_cast<ulonglong_t>(handle.Get()), .length = _chain.TotalSize(), .chain = &_chain };
 
-		auto result = co_await Awaitable{ *context, request, std::move(_stopToken) };
+		auto result = co_await IoOperation{ *context, request, std::move(_stopToken) };
 		co_return result;
 	}
 
@@ -224,7 +224,7 @@ namespace ne::io
 	{
 		const Request request{ .requestKind = RequestKind::WAIT_READABLE, .handle = static_cast<ulonglong_t>(handle.Get()) };
 
-		if (auto result = co_await Awaitable{ *context, request, std::move(_stopToken) }; result.IsError()) co_return IoResult<void_t>::Error(std::move(result.Error()).Context("[Socket/WaitReadable]"));
+		if (auto result = co_await IoOperation{ *context, request, std::move(_stopToken) }; result.IsError()) co_return IoResult<void_t>::Error(std::move(result.Error()).Context("[Socket/WaitReadable]"));
 
 		co_return IoResult<void_t>::Ok();
 	}
@@ -233,7 +233,7 @@ namespace ne::io
 	{
 		const Request request{ .requestKind = RequestKind::WAIT_WRITABLE, .handle = static_cast<ulonglong_t>(handle.Get()) };
 
-		if (auto result = co_await Awaitable{ *context, request, std::move(_stopToken) }; result.IsError()) co_return IoResult<void_t>::Error(std::move(result.Error()).Context("[Socket/WaitWritable]"));
+		if (auto result = co_await IoOperation{ *context, request, std::move(_stopToken) }; result.IsError()) co_return IoResult<void_t>::Error(std::move(result.Error()).Context("[Socket/WaitWritable]"));
 
 		co_return IoResult<void_t>::Ok();
 	}
@@ -250,7 +250,7 @@ namespace ne::io
 		const Request request{ .requestKind = RequestKind::SEND_ZERO_COPY, .handle = static_cast<ulonglong_t>(handle.Get()), .buffer = const_cast<ne::byte_t*>(_buffer.data()), .length = _buffer.size(),
 								.bufferId = _handle.value };
 
-		auto result = co_await Awaitable{ *context, request, std::move(_stopToken) };
+		auto result = co_await IoOperation{ *context, request, std::move(_stopToken) };
 		co_return result;
 	}
 
@@ -264,7 +264,7 @@ namespace ne::io
 
 		const Request request{ .requestKind = RequestKind::SEND_FILE, .handle = static_cast<ulonglong_t>(handle.Get()), .length = _length, .offset = _offset, .auxHandle = auxHandle };
 
-		auto result = co_await Awaitable{ *context, request, std::move(_stopToken) };
+		auto result = co_await IoOperation{ *context, request, std::move(_stopToken) };
 		co_return result;
 	}
 
@@ -278,7 +278,7 @@ namespace ne::io
 		const Request request{ .requestKind = RequestKind::SEND_TO, .handle = static_cast<ulonglong_t>(handle.Get()), .buffer = const_cast<ne::byte_t*>(_buffer.data()), .length = _buffer.size(), .address = &address,
 								.addressLength = addressLength };
 
-		auto result = co_await Awaitable{ *context, request, std::move(_stopToken) };
+		auto result = co_await IoOperation{ *context, request, std::move(_stopToken) };
 		co_return result;
 	}
 
@@ -290,7 +290,7 @@ namespace ne::io
 		const Request request{ .requestKind = RequestKind::RECEIVE_FROM, .handle = static_cast<ulonglong_t>(handle.Get()), .buffer = _buffer.data(), .length = _buffer.size(), .fromAddress = &fromAddress,
 								.fromAddressLength = &fromAddressLength };
 
-		auto result = co_await Awaitable{ *context, request, std::move(_stopToken) };
+		auto result = co_await IoOperation{ *context, request, std::move(_stopToken) };
 		if (result.IsError()) co_return IoResult<std::size_t>::Error(std::move(result.Error()).Context("[Socket/ReceiveFrom]"));
 
 		char_t buffer[INET6_ADDRSTRLEN]{};

@@ -9,7 +9,7 @@ add_executable(${PROJECT_NAME}
                test_engine.cpp
                test_iocontext.cpp
                test_contextpool.cpp
-               test_ioawaitable.cpp
+               test_iooperation.cpp
                test_file.cpp
                test_iosocket.cpp
                test_runtime.cpp

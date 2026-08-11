@@ -11,7 +11,7 @@
 #include <string>
 #include <utility>
 #include "Memory/Buffer/BufferView.h"
-#include "Time/HttpDate.h"
+#include "Network/Protocol/Http/Message/Date.h"
 #include "Network/Protocol/Http/Message/Method.h"
 #include "Network/Protocol/Http/Message/Status.h"
 
@@ -736,7 +736,7 @@ namespace ne::network::http_2::internal
 		}
 
 		// RFC 9110 §6.6.1: 시계를 가진 오리진 서버는 Date 를 보내야 한다(HTTP/1.1 경로와 동일).
-		if (!hasDate) headers.push_back(HpackHeader{ "date", ne::time::FormatHttpDate(std::chrono::system_clock::now()) });
+		if (!hasDate) headers.push_back(HpackHeader{ "date", http::FormatDate(std::chrono::system_clock::now()) });
 		if (!streaming && hasBody && !hasContentLength) headers.push_back(HpackHeader{ "content-length", std::to_string(body.size()) }); // 스트리밍은 크기 미상
 
 		std::vector<byte_t> block;

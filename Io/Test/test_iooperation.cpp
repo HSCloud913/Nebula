@@ -7,7 +7,7 @@
 #include <cstring>
 #include <stop_token>
 #include "Io/Context.h"
-#include "Io/Coroutine/Awaitable.h"
+#include "Io/Coroutine/IoOperation.h"
 #include "Base/Coroutine/Task.h"
 #include "Io/Internal/Engine/Iocp/IocpEngine.h"
 
@@ -58,12 +58,12 @@ namespace
 
 	ne::Task<IoResult<std::size_t>> ReceiveOp(Context& _context, const ulonglong_t _handle, void_t* _buffer, const std::size_t _length)
 	{
-		co_return co_await Awaitable{ _context, Request{ .requestKind = RequestKind::RECEIVE, .handle = _handle, .buffer = _buffer, .length = _length } };
+		co_return co_await IoOperation{ _context, Request{ .requestKind = RequestKind::RECEIVE, .handle = _handle, .buffer = _buffer, .length = _length } };
 	}
 
 	ne::Task<IoResult<std::size_t>> ReceiveOpCancellable(Context& _context, const ulonglong_t _handle, void_t* _buffer, const std::size_t _length, std::stop_token _token)
 	{
-		co_return co_await Awaitable{ _context, Request{ .requestKind = RequestKind::RECEIVE, .handle = _handle, .buffer = _buffer, .length = _length }, std::move(_token) };
+		co_return co_await IoOperation{ _context, Request{ .requestKind = RequestKind::RECEIVE, .handle = _handle, .buffer = _buffer, .length = _length }, std::move(_token) };
 	}
 
 	template <typename T>
@@ -76,8 +76,8 @@ namespace
 	}
 }
 
-// ── IoAwaitable 로 수신하면 IoResult<size_t> 로 바이트 수를 돌려준다 ──
-TEST(IoAwaitableTest, ReceiveReturnsBytes)
+// ── IoOperation 으로 수신하면 IoResult<size_t> 로 바이트 수를 돌려준다 ──
+TEST(IoOperationTest, ReceiveReturnsBytes)
 {
 	const WsaScope wsa;
 	IocpEngine engine;
@@ -104,7 +104,7 @@ TEST(IoAwaitableTest, ReceiveReturnsBytes)
 }
 
 // ── 진행 중 I/O 상태에서 코루틴 프레임이 파괴돼도 안전해야 한다(mid-flight, UAF 방지) ──
-TEST(IoAwaitableTest, AbandonedInFlightIsSafe)
+TEST(IoOperationTest, AbandonedInFlightIsSafe)
 {
 	const WsaScope wsa;
 	IocpEngine engine;
@@ -119,7 +119,7 @@ TEST(IoAwaitableTest, AbandonedInFlightIsSafe)
 		// 데이터가 없어 WSARecv 는 pending — Resume 후 suspend 된다. 그 상태로 Task 를 파괴한다.
 		auto task = ReceiveOp(context, static_cast<ulonglong_t>(b), buffer, sizeof(buffer));
 		task.Resume();
-	} // task 파괴 → Awaitable 소멸자가 handler 를 ABANDONED 로 넘기고 커널 취소를 요청한다
+	} // task 파괴 → IoOperation 소멸자가 handler 를 ABANDONED 로 넘기고 커널 취소를 요청한다
 
 	// 소켓을 닫아 pending recv 를 완료(취소)시킨다 — 루프가 abandoned 완료를 안전하게 해제해야 한다.
 	::closesocket(a);
@@ -135,7 +135,7 @@ TEST(IoAwaitableTest, AbandonedInFlightIsSafe)
 }
 
 // ── stop_token 요청 시 진행 중 op 가 커널 취소되어 코루틴이 에러로 재개된다 ──
-TEST(IoAwaitableTest, StopTokenCancelsInFlight)
+TEST(IoOperationTest, StopTokenCancelsInFlight)
 {
 	const WsaScope wsa;
 	IocpEngine engine;
@@ -172,7 +172,7 @@ TEST(IoAwaitableTest, StopTokenCancelsInFlight)
 // 예전에는 소멸자가 소유권만 루프로 넘기고 Cancel() 을 하지 않았다. 그러면 커널은 계속 op 을 들고
 // 있으면서, 이미 파괴된 코루틴 프레임의 버퍼/sockaddr 에 쓰기를 시도한다(use-after-free). 아래는
 // "소켓을 닫는" 외부 자극 없이도 완료가 도착하는지 봄으로써 취소가 실제로 요청됐음을 확인한다.
-TEST(IoAwaitableTest, AbandonedInFlightIsCancelledWithoutClosingSocket)
+TEST(IoOperationTest, AbandonedInFlightIsCancelledWithoutClosingSocket)
 {
 	const WsaScope wsa;
 	IocpEngine engine;

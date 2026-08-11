@@ -448,7 +448,7 @@ namespace ne::io
 		const int_t fd = static_cast<int_t>(_handleKey);
 		std::lock_guard lock(mutex);
 
-		// Awaitable 은 abandon 시 Cancel 을 걸지 않으므로, 소켓이 op 진행 중 닫히면 그 op 의 완료가
+		// IoOperation 은 abandon 시 Cancel 을 걸지 않으므로, 소켓이 op 진행 중 닫히면 그 op 의 완료가
 		// 영영 오지 않아 abandoned 핸들러가 누수된다. 여기서 fd 기준으로 waiter/pending 을 정리하고
 		// 합성 완료(ECANCELED)를 만들어 루프가 회수·해제하게 한다. pending 을 함께 지워, 이후
 		// ProcessCancels 가 같은 userData 를 중복 완료시키지 않도록 한다(pending 존재검사로 skip).

@@ -2,13 +2,13 @@
 // Created by hscloud on 26. 8. 11.
 //
 
-#include "Time/HttpDate.h"
+#include "Network/Protocol/Http/Message/Date.h"
 
 #include <array>
 #include <charconv>
 #include <cstdio>
 
-namespace ne::time
+namespace ne::network::http
 {
 	namespace
 	{
@@ -48,7 +48,7 @@ namespace ne::time
 
 
 
-	string_t FormatHttpDate(const std::chrono::system_clock::time_point _timePoint)
+	string_t FormatDate(const std::chrono::system_clock::time_point _timePoint)
 	{
 		using namespace std::chrono;
 
@@ -79,7 +79,7 @@ namespace ne::time
 		return string_t(buffer);
 	}
 
-	std::optional<std::chrono::system_clock::time_point> ParseHttpDate(const string_view_t _text)
+	std::optional<std::chrono::system_clock::time_point> ParseDate(const string_view_t _text)
 	{
 		using namespace std::chrono;
 

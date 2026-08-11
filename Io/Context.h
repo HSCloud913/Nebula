@@ -12,7 +12,7 @@
 #include "Base/Type.h"
 #include "Base/Coroutine/IExecutor.h"
 #include "Io/Engine.h"
-#include "Time/Sleep.h"
+#include "Time/Coroutine/Sleep.h"
 
 namespace ne::io
 {
@@ -20,7 +20,7 @@ namespace ne::io
 	 * @class HandlerState
 	 * @brief CompletionHandler 의 소유권 상태입니다.
 	 *
-	 * 대기자(Awaitable)와 이벤트 루프 중 **나중에 상태를 바꾼 쪽이 해제 책임을 진다**는 규약을 단일
+	 * 대기자(IoOperation)와 이벤트 루프 중 **나중에 상태를 바꾼 쪽이 해제 책임을 진다**는 규약을 단일
 	 * 원자 변수로 표현합니다. 과거에는 isCompleted/isAbandoned 두 개의 비원자 bool 이었고, 양쪽이
 	 * 서로의 갱신을 보지 못하면 이중 해제 또는 영구 누수가 났습니다.
 	 */
@@ -126,7 +126,7 @@ namespace ne::io
 		bool_t RunOnce(std::chrono::milliseconds _timeout);
 		void_t Post(std::coroutine_handle<> _handle) override;
 
-		[[nodiscard]] ne::time::Awaitable SleepFor(std::chrono::milliseconds _duration) const noexcept;
+		[[nodiscard]] ne::time::Timer SleepFor(std::chrono::milliseconds _duration) const noexcept;
 
 	private:
 		[[nodiscard]] std::chrono::milliseconds EffectiveTimeout(std::chrono::milliseconds _timeout) const noexcept;

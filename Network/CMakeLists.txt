@@ -10,6 +10,7 @@ set(SOURCES
         Stream/Tls/TlsStream.cpp
         Protocol/Http/ClientBuilder.cpp
         Protocol/Http/ServerBuilder.cpp
+        Protocol/Http/Message/Date.cpp
         Protocol/Http/Message/Method.cpp
         Protocol/Http/Message/Status.cpp
         Protocol/Http/Message/Params.cpp
@@ -50,8 +51,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
                       NebulaBase
                       NebulaMemory
                       NebulaUtil
-                      NebulaIo
-                      NebulaTime # HTTP-date(Date/Last-Modified) 포맷 — NebulaIo 를 통한 전이 의존에 기대지 않는다
+                      NebulaIo
 )
 target_link_libraries(${PROJECT_NAME} PRIVATE NebulaConcurrency)
 

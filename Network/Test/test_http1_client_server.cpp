@@ -20,7 +20,6 @@
 #include "Base/Coroutine/Task.h"
 #include "Io/Context.h"
 #include "Io/Socket.h"
-#include "Time/TimerQueue.h"
 #include "Network/Protocol/Http/ResponseCallbacks.h"
 #include "Network/Protocol/Http/ClientBuilder.h"
 #include "Network/Protocol/Http/ServerBuilder.h"

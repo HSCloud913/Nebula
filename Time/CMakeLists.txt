@@ -8,13 +8,11 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(HEADERS
-    HttpDate.h
-    Sleep.h
+    Coroutine/Sleep.h
     TimerQueue.h
 )
 
 set(SOURCES
-    HttpDate.cpp
     TimerQueue.cpp
 )
 

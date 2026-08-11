@@ -7,7 +7,7 @@
 #include "Base/Exception.h"
 #include "Util/StringFormat.h"
 #include "Io/Engine.h"
-#include "Io/Coroutine/Awaitable.h"
+#include "Io/Coroutine/IoOperation.h"
 
 #if defined(IS_POSIX)
 #	include <sys/socket.h>

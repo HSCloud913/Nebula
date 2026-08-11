@@ -15,7 +15,7 @@
 #include "Network/Protocol/Http/Internal/Http1/Parser.h"
 #include "Network/Protocol/Http/Internal/Timeout.h"
 #include "Network/Stream/PlainStream.h"
-#include "Time/HttpDate.h"
+#include "Network/Protocol/Http/Message/Date.h"
 #include "Util/StringFormat.h"
 
 
@@ -171,7 +171,7 @@ namespace ne::network::http_1::internal
 			res.headers.Set("Connection", keepAlive ? "keep-alive" : "close");
 
 			// RFC 9110 §6.6.1: 시계를 가진 오리진 서버는 Date 를 보내야 한다(캐시/조건부 요청의 기준).
-			if (!res.headers.Has("Date")) res.headers.Set("Date", ne::time::FormatHttpDate(std::chrono::system_clock::now()));
+			if (!res.headers.Has("Date")) res.headers.Set("Date", http::FormatDate(std::chrono::system_clock::now()));
 
 			// HEAD 응답에 본문을 실으면 keep-alive 프레이밍이 깨져 이후 모든 응답이 오염된다.
 			// Content-Length 는 GET 과 동일하게 유지하고(RFC 9110 §9.3.2) 본문 전송만 생략한다.

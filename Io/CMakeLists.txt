@@ -17,7 +17,7 @@ set(HEADERS
     File.h
 
     # 공개 패밀리 — 코루틴 결합 계층
-    Coroutine/Awaitable.h
+    Coroutine/IoOperation.h
     Coroutine/Timeout.h
 
     # 공개 패밀리 — 등록 버퍼(zero-copy 고급 표면)

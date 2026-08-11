@@ -9,8 +9,8 @@
 #include "Io/Engine.h"
 // SendSubmitAwaitable/ReceiveSubmitAwaitable(소켓 Proactor, POSIX) +
 // ReadSubmitAwaitable/WriteSubmitAwaitable(파일 Proactor, Windows/IocpEngine) 전부
-// Io 모듈 공용 — Ipc 는 더 이상 자체 Awaitable.h 를 두지 않는다.
-#include "Io/Coroutine/Awaitable.h"
+// Io 모듈 공용 — Ipc 는 더 이상 자체 IoOperation.h 를 두지 않는다.
+#include "Io/Coroutine/IoOperation.h"
 
 #if defined(_WIN32)
 #	include "Base/WinsockApi.h"

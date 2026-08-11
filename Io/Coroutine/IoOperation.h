@@ -19,7 +19,7 @@
 namespace ne::io
 {
 	/**
-	 * @class Awaitable
+	 * @class IoOperation
 	 * @brief I/O 완료 한 건을 co_await 로 감싸는 awaitable.
 	 *
 	 * Request 를 Context 의 엔진에 제출하고, 완료될 때까지 코루틴을 suspend 시킨다.
@@ -31,15 +31,15 @@ namespace ne::io
 	 * 계속 이 op 을 들고 있으면서 코루틴 프레임에 있던 버퍼/sockaddr 에 쓰기를 시도한다. 그 프레임은
 	 * 이미 파괴됐으므로 use-after-free 다.
 	 */
-	class Awaitable
+	class IoOperation
 	{
 	public:
-		Awaitable(Context& _context, const Request& _request, std::stop_token _stopToken = {}) noexcept
+		IoOperation(Context& _context, const Request& _request, std::stop_token _stopToken = {}) noexcept
 			: context(_context)
 			, request(_request)
 			, stopToken(std::move(_stopToken)) {}
 
-		~Awaitable()
+		~IoOperation()
 		{
 			if (handler == nullptr) return;
 
@@ -64,7 +64,7 @@ namespace ne::io
 			context.Engine().Cancel(handler);
 		}
 
-		NEBULA_NON_COPYABLE_MOVABLE(Awaitable)
+		NEBULA_NON_COPYABLE_MOVABLE(IoOperation)
 
 	private:
 		/**

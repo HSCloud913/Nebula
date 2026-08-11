@@ -6,7 +6,7 @@
 
 #include <utility>
 #include "Io/Context.h"
-#include "Io/Coroutine/Awaitable.h"
+#include "Io/Coroutine/IoOperation.h"
 #include "Base/Error.h"
 
 #if defined(IS_POSIX)
@@ -99,7 +99,7 @@ namespace ne::io
 	{
 		const Request request{ .requestKind = RequestKind::READ, .handle = ToHandleValue(handle.Get()), .buffer = _buffer.data(), .length = _buffer.size(), .offset = _offset };
 
-		auto result = co_await Awaitable{ *context, request, std::move(_stopToken) };
+		auto result = co_await IoOperation{ *context, request, std::move(_stopToken) };
 		co_return result;
 	}
 
@@ -107,7 +107,7 @@ namespace ne::io
 	{
 		const Request request{ .requestKind = RequestKind::WRITE, .handle = ToHandleValue(handle.Get()), .buffer = const_cast<ne::byte_t*>(_buffer.data()), .length = _buffer.size(), .offset = _offset };
 
-		auto result = co_await Awaitable{ *context, request, std::move(_stopToken) };
+		auto result = co_await IoOperation{ *context, request, std::move(_stopToken) };
 		co_return result;
 	}
 
@@ -116,7 +116,7 @@ namespace ne::io
 	{
 		const Request request{ .requestKind = RequestKind::READ, .handle = ToHandleValue(handle.Get()), .length = _chain.TotalSize(), .offset = _offset, .chain = &_chain };
 
-		auto result = co_await Awaitable{ *context, request, std::move(_stopToken) };
+		auto result = co_await IoOperation{ *context, request, std::move(_stopToken) };
 		co_return result;
 	}
 
@@ -124,7 +124,7 @@ namespace ne::io
 	{
 		const Request request{ .requestKind = RequestKind::WRITE, .handle = ToHandleValue(handle.Get()), .length = _chain.TotalSize(), .offset = _offset, .chain = &_chain };
 
-		auto result = co_await Awaitable{ *context, request, std::move(_stopToken) };
+		auto result = co_await IoOperation{ *context, request, std::move(_stopToken) };
 		co_return result;
 	}
 }

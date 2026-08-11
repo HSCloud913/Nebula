@@ -103,7 +103,7 @@ namespace ne::io
 
 
 
-	ne::time::Awaitable Context::SleepFor(const std::chrono::milliseconds _duration) const noexcept
+	ne::time::Timer Context::SleepFor(const std::chrono::milliseconds _duration) const noexcept
 	{
 		// 생성자가 항상 휠을 확보하므로 nullptr 일 수 없다.
 		return ne::time::SleepFor(*timer, _duration);
