@@ -10,9 +10,11 @@
 #include <type_traits>
 #include <utility>
 #include "Base/Coroutine/Task.h"
-#include "Io/Context/Context.h"
+#include "Io/Context.h"
+#include "Base/Coroutine/Race.h"
 
-BEGIN_NS(ne::io)
+namespace ne::io
+{
 	template <typename U>
 	struct TaskValueType;
 
@@ -22,80 +24,63 @@ BEGIN_NS(ne::io)
 		using type = U;
 	};
 
-	/**
-	 * @class RaceState
-	 * @brief Timeout() 내부에서 I/O 레이서와 타이머 레이서가 공유하는 경합 상태.
-	 *
-	 * 두 레이서 중 먼저 끝난 쪽이 isDecided 를 세팅하고 outer(Timeout 코루틴 핸들)를 깨운다.
-	 *
-	 * @note 단일 io::Context(단일 스레드) 실행을 전제하므로 원자적 동기화가 필요 없다.
-	 */
-	struct RaceState
+	namespace internal
 	{
-		std::coroutine_handle<> outer;
-		bool_t isDecided{ false };
-	};
-
-	/**
-	 * @class AwaitDecision
-	 * @brief Timeout() 이 경합 결과를 기다리기 위해 co_await 하는 대기점.
-	 *
-	 * RaceState 가 이미 결정된 상태면 즉시 통과하고, 아니면 자신의 핸들을 RaceState 에 남기고
-	 * suspend 한다. 이후 승리한 레이서가 Post 를 통해 재개시킨다.
-	 */
-	struct AwaitDecision
-	{
-		RaceState& state;
-
-		[[nodiscard]] bool_t await_ready() const noexcept { return state.isDecided; }
-		void_t await_suspend(const std::coroutine_handle<> _handle) noexcept { state.outer = _handle; }
-		void_t await_resume() const noexcept {}
-	};
-
-	template <typename T>
-	ne::Task<void_t> RaceIo(Context& _context, ne::Task<T> _task, RaceState& _state, std::optional<T>& _result)
-	{
-		auto value = co_await std::move(_task);
-		if (!_state.isDecided)
+		template <typename T>
+		ne::Task<void_t> RaceIo(Context& _context, ne::Task<T> _task, ne::RaceState& _state, std::optional<T>& _result)
 		{
-			_state.isDecided = true;
-			_result.emplace(std::move(value));
-			if (_state.outer) _context.Post(_state.outer);
+			auto value = co_await std::move(_task);
+			if (!_state.isDecided)
+			{
+				_state.isDecided = true;
+				_result.emplace(std::move(value));
+				if (_state.outer) _context.Post(_state.outer);
+			}
+		}
+
+		inline ne::Task<void_t> RaceTimer(Context& _context, const std::chrono::milliseconds _duration, ne::RaceState& _state, std::stop_source& _source)
+		{
+			co_await _context.SleepFor(_duration);
+			if (!_state.isDecided)
+			{
+				_state.isDecided = true;
+				(void_t)_source.request_stop();
+				if (_state.outer) _context.Post(_state.outer);
+			}
 		}
 	}
 
-	inline ne::Task<void_t> RaceTimer(Context& _context, const std::chrono::milliseconds _duration, RaceState& _state, std::stop_source& _source)
-	{
-		co_await _context.SleepFor(_duration);
-		if (!_state.isDecided)
-		{
-			_state.isDecided = true;
-			(void_t)_source.request_stop();
-			if (_state.outer) _context.Post(_state.outer);
-		}
-	}
-
+	/**
+	 * @brief _makeTask 로 만든 I/O 태스크와 _duration 타이머를 경합시킵니다.
+	 *
+	 * I/O 가 먼저 끝나면 그 값을 담은 optional 을, 타이머가 먼저 끝나면 nullopt 를 반환합니다.
+	 * 타이머 승리 시 _makeTask 에 넘긴 stop_token 으로 취소를 요청하고, 진 쪽 태스크는 그대로
+	 * 파괴되어(진행 중 I/O 는 루프가 배수) 취소됩니다.
+	 */
 	template <typename Fn>
 	[[nodiscard]] ne::Task<std::optional<typename TaskValueType<std::invoke_result_t<Fn, std::stop_token>>::type>> Timeout(Context& _context, std::chrono::milliseconds _duration, Fn _makeTask)
 	{
 		using T = typename TaskValueType<std::invoke_result_t<Fn, std::stop_token>>::type;
 
 		std::stop_source source;
-		RaceState state{};
+		ne::RaceState state{};
 		std::optional<T> result;
 
-		auto ioRacer = RaceIo<T>(_context, _makeTask(source.get_token()), state, result);
+		auto ioRacer = internal::RaceIo<T>(_context, _makeTask(source.get_token()), state, result);
 		ioRacer.Resume();
 
-		if (std::optional<ne::Task<void_t>> timerRacer; !state.isDecided)
+		// timerRacer 는 반드시 함수(코루틴) 스코프에 둔다. if 초기화문에 두면 if 블록 종료 시 파괴되어
+		// RaceTimer 코루틴이 destroy 되고, 그 안의 co_await SleepFor 가 취소되어 타이머가 스케줄되자마자
+		// 사라진다(→ 타이머가 영영 발화하지 않아 타이머 승리 경로가 멈춘다). AwaitDecision 이후까지 살려야 한다.
+		std::optional<ne::Task<void_t>> timerRacer;
+		if (!state.isDecided)
 		{
-			timerRacer.emplace(RaceTimer(_context, _duration, state, source));
+			timerRacer.emplace(internal::RaceTimer(_context, _duration, state, source));
 			timerRacer->Resume();
 		}
 
-		if (!state.isDecided) co_await AwaitDecision{ state };
+		if (!state.isDecided) co_await ne::AwaitDecision{ state };
 
 		co_return std::move(result);
 	}
-
-END_NS
+}

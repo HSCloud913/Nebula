@@ -2,13 +2,16 @@
 
 #if defined(_WIN32)
 
-#include <winsock2.h>
-#include <windows.h>
+#include "Base/WinsockApi.h"
 #include <atomic>
 #include <chrono>
 #include <cstring>
-#include "Io/Context/Context.h"
-#include "Io/Engine/Iocp/IocpEngine.h"
+#include <future>
+#include <memory>
+#include <vector>
+#include <thread>
+#include "Io/Context.h"
+#include "Io/Internal/Engine/Iocp/IocpEngine.h"
 #include "Base/Coroutine/Task.h"
 #include "Time/Timer/TimerWheel.h"
 
@@ -25,9 +28,9 @@ namespace
 		Request request;
 		CompletionHandler handler{};
 
-		[[nodiscard]] bool_t await_ready() const noexcept { return false; }
+		[[nodiscard]] bool await_ready() const noexcept { return false; }
 
-		void_t await_suspend(const std::coroutine_handle<> _handle) noexcept
+		void await_suspend(const std::coroutine_handle<> _handle) noexcept
 		{
 			handler.handle = _handle;
 			request.userData = &handler;
@@ -44,9 +47,9 @@ namespace
 	{
 		Context& context;
 
-		[[nodiscard]] bool_t await_ready() const noexcept { return false; }
-		void_t await_suspend(const std::coroutine_handle<> _handle) noexcept { context.Post(_handle); }
-		void_t await_resume() const noexcept {}
+		[[nodiscard]] bool await_ready() const noexcept { return false; }
+		void await_suspend(const std::coroutine_handle<> _handle) noexcept { context.Post(_handle); }
+		void await_resume() const noexcept {}
 	};
 
 	ne::Task<int_t> PostRoundTrip(Context& _context)
@@ -119,6 +122,73 @@ TEST(IoContextTest, TimerWheelIntegration)
 	EXPECT_TRUE(fired.load());
 	const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
 	EXPECT_GE(elapsed, 50);
+}
+
+// ── Start/Stop 경합: Stop 이 Start 의 루프 진입 직전에 도착해도 요청이 사라지지 않는다 ──
+// 과거에는 "실행 중"/"정지 요청" 을 별개 bool 로 둬서, Start() 가 정지 플래그를 확인한 뒤 실행
+// 플래그를 세우기 전에 Stop() 이 끼어들면 요청이 유실되고 루프가 영원히 돌았다(join 이 멈춤).
+// 멈춤은 그대로 두면 테스트 자체가 걸려버리므로, 제한 시간 초과를 명시적 실패로 바꾼다.
+// 창이 매우 좁아(플래그 확인 ~ 실행 플래그 설정 사이 몇 개 명령) 스레드 하나로는 거의 걸리지 않는다 —
+// 워커를 여러 개 동시에 띄워 그중 하나가 그 지점에 있을 확률을 끌어올린다.
+TEST(IoContextTest, StartStopRaceDoesNotHang)
+{
+	constexpr int_t WorkerCount = 8;
+
+	for (int_t attempt = 0; attempt < 500; ++attempt)
+	{
+		std::vector<std::unique_ptr<IocpEngine>> engines;
+		std::vector<std::unique_ptr<Context>> contexts;
+		for (int_t i = 0; i < WorkerCount; ++i)
+		{
+			engines.push_back(std::make_unique<IocpEngine>());
+			ASSERT_TRUE(engines.back()->IsValid());
+			contexts.push_back(std::make_unique<Context>(*engines.back()));
+		}
+
+		std::vector<std::future<void>> pending;
+		pending.reserve(contexts.size());
+		for (const auto& context : contexts) pending.push_back(std::async(std::launch::async, [target = context.get()] { target->Start(); }));
+
+		// 워커들이 Start() 의 어느 지점에 있든 정지 요청은 반드시 관측되어야 한다.
+		for (const auto& context : contexts) context->Stop();
+
+		for (std::size_t i = 0; i < pending.size(); ++i)
+		{
+			if (pending[i].wait_for(std::chrono::seconds(2)) == std::future_status::ready) continue;
+
+			ADD_FAILURE() << "attempt " << attempt << ", worker " << i << ": Stop() 이 유실되어 Start() 루프가 빠져나오지 못했다";
+
+			// 매달린 채 끝내면 future 소멸자가 영원히 기다리므로, 한 번 더 요청해 풀어 준다.
+			for (const auto& context : contexts) context->Stop();
+			for (auto& task : pending) task.wait();
+
+			return;
+		}
+	}
+
+	SUCCEED();
+}
+
+// ── Start/Stop 을 순차로 여러 번 재사용할 수 있다(정지 플래그가 다음 Start 를 막지 않는다) ──
+TEST(IoContextTest, StartStopIsReusable)
+{
+	IocpEngine engine;
+	ASSERT_TRUE(engine.IsValid());
+	Context context{ engine };
+
+	for (int_t cycle = 0; cycle < 5; ++cycle)
+	{
+		auto pending = std::async(std::launch::async, [&context] { context.Start(); });
+
+		// 워커가 실제로 루프에 들어갔는지 확인한 뒤 정지시킨다.
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+		while (!context.IsRunning() && std::chrono::steady_clock::now() < deadline) std::this_thread::yield();
+		EXPECT_TRUE(context.IsRunning()) << "cycle " << cycle;
+
+		context.Stop();
+		ASSERT_EQ(pending.wait_for(std::chrono::seconds(2)), std::future_status::ready) << "cycle " << cycle;
+		EXPECT_FALSE(context.IsRunning()) << "cycle " << cycle;
+	}
 }
 
 #endif // _WIN32

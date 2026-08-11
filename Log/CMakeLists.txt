@@ -9,6 +9,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(HEADERS
     Logger.h
+    LogRecord.h
+
+    Sink/ISink.h
+    Sink/ConsoleSink.h
+    Sink/FileSink.h
+    Sink/RotatingFileSink.h
 )
 
 set(SOURCES
@@ -16,11 +22,14 @@ set(SOURCES
 )
 
 add_library(${PROJECT_NAME} STATIC ${HEADERS} ${SOURCES})
+add_library(Nebula::Log ALIAS ${PROJECT_NAME})
 target_include_directories(${PROJECT_NAME} PUBLIC
-                           ${CMAKE_CURRENT_SOURCE_DIR}
-                           ${CMAKE_SOURCE_DIR}/Base
-                           ${CMAKE_SOURCE_DIR}/Concurrency
-)
+                           $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>
+                           $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+
+set_target_properties(${PROJECT_NAME} PROPERTIES EXPORT_NAME Log)
+install(TARGETS ${PROJECT_NAME} EXPORT NebulaTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 target_link_libraries(${PROJECT_NAME} PUBLIC NebulaBase NebulaConcurrency)
 
 

@@ -5,6 +5,7 @@
 #include "Ipc/Semaphore.h"
 
 #include "Base/Exception.h"
+#include "Base/WindowsApi.h"
 #include "Util/StringFormat.h"
 
 #if defined(IS_POSIX)
@@ -15,14 +16,15 @@
 
 
 
-BEGIN_NS (ne::ipc)
+namespace ne::ipc
+{
 #if defined(_WIN32)
 class Semaphore::Impl final
 {
 public:
 	Impl(const string_view_t _name, const int_t _initialCount)
 	{
-		const auto wideName = StringFormat::UTF8toWCS(string_t(_name).c_str());
+		const auto wideName = ne::util::StringFormat::UTF8toWCS(string_t(_name).c_str());
 
 		handle = ::CreateSemaphoreW(nullptr, _initialCount, MaxCount, wideName.c_str());
 		if (!handle) { throw ne::Exception("[Semaphore/Impl]", std::format("Failed to CreateSemaphoreW function (error: {})", ::GetLastError())); }
@@ -102,4 +104,4 @@ bool_t Semaphore::TryAcquire() const { return impl->TryAcquire(); }
 
 void_t Semaphore::Release(const int_t _count) const { impl->Release(_count); }
 
-END_NS
+}

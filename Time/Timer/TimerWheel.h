@@ -11,7 +11,8 @@
 #include <vector>
 #include "Base/Type.h"
 
-BEGIN_NS(ne::time)
+namespace ne::time
+{
 	/**
 	 * @class TimerWheel
 	 * @brief 최소 힙(min-heap) 기반 타이머입니다.
@@ -82,8 +83,7 @@ BEGIN_NS(ne::time)
 		[[nodiscard]] int_t NextExpiryMs() const noexcept;
 
 	private:
-		/** @brief baseTime 이후 경과한 실시간 ms (음수는 0 으로 클램프). */
+		/** @brief baseTime 이후 경과한 실시간 ms. (음수는 0 으로 클램프) */
 		[[nodiscard]] ulonglong_t ElapsedMs() const noexcept;
 	};
-
-END_NS
+}

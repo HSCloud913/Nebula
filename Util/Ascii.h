@@ -7,7 +7,8 @@
 #include <ranges>
 #include "Base/Type.h"
 
-BEGIN_NS(ne)
+namespace ne::util
+{
 	/**
 	 * @class Ascii
 	 * @brief ASCII 문자의 속성(공백/구두점/숫자/대소문자 등) 판별과 대소문자 변환을 제공하는
@@ -60,5 +61,4 @@ BEGIN_NS(ne)
 		[[nodiscard]] static int_t Lower(const int_t _value) { return IsUpper(_value) ? _value + 32 : _value; }
 		[[nodiscard]] static int_t Upper(const int_t _value) { return IsLower(_value) ? _value - 32 : _value; }
 	};
-
-END_NS
+}

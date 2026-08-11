@@ -1,12 +1,16 @@
 #pragma once
 #include "Base/Type.h"
+#include "Base/Result.h"
 
-BEGIN_NS(ne)
+namespace ne::util
+{
 	/**
 	 * @class Base64
-	 * @brief 문자열/버퍼에 대한 Base64 인코딩·디코딩을 제공하는 정적 유틸리티 클래스입니다.
+	 * @brief Base64(RFC 4648) 인코딩·디코딩 정적 유틸리티입니다.
 	 *
-	 * @note EncodeURL/DecodeURL은 URL-safe 알파벳(패딩 없는 `-`/`_`)을 사용하는 변형입니다.
+	 * 인코딩은 실패하지 않지만(값 반환), 디코딩은 잘못된 문자/길이를 만나면 조용히 오염된 바이트를
+	 * 내놓는 대신 ne::Result 로 실패를 명확히 알립니다("예외 없음" 철학). URL-safe 변형은 '-'/'_'
+	 * 알파벳을 쓰며 패딩 유무를 인자로 독립 지정할 수 있습니다.
 	 */
 	class Base64 final
 	{
@@ -15,14 +19,14 @@ BEGIN_NS(ne)
 		~Base64() = default;
 
 	public:
-		static void_t Encode(lpcstr_t _string, char_t* _buffer, size_t _bufferSize);
-		static void_t Decode(lpcstr_t _string, char_t* _buffer, size_t _bufferSize);
+		/** @brief 표준 Base64 인코딩. _padding=true 면 '=' 패딩을 채운다. */
+		[[nodiscard]] static string_t Encode(string_view_t _data, bool_t _padding = true);
+		/** @brief URL-safe Base64 인코딩('-'/'_'). 기본은 패딩 없음. */
+		[[nodiscard]] static string_t EncodeURL(string_view_t _data, bool_t _padding = false);
 
-		static string_t Encode(string_t&& _string);
-		static string_t Decode(string_t&& _string);
-
-		static string_t EncodeURL(string_t&& _string);
-		static string_t DecodeURL(string_t&& _string);
+		/** @brief 표준 Base64 디코딩. 알파벳 밖 문자나 잘린 길이면 Err. '=' 패딩은 있어도/없어도 허용. */
+		[[nodiscard]] static ne::Result<string_t> Decode(string_view_t _text);
+		/** @brief URL-safe Base64 디코딩. 알파벳 밖 문자나 잘린 길이면 Err. */
+		[[nodiscard]] static ne::Result<string_t> DecodeURL(string_view_t _text);
 	};
-
-END_NS
+}

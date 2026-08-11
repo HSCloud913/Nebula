@@ -20,7 +20,8 @@ namespace ne::io
 	#endif
 }
 
-BEGIN_NS (ne::ipc)
+namespace ne::ipc
+{
 
 class Pipe final
 {
@@ -68,4 +69,4 @@ public:
 	[[nodiscard]] bool_t IsConnected() const noexcept;
 };
 
-END_NS
+}

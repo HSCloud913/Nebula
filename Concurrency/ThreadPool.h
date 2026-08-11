@@ -11,7 +11,8 @@
 #include <thread>
 #include "Base/Type.h"
 
-BEGIN_NS(ne)
+namespace ne::concurrency
+{
 	/**
 	 * @class ThreadPool
 	 * @brief 고정 개수의 워커 스레드로 작업(job) 큐를 처리하는 스레드 풀입니다.
@@ -56,5 +57,4 @@ BEGIN_NS(ne)
 
 		void_t Shutdown();
 	};
-
-END_NS
+}

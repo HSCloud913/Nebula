@@ -1,217 +1,98 @@
 #include "Util/Base64.h"
 
-#include <cstring>
+#include <array>
+#include <cstdint>
+#include <utility>
 
-
-
-constexpr ne::string_view_t Base64String = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-
-
-BEGIN_NS(ne)
-	void_t Base64::Encode(lpcstr_t _string, char_t* _buffer, size_t _bufferSize)
+namespace ne::util
+{
+	namespace
 	{
-		byte_t arrayInput[3], arrayOutput[4];
+		constexpr string_view_t StandardAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+		constexpr string_view_t UrlAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
-		int_t i = 0;
-		size_t pos = 0;
-
-		size_t len = strlen(_string);
-		while (len--)
+		string_t EncodeWith(const string_view_t _data, const string_view_t _alphabet, const bool_t _padding)
 		{
-			arrayInput[i++] = static_cast<byte_t>(*_string++);
+			string_t out;
+			out.reserve((_data.size() + 2) / 3 * 4);
 
-			if (i == 3)
+			const auto* data = reinterpret_cast<const byte_t*>(_data.data());
+			const std::size_t size = _data.size();
+
+			std::size_t i = 0;
+			for (; i + 3 <= size; i += 3)
 			{
-				arrayOutput[0] = (arrayInput[0] & 0xfc) >> 2;
-				arrayOutput[1] = ((arrayInput[0] & 0x03) << 4) + ((arrayInput[1] & 0xf0) >> 4);
-				arrayOutput[2] = ((arrayInput[1] & 0x0f) << 2) + ((arrayInput[2] & 0xc0) >> 6);
-				arrayOutput[3] = arrayInput[2] & 0x3f;
-
-				for (i = 0; (i < 4); i++) { if (pos < _bufferSize) { _buffer[pos++] = Base64String[arrayOutput[i]]; } }
-
-				i = 0;
+				const std::uint32_t triple = (static_cast<std::uint32_t>(data[i]) << 16) | (static_cast<std::uint32_t>(data[i + 1]) << 8) | data[i + 2];
+				out += _alphabet[(triple >> 18) & 0x3F];
+				out += _alphabet[(triple >> 12) & 0x3F];
+				out += _alphabet[(triple >> 6) & 0x3F];
+				out += _alphabet[triple & 0x3F];
 			}
-		}
 
-		if (i)
-		{
-			for (int_t j = i; j < 3; j++) { arrayInput[j] = '\0'; }
-
-			arrayOutput[0] = (arrayInput[0] & 0xfc) >> 2;
-			arrayOutput[1] = ((arrayInput[0] & 0x03) << 4) + ((arrayInput[1] & 0xf0) >> 4);
-			arrayOutput[2] = ((arrayInput[1] & 0x0f) << 2) + ((arrayInput[2] & 0xc0) >> 6);
-			arrayOutput[3] = arrayInput[2] & 0x3f;
-
-			for (int_t j = 0; j < (i + 1); j++) { if (pos < _bufferSize) { _buffer[pos++] = Base64String[arrayOutput[j]]; } }
-
-			while ((i++ < 3)) { if (pos < _bufferSize) { _buffer[pos++] = '='; } }
-		}
-	}
-
-	void_t Base64::Decode(lpcstr_t _string, char_t* _buffer, size_t _bufferSize)
-	{
-		byte_t arrayInput[4], arrayOutput[3];
-
-		size_t i = 0;
-		size_t pos = 0;
-		int_t idx = 0;
-
-		size_t cchLen = strlen(_string);
-		while (cchLen-- && (_string[idx] != '='))
-		{
-			arrayInput[i++] = static_cast<byte_t>(_string[idx++]);
-
-			if (i == 4)
+			if (const std::size_t remainder = size - i; remainder == 1)
 			{
-				for (i = 0; i < 4; i++) { arrayInput[i] = static_cast<byte_t>(Base64String.find(arrayInput[i])); }
-
-				arrayOutput[0] = (arrayInput[0] << 2) + ((arrayInput[1] & 0x30) >> 4);
-				arrayOutput[1] = ((arrayInput[1] & 0xf) << 4) + ((arrayInput[2] & 0x3c) >> 2);
-				arrayOutput[2] = ((arrayInput[2] & 0x3) << 6) + arrayInput[3];
-
-				for (i = 0; (i < 3); i++) { if (pos < _bufferSize) { _buffer[pos++] = arrayOutput[i]; } }
-
-				i = 0;
+				const std::uint32_t triple = static_cast<std::uint32_t>(data[i]) << 16;
+				out += _alphabet[(triple >> 18) & 0x3F];
+				out += _alphabet[(triple >> 12) & 0x3F];
+				if (_padding) out += "==";
 			}
-		}
-
-		if (i)
-		{
-			for (size_t j = i; j < 4; j++) { arrayInput[j] = 0; }
-
-			for (size_t j = 0; j < 4; j++) { arrayInput[j] = static_cast<byte_t>(Base64String.find(arrayInput[j])); }
-
-			arrayOutput[0] = (arrayInput[0] << 2) + ((arrayInput[1] & 0x30) >> 4);
-			arrayOutput[1] = ((arrayInput[1] & 0xf) << 4) + ((arrayInput[2] & 0x3c) >> 2);
-			arrayOutput[2] = ((arrayInput[2] & 0x3) << 6) + arrayInput[3];
-
-			for (size_t j = 0; j < (i - 1); j++) { if (pos < _bufferSize) { _buffer[pos++] = arrayOutput[j]; } }
-		}
-	}
-
-
-	string_t Base64::Encode(string_t&& _string)
-	{
-		string_t encodeString;
-
-		byte_t arrayInput[3], arrayOutput[4];
-
-		int_t i = 0;
-		size_t pos = 0;
-
-		size_t len = _string.size();
-
-		while (len--)
-		{
-			arrayInput[i++] = static_cast<byte_t>(_string[pos++]);
-
-			if (i == 3)
+			else if (remainder == 2)
 			{
-				arrayOutput[0] = (arrayInput[0] & 0xfc) >> 2;
-				arrayOutput[1] = ((arrayInput[0] & 0x03) << 4) + ((arrayInput[1] & 0xf0) >> 4);
-				arrayOutput[2] = ((arrayInput[1] & 0x0f) << 2) + ((arrayInput[2] & 0xc0) >> 6);
-				arrayOutput[3] = arrayInput[2] & 0x3f;
-
-				for (i = 0; (i < 4); i++) { encodeString += Base64String[arrayOutput[i]]; }
-
-				i = 0;
+				const std::uint32_t triple = (static_cast<std::uint32_t>(data[i]) << 16) | (static_cast<std::uint32_t>(data[i + 1]) << 8);
+				out += _alphabet[(triple >> 18) & 0x3F];
+				out += _alphabet[(triple >> 12) & 0x3F];
+				out += _alphabet[(triple >> 6) & 0x3F];
+				if (_padding) out += "=";
 			}
+
+			return out;
 		}
 
-		if (i)
+		ne::Result<string_t> DecodeWith(const string_view_t _text, const string_view_t _alphabet)
 		{
-			for (int_t j = i; j < 3; j++) { arrayInput[j] = '\0'; }
+			using R = ne::Result<string_t>;
 
-			arrayOutput[0] = (arrayInput[0] & 0xfc) >> 2;
-			arrayOutput[1] = ((arrayInput[0] & 0x03) << 4) + ((arrayInput[1] & 0xf0) >> 4);
-			arrayOutput[2] = ((arrayInput[1] & 0x0f) << 2) + ((arrayInput[2] & 0xc0) >> 6);
-			arrayOutput[3] = arrayInput[2] & 0x3f;
+			std::array<int_t, 256> reverse{};
+			reverse.fill(-1);
+			for (std::size_t i = 0; i < _alphabet.size(); ++i) reverse[static_cast<byte_t>(_alphabet[i])] = static_cast<int_t>(i);
 
-			for (int_t j = 0; j < (i + 1); j++) { encodeString += Base64String[arrayOutput[j]]; }
+			// 후행 '=' 패딩만 허용(0~2개). 중간에 나오는 '='는 아래 루프에서 알파벳 밖 문자로 잡힌다.
+			std::size_t end = _text.size();
+			std::size_t padding = 0;
+			while (end > 0 && _text[end - 1] == '=' && padding < 3) { --end; ++padding; }
+			if (padding > 2) return R::Error(ne::Error{ "base64: invalid padding" });
 
-			while ((i++ < 3)) { encodeString += '='; }
-		}
+			string_t out;
+			out.reserve(end / 4 * 3 + 3);
 
-		return encodeString;
-	}
-
-	string_t Base64::Decode(string_t&& _string)
-	{
-		string_t generalString;
-
-		byte_t byArrayInput[4], byArrayOutput[3];
-
-		size_t cchLen = _string.size();
-		size_t i = 0;
-		int_t idx = 0;
-
-		while (cchLen-- && (_string[idx] != '='))
-		{
-			byArrayInput[i++] = static_cast<byte_t>(_string[idx++]);
-
-			if (i == 4)
+			std::uint32_t buffer = 0;
+			int_t bits = 0;
+			for (std::size_t i = 0; i < end; ++i)
 			{
-				for (i = 0; i < 4; i++) { byArrayInput[i] = static_cast<byte_t>(Base64String.find(byArrayInput[i])); }
+				const int_t value = reverse[static_cast<byte_t>(_text[i])];
+				if (value < 0) return R::Error(ne::Error{ "base64: invalid character" });
 
-				byArrayOutput[0] = (byArrayInput[0] << 2) + ((byArrayInput[1] & 0x30) >> 4);
-				byArrayOutput[1] = ((byArrayInput[1] & 0xf) << 4) + ((byArrayInput[2] & 0x3c) >> 2);
-				byArrayOutput[2] = ((byArrayInput[2] & 0x3) << 6) + byArrayInput[3];
-
-				for (i = 0; (i < 3); i++) { generalString += byArrayOutput[i]; }
-
-				i = 0;
+				buffer = (buffer << 6) | static_cast<std::uint32_t>(value);
+				bits += 6;
+				if (bits >= 8)
+				{
+					bits -= 8;
+					out += static_cast<char_t>((buffer >> bits) & 0xFF);
+				}
 			}
+
+			// 남은 6비트 그룹 하나(길이 %4 == 1)는 온전한 바이트를 만들 수 없는 잘린 입력이다.
+			if (bits == 6) return R::Error(ne::Error{ "base64: truncated input" });
+
+			return R::Ok(std::move(out));
 		}
-
-		if (i)
-		{
-			for (size_t j = i; j < 4; j++) { byArrayInput[j] = 0; }
-
-			for (size_t j = 0; j < 4; j++) { byArrayInput[j] = static_cast<byte_t>(Base64String.find(byArrayInput[j])); }
-
-			byArrayOutput[0] = (byArrayInput[0] << 2) + ((byArrayInput[1] & 0x30) >> 4);
-			byArrayOutput[1] = ((byArrayInput[1] & 0xf) << 4) + ((byArrayInput[2] & 0x3c) >> 2);
-			byArrayOutput[2] = ((byArrayInput[2] & 0x3) << 6) + byArrayInput[3];
-
-			for (size_t j = 0; j < (i - 1); j++) { generalString += byArrayOutput[j]; }
-		}
-
-		return generalString;
 	}
 
 
-	string_t Base64::EncodeURL(string_t&& _string)
-	{
-		string_t result = Encode(std::move(_string));
 
-		for (char_t& c : result)
-		{
-			if (c == '+') c = '-';
-			else if (c == '/') c = '_';
-		}
+	string_t Base64::Encode(const string_view_t _data, const bool_t _padding) { return EncodeWith(_data, StandardAlphabet, _padding); }
+	string_t Base64::EncodeURL(const string_view_t _data, const bool_t _padding) { return EncodeWith(_data, UrlAlphabet, _padding); }
 
-		const size_t padPos = result.find('=');
-		if (padPos != string_t::npos) result.erase(padPos);
-
-		return result;
-	}
-
-	string_t Base64::DecodeURL(string_t&& _string)
-	{
-		string_t padded = std::move(_string);
-
-		for (char_t& c : padded)
-		{
-			if (c == '-') c = '+';
-			else if (c == '_') c = '/';
-		}
-
-		const size_t remainder = padded.size() % 4;
-		if (remainder == 2) padded += "==";
-		else if (remainder == 3) padded += "=";
-
-		return Decode(std::move(padded));
-	}
-
-END_NS
+	ne::Result<string_t> Base64::Decode(const string_view_t _text) { return DecodeWith(_text, StandardAlphabet); }
+	ne::Result<string_t> Base64::DecodeURL(const string_view_t _text) { return DecodeWith(_text, UrlAlphabet); }
+}

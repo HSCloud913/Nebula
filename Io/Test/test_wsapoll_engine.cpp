@@ -7,12 +7,10 @@
 
 #if defined(_WIN32)
 
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <windows.h>
+#include "Base/WinsockApi.h"
 #include <chrono>
 #include <cstring>
-#include "Io/Engine/WsaPoll/WsaPollEngine.h"
+#include "Io/Internal/Engine/WsaPoll/WsaPollEngine.h"
 
 using namespace ne;
 using namespace ne::io;
@@ -199,7 +197,7 @@ TEST(WsaPollEngineTest, AcceptConnectRoundTrip)
 	// Perform() 의 RequestKind::ACCEPT 는 그대로 ::accept() 를 호출한다 — listener 가 블로킹 상태면
 	// 연결이 들어올 때까지 Submit() 안에서 동기 블록되어(테스트 스레드가 아직 Connect 도
 	// 제출하지 못한 시점) 데드락에 빠진다. epoll/io_uring 도 동일 계약이라 논블로킹 소켓
-	// 사용은 상위(Socket/AsyncListener) 계층의 책임 — 엔진 직접 테스트에서도 재현해야 한다.
+	// 사용은 상위(Socket/Listener) 계층의 책임 — 엔진 직접 테스트에서도 재현해야 한다.
 	u_long listenerNonBlocking = 1;
 	::ioctlsocket(listener, FIONBIO, &listenerNonBlocking);
 

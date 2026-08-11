@@ -5,13 +5,15 @@
 #include <chrono>
 #include <cstring>
 #include <span>
-#include "Io/Context/Context.h" // winsock2 → windows 순서를 IoType.h 가 보장(DeleteFileA 포함)
-#include "Io/File/File.h"
+#include "Io/Context.h" // winsock2 → windows 순서를 IoType.h 가 보장(DeleteFileA 포함)
+#include "Io/File.h"
 #include "Base/Coroutine/Task.h"
-#include "Io/Engine/Iocp/IocpEngine.h"
+#include "Io/Internal/Engine/Iocp/IocpEngine.h"
 
 using namespace ne;
 using namespace ne::io;
+using ne::memory::BufferView;
+using ne::memory::BufferChain;
 
 namespace
 {

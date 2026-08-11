@@ -5,11 +5,18 @@
 #pragma once
 #include <concepts>
 #include <cstring>
+#include <cctype>
+#include <cwctype>
 #include <vector>
 #include <memory>
 #include "Util/Ascii.h"
 
-BEGIN_NS(ne)
+#if defined(_WIN32)
+#	include "Base/WindowsApi.h" // MultiByteToWideChar/WideCharToMultiByte — UTF8↔WCS 변환이 직접 호출
+#endif
+
+namespace ne::util
+{
 	enum class TokenizeOption
 	{
 		NONE,
@@ -93,18 +100,15 @@ BEGIN_NS(ne)
 
 	public:
 		static constexpr auto LowerCaseTransform = std::views::transform([](const char_t _c) { return static_cast<char_t>(std::tolower(static_cast<byte_t>(_c))); });
-
 		static constexpr auto UpperCaseTransform = std::views::transform([](const char_t _c) { return static_cast<char_t>(std::toupper(static_cast<byte_t>(_c))); });
-
 		static constexpr auto LowerCaseWideTransform = std::views::transform([](const wchar_t _c) { return static_cast<wchar_t>(std::towlower(static_cast<ushort_t>(_c))); });
-
 		static constexpr auto UpperCaseWideTransform = std::views::transform([](const wchar_t _c) { return static_cast<wchar_t>(std::towupper(static_cast<ushort_t>(_c))); });
 
 		[[nodiscard]] static constexpr bool_t EqualCaseInsensitive(string_view_t _lhs, string_view_t _rhs) noexcept;
-
 		[[nodiscard]] static constexpr bool_t EqualCaseInsensitive(wstring_view_t _lhs, wstring_view_t _rhs) noexcept;
 
 #if defined(_WIN32)
+
 	public:
 		static string_t WCStoMBCS(const wchar_t* _wcs);
 		static string_t WCStoUTF8(const wchar_t* _wcs);
@@ -369,7 +373,7 @@ BEGIN_NS(ne)
 
 
 #if defined(_WIN32)
-	string_t StringFormat::WCStoMBCS(const wchar_t* _wcs)
+	inline string_t StringFormat::WCStoMBCS(const wchar_t* _wcs)
 	{
 		if (auto required = WideCharToMultiByte(CP_ACP, 0, _wcs, -1, nullptr, 0, nullptr, nullptr); required)
 		{
@@ -383,7 +387,7 @@ BEGIN_NS(ne)
 
 		return "";
 	}
-	string_t StringFormat::WCStoUTF8(const wchar_t* _wcs)
+	inline string_t StringFormat::WCStoUTF8(const wchar_t* _wcs)
 	{
 		if (auto required = WideCharToMultiByte(CP_UTF8, 0, _wcs, -1, nullptr, 0, nullptr, nullptr); required)
 		{
@@ -400,14 +404,14 @@ BEGIN_NS(ne)
 
 		return "";
 	}
-	string_t StringFormat::MBCStoUTF8(const char_t* _mbcs)
+	inline string_t StringFormat::MBCStoUTF8(const char_t* _mbcs)
 	{
 		std::wstring wcs = MBCStoWCS(_mbcs);
 		if (!wcs.empty()) { return WCStoUTF8(wcs.c_str()); }
 
 		return "";
 	}
-	std::wstring StringFormat::MBCStoWCS(const char_t* _mbcs)
+	inline std::wstring StringFormat::MBCStoWCS(const char_t* _mbcs)
 	{
 		if (auto required = MultiByteToWideChar(CP_ACP, 0, _mbcs, -1, nullptr, 0); required)
 		{
@@ -421,14 +425,14 @@ BEGIN_NS(ne)
 
 		return L"";
 	}
-	string_t StringFormat::UTF8toMBCS(const char_t* _utf8)
+	inline string_t StringFormat::UTF8toMBCS(const char_t* _utf8)
 	{
 		std::wstring wcs = UTF8toWCS(_utf8);
 		if (!wcs.empty()) { return WCStoMBCS(wcs.c_str()); }
 
 		return "";
 	}
-	std::wstring StringFormat::UTF8toWCS(const char_t* _utf8)
+	inline std::wstring StringFormat::UTF8toWCS(const char_t* _utf8)
 	{
 		if (auto required = MultiByteToWideChar(CP_UTF8, 0, _utf8, -1, nullptr, 0); required)
 		{
@@ -446,5 +450,4 @@ BEGIN_NS(ne)
 		return L"";
 	}
 #endif
-
-END_NS
+}

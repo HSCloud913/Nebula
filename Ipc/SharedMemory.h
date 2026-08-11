@@ -10,7 +10,8 @@
 
 #include "Base/Type.h"
 
-BEGIN_NS (ne::ipc)
+namespace ne::ipc
+{
 
 class SharedMemory final
 {
@@ -31,6 +32,6 @@ public:
 	[[nodiscard]] std::span<std::byte> GetView() const noexcept;
 };
 
-END_NS
+}
 
 #endif //SHAREDMEMORY_H

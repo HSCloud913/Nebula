@@ -3,13 +3,16 @@
 //
 
 #pragma once
+#include <any>
 #include <functional>
 #include <ranges>
 #include <memory>
+#include <unordered_map>
 #include <unordered_set>
 #include "Base/Type.h"
 
-BEGIN_NS(ne)
+namespace ne
+{
 	/**
 	 * @class IObserver
 	 * @brief Observer 패턴의 관찰자 인터페이스입니다.
@@ -22,6 +25,8 @@ BEGIN_NS(ne)
 		explicit IObserver(const uint_t _id)
 			: id(_id) {};
 		virtual ~IObserver() = default;
+
+		NEBULA_NON_COPYABLE_MOVABLE(IObserver)
 
 	protected:
 		uint_t id;
@@ -45,6 +50,8 @@ BEGIN_NS(ne)
 		ISubject() = default;
 		virtual ~ISubject() = default;
 
+		NEBULA_NON_COPYABLE_MOVABLE(ISubject)
+
 	protected:
 		std::unordered_map<uint_t, std::shared_ptr<IObserver>> observers;
 
@@ -60,5 +67,4 @@ BEGIN_NS(ne)
 			for (auto& [id, observer] : observers | std::views::filter(ObserverFilter)) { observer->Update(_data); }
 		}
 	};
-
-END_NS
+}

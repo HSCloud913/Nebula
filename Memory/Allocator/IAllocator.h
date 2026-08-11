@@ -7,7 +7,8 @@
 #include <memory_resource>
 #include "Base/Type.h"
 
-BEGIN_NS(ne::memory)
+namespace ne::memory
+{
 	/**
 	 * @class IAllocator
 	 * @brief `std::pmr::memory_resource`를 이 프로젝트 인터페이스(Allocate/Deallocate/Available)로
@@ -34,5 +35,4 @@ BEGIN_NS(ne::memory)
 		virtual void_t do_deallocate(void_t* _ptr, const std::size_t _bytes, std::size_t) noexcept override { Deallocate(_ptr, _bytes); }
 		[[nodiscard]] virtual bool_t do_is_equal(const std::pmr::memory_resource& _other) const noexcept override { return this == &_other; }
 	};
-
-END_NS
+}

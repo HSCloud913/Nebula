@@ -6,10 +6,12 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include "Memory/Allocator/IAllocator.h"
 #include "Base/Type.h"
 
-BEGIN_NS(ne::memory)
+namespace ne::memory
+{
 	/**
 	 * @class PoolAllocator
 	 * @brief free list 기반의 고정 크기 블록 풀 할당자입니다.
@@ -57,6 +59,11 @@ BEGIN_NS(ne::memory)
 		std::atomic<std::size_t> available;
 		ne::byte_t* pool{ nullptr };
 		std::atomic<std::uint64_t> head{ Pack({ InvalidIndex, 0 }) };
+#ifndef NDEBUG
+		// (디버그 전용) 블록별 할당 여부. Deallocate 시 더블프리·풀 밖/비정렬 포인터를 assert 로 잡는다.
+		// 릴리스에서는 이 멤버와 관련 검사가 모두 사라져 lock-free 경로에 영향이 없다.
+		std::unique_ptr<std::atomic<bool_t>[]> debugAllocated;
+#endif
 
 	private:
 		[[nodiscard]] FreeNode* NodeAt(const std::uint32_t _index) const noexcept { return reinterpret_cast<FreeNode*>(pool + static_cast<std::size_t>(_index) * blockSize); }
@@ -75,5 +82,4 @@ BEGIN_NS(ne::memory)
 		[[nodiscard]] static std::uint64_t Pack(const TaggedHead _head) noexcept { return (static_cast<std::uint64_t>(_head.tag) << 32) | _head.index; }
 		[[nodiscard]] static TaggedHead Unpack(const std::uint64_t _packed) noexcept { return { static_cast<std::uint32_t>(_packed), static_cast<std::uint32_t>(_packed >> 32) }; }
 	};
-
-END_NS
+}

@@ -12,7 +12,7 @@
 
 TEST(ThreadPoolTest, ExecutesSingleJob)
 {
-	ne::ThreadPool pool(1);
+	ne::concurrency::ThreadPool pool(1);
 	std::atomic<bool> executed{ false };
 
 	auto future = pool.Enqueue([&]() { executed = true; });
@@ -23,7 +23,7 @@ TEST(ThreadPoolTest, ExecutesSingleJob)
 
 TEST(ThreadPoolTest, ExecutesAllJobs)
 {
-	ne::ThreadPool pool(4);
+	ne::concurrency::ThreadPool pool(4);
 	constexpr int numJobs = 100;
 	std::atomic<int> counter{ 0 };
 
@@ -36,7 +36,7 @@ TEST(ThreadPoolTest, ExecutesAllJobs)
 
 TEST(ThreadPoolTest, EnqueueReturnValue)
 {
-	ne::ThreadPool pool(2);
+	ne::concurrency::ThreadPool pool(2);
 
 	auto f1 = pool.Enqueue([]() { return 42; });
 	auto f2 = pool.Enqueue([]() { return std::string("hello"); });
@@ -47,7 +47,7 @@ TEST(ThreadPoolTest, EnqueueReturnValue)
 
 TEST(ThreadPoolTest, EnqueueInvalidAfterShutdown)
 {
-	ne::ThreadPool pool(2);
+	ne::concurrency::ThreadPool pool(2);
 	pool.Shutdown();
 
 	auto future = pool.Enqueue([]() { return 1; });
@@ -58,7 +58,7 @@ TEST(ThreadPoolTest, DestructorWaitsForJobs)
 {
 	std::atomic<bool> executed{ false };
 	{
-		ne::ThreadPool pool(2);
+		ne::concurrency::ThreadPool pool(2);
 		pool.Enqueue([&]()
 		{
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -70,7 +70,7 @@ TEST(ThreadPoolTest, DestructorWaitsForJobs)
 
 TEST(ThreadPoolTest, ConcurrentEnqueue)
 {
-	ne::ThreadPool pool(4);
+	ne::concurrency::ThreadPool pool(4);
 	constexpr int numProducers = 8;
 	constexpr int jobsPerProducer = 50;
 	std::atomic<int> counter{ 0 };
@@ -85,7 +85,7 @@ TEST(ThreadPoolTest, ConcurrentEnqueue)
 
 TEST(ThreadPoolTest, DoubleShutdownSafe)
 {
-	ne::ThreadPool pool(2);
+	ne::concurrency::ThreadPool pool(2);
 	pool.Shutdown();
 	EXPECT_NO_FATAL_FAILURE(pool.Shutdown());
 }

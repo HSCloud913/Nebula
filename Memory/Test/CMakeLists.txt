@@ -5,6 +5,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(NebulaMemoryTest
                test_allocator.cpp
+               test_buffer_chain.cpp
 )
 target_link_libraries(NebulaMemoryTest PRIVATE
                       NebulaMemory

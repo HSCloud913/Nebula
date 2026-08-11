@@ -6,14 +6,14 @@
 
 #include "Base/Exception.h"
 #include "Util/StringFormat.h"
-#include "Io/Engine/IEngine.h"
+#include "Io/Engine.h"
 // SendSubmitAwaitable/ReceiveSubmitAwaitable(소켓 Proactor, POSIX) +
 // ReadSubmitAwaitable/WriteSubmitAwaitable(파일 Proactor, Windows/IocpEngine) 전부
 // Io 모듈 공용 — Ipc 는 더 이상 자체 Awaitable.h 를 두지 않는다.
 #include "Io/Coroutine/Awaitable.h"
 
 #if defined(_WIN32)
-#	include <winsock2.h>
+#	include "Base/WinsockApi.h"
 #elif defined(IS_POSIX)
 // AF_UNIX SOCK_SEQPACKET 기반 — POSIX 메시지 큐(mqd_t)는 io_uring 이 아는 opcode가 없어
 // (mq_send/mq_receive 전용 syscall) Reactor(Watch + 동기 mq_send/mq_receive)로만 쓸 수 있었다.
@@ -30,13 +30,14 @@
 
 
 
-BEGIN_NS (ne::ipc)
+namespace ne::ipc
+{
 #if defined(_WIN32)
 class MessageQueue::Impl final
 {
 public:
 	explicit Impl(const string_view_t _name)
-		: pipeName(LR"(\\.\pipe\)" + StringFormat::UTF8toWCS(string_t(_name).c_str())) {}
+		: pipeName(LR"(\\.\pipe\)" + ne::util::StringFormat::UTF8toWCS(string_t(_name).c_str())) {}
 	~Impl() { if (handle != INVALID_HANDLE_VALUE) ::CloseHandle(handle); }
 
 private:
@@ -344,4 +345,4 @@ ne::Task<ne::Result<std::vector<std::byte>, ne::OsError>> MessageQueue::ReceiveA
 
 #endif
 
-END_NS
+}

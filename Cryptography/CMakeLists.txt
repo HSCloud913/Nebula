@@ -8,64 +8,55 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(HEADERS
-    Hash/Hash.h
-    Hash/Algorithm/CRC32.h
-    Hash/Algorithm/MD5.h
-    Hash/Algorithm/SHA1.h
-    Hash/Algorithm/SHA2.h
-    Hash/Algorithm/SHA3.h
-    Hash/Algorithm/Wrapper/CRC32Wrapper.h
-    Hash/Algorithm/Wrapper/HashWrapper.h
-    Hash/Algorithm/Wrapper/MD5Wrapper.h
-    Hash/Algorithm/Wrapper/SHA1Wrapper.h
-    Hash/Algorithm/Wrapper/SHA2Wrapper.h
-    Hash/Algorithm/Wrapper/SHA3Wrapper.h
-    Hash/Factory/HashFactory.h
+    # 공개 진입점(루트) — 암호 연산 표면
+		Hash.h
+    HMAC.h
+    Kdf.h
+    AES.h
+    RSA.h
+    Diagnostic/Error.h
 
-    Math/BigInt.h
-
-    Random/SecureRandom.h
-
-    HMAC/HMAC.h
-    AES/AES.h
-    RSA/RSA.h
+    # 내부 구현
+    Internal/ConstantTime.h
+    Internal/Ecb.h
+    Internal/HashAdapter.h
+    Internal/HashFactory.h
+        Internal/Math/BigInt.h
+    Internal/Algorithm/CRC32.h
+    Internal/Algorithm/MD5.h
+    Internal/Algorithm/SHA1.h
+    Internal/Algorithm/SHA2.h
+    Internal/Algorithm/SHA3.h
 )
 
 set(SOURCES
-    Hash/Hash.cpp
-    Hash/Algorithm/CRC32.cpp
-    Hash/Algorithm/MD5.cpp
-    Hash/Algorithm/SHA1.cpp
-    Hash/Algorithm/SHA2.cpp
-    Hash/Algorithm/SHA3.cpp
-    Hash/Algorithm/Wrapper/CRC32Wrapper.cpp
-    Hash/Algorithm/Wrapper/HashWrapper.cpp
-    Hash/Algorithm/Wrapper/MD5Wrapper.cpp
-    Hash/Algorithm/Wrapper/SHA1Wrapper.cpp
-    Hash/Algorithm/Wrapper/SHA2Wrapper.cpp
-    Hash/Algorithm/Wrapper/SHA3Wrapper.cpp
-    Hash/Factory/HashFactory.cpp
-
-    Math/BigInt.cpp
-
-    Random/SecureRandom.cpp
-
-    HMAC/HMAC.cpp
-    AES/AES.cpp
-    RSA/RSA.cpp
+		Hash.cpp
+    HMAC.cpp
+    Kdf.cpp
+    AES.cpp
+    RSA.cpp
+    Internal/HashFactory.cpp
+        Internal/Math/BigInt.cpp
+    Internal/Algorithm/CRC32.cpp
+    Internal/Algorithm/MD5.cpp
+    Internal/Algorithm/SHA1.cpp
+    Internal/Algorithm/SHA2.cpp
+    Internal/Algorithm/SHA3.cpp
 )
 
 add_library(${PROJECT_NAME} STATIC ${HEADERS} ${SOURCES})
+add_library(Nebula::Cryptography ALIAS ${PROJECT_NAME})
 target_include_directories(${PROJECT_NAME} PUBLIC
-                           ${CMAKE_CURRENT_SOURCE_DIR}
-                           ${CMAKE_SOURCE_DIR}/Base
-                           ${CMAKE_SOURCE_DIR}/Util)
-target_link_libraries(${PROJECT_NAME} PUBLIC NebulaBase NebulaUtil)
+                           $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>
+                           $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
-# SecureRandom: Windows 는 BCryptGenRandom(bcrypt) 사용. POSIX 는 getrandom(2)(libc 내장).
-if (WIN32)
-	target_link_libraries(${PROJECT_NAME} PUBLIC bcrypt)
-endif ()
+set_target_properties(${PROJECT_NAME} PROPERTIES EXPORT_NAME Cryptography)
+install(TARGETS ${PROJECT_NAME} EXPORT NebulaTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+
+# 실제 소스 의존: Base(타입), Util(SecureRandom — RSA/BigInt 의 .cpp 내부에서만 사용, 공개 헤더 노출 0 → PRIVATE).
+target_link_libraries(${PROJECT_NAME} PUBLIC NebulaBase)
+target_link_libraries(${PROJECT_NAME} PRIVATE NebulaUtil)
 
 
 if (TARGET GTest::gtest_main AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Test)

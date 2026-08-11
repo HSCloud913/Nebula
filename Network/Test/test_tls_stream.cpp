@@ -16,35 +16,36 @@
 #include <utility>
 #include <vector>
 #include "Base/Coroutine/Task.h"
-#include "Io/Context/Context.h"
-#include "Io/Socket/Socket.h"
+#include "Io/Context.h"
+#include "Io/Socket.h"
 #include "Network/Stream/Tls/TlsStream.h"
 
 #if defined(_WIN32)
-#   include <winsock2.h>
-#   include <ws2tcpip.h>
+#include "Base/WinsockApi.h"
 #   include <wincrypt.h>
-#   include "Io/Engine/Iocp/IocpEngine.h"
+#   include "Io/Internal/Engine/Iocp/IocpEngine.h"
 #elif defined(NEBULA_WITH_OPENSSL)
 #   include <openssl/evp.h>
 #   include <openssl/pem.h>
 #   include <openssl/rsa.h>
 #   include <openssl/x509.h>
-#   include "Io/Engine/Epoll/EpollEngine.h"
+#   include "Io/Internal/Engine/Epoll/EpollEngine.h"
 #endif
 
 using namespace ne;
 using namespace ne::io;
+using ne::memory::BufferView;
+using ne::memory::BufferChain;
 using ne::network::TlsConfig;
 using ne::network::TlsStream;
 
 namespace
 {
-	#if defined(_WIN32)
+#if defined(_WIN32)
 	using TestEngine = IocpEngine;
-	#else
+#else
 	using TestEngine = EpollEngine;
-	#endif
+#endif
 
 	template <typename T>
 	T Drive(Context& _context, ne::Task<T>& _task, const std::chrono::milliseconds _timeout = std::chrono::seconds(10))
@@ -141,7 +142,7 @@ namespace
 		}
 	};
 
-	#if defined(_WIN32)
+#if defined(_WIN32)
 
 	// CertCreateSelfSignCertificate + PFXExportCertStoreEx 로 메모리상에서 self-signed PFX 를 만든다.
 	IoResult<std::vector<BYTE>> GenerateSelfSignedPfx(const std::wstring& _password)
@@ -151,8 +152,7 @@ namespace
 
 		HCRYPTPROV provider = 0;
 		::CryptAcquireContextW(&provider, containerName.c_str(), MS_ENHANCED_PROV_W, PROV_RSA_FULL, CRYPT_DELETEKEYSET); // 이전 실행 잔여물 제거(실패해도 무방)
-		if (!::CryptAcquireContextW(&provider, containerName.c_str(), MS_ENHANCED_PROV_W, PROV_RSA_FULL, CRYPT_NEWKEYSET))
-			return R::Error(IoError{ ne::OsError{ ::GetLastError() } }.Context("[TestCert/AcquireContext]"));
+		if (!::CryptAcquireContextW(&provider, containerName.c_str(), MS_ENHANCED_PROV_W, PROV_RSA_FULL, CRYPT_NEWKEYSET)) return R::Error(IoError{ ne::OsError{ ::GetLastError() } }.Context("[TestCert/AcquireContext]"));
 
 		HCRYPTKEY key = 0;
 		if (!::CryptGenKey(provider, AT_KEYEXCHANGE, (2048 << 16) | CRYPT_EXPORTABLE, &key))
@@ -171,8 +171,7 @@ namespace
 
 		BYTE subjectNameBuffer[256]{};
 		DWORD subjectNameSize = sizeof(subjectNameBuffer);
-		if (!::CertStrToNameW(X509_ASN_ENCODING, L"CN=nebula-tls-test", CERT_X500_NAME_STR, nullptr, subjectNameBuffer, &subjectNameSize, nullptr))
-			return R::Error(IoError{ ne::OsError{ ::GetLastError() } }.Context("[TestCert/StrToName]"));
+		if (!::CertStrToNameW(X509_ASN_ENCODING, L"CN=nebula-tls-test", CERT_X500_NAME_STR, nullptr, subjectNameBuffer, &subjectNameSize, nullptr)) return R::Error(IoError{ ne::OsError{ ::GetLastError() } }.Context("[TestCert/StrToName]"));
 
 		CERT_NAME_BLOB subjectBlob{ subjectNameSize, subjectNameBuffer };
 
@@ -237,7 +236,7 @@ namespace
 		return R::Ok(std::move(cert));
 	}
 
-	#elif defined(NEBULA_WITH_OPENSSL)
+#elif defined(NEBULA_WITH_OPENSSL)
 
 	bool_t GenerateSelfSignedPem(std::string& _outCertPem, std::string& _outKeyPem)
 	{
@@ -258,7 +257,7 @@ namespace
 		X509_gmtime_adj(X509_getm_notAfter(x509), 60 * 60 * 24 * 365);
 		X509_set_pubkey(x509, pkey);
 
-		X509_NAME* name = X509_get_subject_name(x509);
+		X509_NAME * name = X509_get_subject_name(x509);
 		X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, reinterpret_cast<const unsigned char*>("nebula-tls-test"), -1, -1, 0);
 		X509_set_issuer_name(x509, name);
 
@@ -308,7 +307,7 @@ namespace
 		return R::Ok(std::move(cert));
 	}
 
-	#endif
+#endif
 
 	// 리스너 + accept/connect 소켓 쌍까지 준비된 상태를 반환 — 각 테스트가 TlsConfig 만 다르게 채워 이어붙인다.
 	struct SocketSetup
@@ -382,6 +381,72 @@ TEST(TlsStreamTest, ConnectAcceptSendReceiveRoundTrip)
 	ASSERT_TRUE(receiveResult.IsOk()) << receiveResult.Error().What();
 	EXPECT_EQ(receiveResult.Value(), length);
 	EXPECT_EQ(std::memcmp(buffer, payload, length), 0);
+}
+
+// ── 레코드 평문보다 작은 버퍼로 나눠 읽어도 한 바이트도 잃지 않는다 ──
+//
+// Schannel 은 레코드 단위로 복호화하며 한 레코드 평문은 최대 16KiB 다. 예전 Receive 는 호출자 버퍼
+// 크기로 잘라 복사하고 **남은 평문을 버렸다**. 1~4KiB 버퍼는 아주 흔한 선택이라 실사용에서 조용히
+// 데이터가 소실됐다. 아래는 8KiB 를 한 번에 보내고 256바이트씩 읽어 전부 복원되는지 확인한다.
+TEST(TlsStreamTest, ReceiveWithSmallBufferPreservesWholeRecord)
+{
+	TestEngine engine;
+	ASSERT_TRUE(engine.IsValid());
+	Context context{ engine };
+
+	auto certResult = MakeTestCert();
+	ASSERT_TRUE(certResult.IsOk()) << certResult.Error().What();
+	TestCert cert = std::move(certResult.Value());
+
+	auto setupResult = MakeConnectedSocketPair(context);
+	ASSERT_TRUE(setupResult.IsOk()) << setupResult.Error().What();
+	auto setup = std::move(setupResult.Value());
+
+	TlsConfig serverConfig;
+	serverConfig.certFile = cert.certFile;
+	serverConfig.keyFile = cert.keyFile;
+	serverConfig.pfxPassword = cert.pfxPassword;
+
+	TlsConfig clientConfig;
+	clientConfig.verifyPeer = false;
+
+	auto acceptTask = TlsStream::Accept(std::move(setup.accepted), context, serverConfig);
+	auto connectTask = TlsStream::Connect(std::move(setup.client), context, "localhost", clientConfig);
+	auto [acceptResult, connectResult] = DriveBoth(context, acceptTask, connectTask);
+	ASSERT_TRUE(acceptResult.IsOk()) << acceptResult.Error().What();
+	ASSERT_TRUE(connectResult.IsOk()) << connectResult.Error().What();
+
+	TlsStream server = std::move(acceptResult.Value());
+	TlsStream tlsClient = std::move(connectResult.Value());
+
+	// 결정론적으로 검증 가능한 패턴으로 8KiB 를 채운다.
+	constexpr std::size_t payloadSize = 8 * 1024;
+	std::vector<byte_t> payload(payloadSize);
+	for (std::size_t i = 0; i < payloadSize; ++i) payload[i] = static_cast<byte_t>(i * 31 + 7);
+
+	auto sendTask = tlsClient.Send(BufferView{ payload.data(), payload.size() });
+	auto sendResult = Drive(context, sendTask);
+	ASSERT_TRUE(sendResult.IsOk()) << sendResult.Error().What();
+	ASSERT_EQ(sendResult.Value(), payloadSize);
+
+	// 레코드 평문보다 훨씬 작은 조각으로 반복 수신한다.
+	constexpr std::size_t chunkSize = 256;
+	std::vector<byte_t> received;
+	received.reserve(payloadSize);
+
+	byte_t chunk[chunkSize]{};
+	while (received.size() < payloadSize)
+	{
+		auto receiveTask = server.Receive(BufferView{ chunk, chunkSize });
+		auto receiveResult = Drive(context, receiveTask);
+		ASSERT_TRUE(receiveResult.IsOk()) << receiveResult.Error().What();
+		ASSERT_GT(receiveResult.Value(), 0u) << "EOF 이전에 수신이 멈췄다 — 평문이 소실되고 있다";
+
+		received.insert(received.end(), chunk, chunk + receiveResult.Value());
+	}
+
+	ASSERT_EQ(received.size(), payloadSize);
+	EXPECT_EQ(std::memcmp(received.data(), payload.data(), payloadSize), 0);
 }
 
 TEST(TlsStreamTest, ShutdownSignalsCloseNotify)

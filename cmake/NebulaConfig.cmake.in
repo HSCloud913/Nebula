@@ -1,0 +1,10 @@
+@PACKAGE_INIT@
+
+# Nebula 설치 패키지 진입점. find_package(Nebula CONFIG) 로 소비하며,
+# 타깃은 Nebula::<Module> (예: Nebula::Base, Nebula::Io) 로 링크한다.
+# 현재 export 범위: 핵심(Base/Memory/Concurrency/Log/Json/Util/Time) + Io.
+# (Network/Ipc 는 외부 의존성 정리 후 추가 예정)
+
+include("${CMAKE_CURRENT_LIST_DIR}/NebulaTargets.cmake")
+
+check_required_components(Nebula)

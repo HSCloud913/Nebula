@@ -6,7 +6,8 @@
 #include <memory>
 #include "Base/Type.h"
 
-BEGIN_NS (ne::ipc)
+namespace ne::ipc
+{
 
 class Semaphore final
 {
@@ -29,4 +30,4 @@ public:
 	void_t Release(int_t _count = 1) const;
 };
 
-END_NS
+}

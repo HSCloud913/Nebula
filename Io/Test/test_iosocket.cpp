@@ -2,21 +2,23 @@
 
 #if defined(_WIN32)
 
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <windows.h>
+#include "Base/WinsockApi.h"
 #include <chrono>
 #include <cstring>
 #include <span>
-#include "Io/Context/Context.h"
-#include "Io/Socket/Socket.h"
+#include <vector>
+#include "Io/Context.h"
+#include "Io/Socket.h"
 #include "Base/Coroutine/Task.h"
-#include "Io/Engine/Iocp/IocpEngine.h"
+#include "Io/Internal/Engine/Iocp/IocpEngine.h"
 #include "Io/Coroutine/Timeout.h"
+#include "Base/Coroutine/WhenAny.h"
 #include "Time/Timer/TimerWheel.h"
 
 using namespace ne;
 using namespace ne::io;
+using ne::memory::BufferView;
+using ne::memory::BufferChain;
 
 namespace
 {
@@ -67,6 +69,21 @@ namespace
 		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
 		while (!_task.IsReady() && std::chrono::steady_clock::now() < deadline) (void_t)_context.RunOnce(std::chrono::milliseconds{ 50 });
 		return _task.await_resume();
+	}
+
+	// _ms 만큼 잠든 뒤 _value 를 반환하는 코루틴 — WhenAny 경합 테스트용.
+	ne::Task<int_t> DelayValue(Context& _context, const std::chrono::milliseconds _ms, const int_t _value)
+	{
+		co_await _context.SleepFor(_ms);
+		co_return _value;
+	}
+
+	// Context 가 조용해질(연속으로 완료 없음) 때까지 돌려 진 레이서의 취소/배수를 마무리한다.
+	void_t DrainQuiescent(Context& _context)
+	{
+		int_t idle = 0;
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+		while (idle < 3 && std::chrono::steady_clock::now() < deadline) idle = _context.RunOnce(std::chrono::milliseconds{ 10 }) ? 0 : idle + 1;
 	}
 }
 
@@ -378,9 +395,8 @@ TEST(SocketLevel3Test, TimeoutIoWins)
 	const WsaScope wsa;
 	IocpEngine engine;
 	ASSERT_TRUE(engine.IsValid());
-	Context context{ engine };
 	ne::time::TimerWheel wheel;
-	context.SetTimerWheel(&wheel); // SleepFor(=Timeout 의 타이머 레이서) 전제
+	Context context{ engine, &wheel }; // SleepFor(=Timeout 의 타이머 레이서) 전제
 
 	SOCKET rawA = INVALID_SOCKET;
 	SOCKET rawB = INVALID_SOCKET;
@@ -411,9 +427,8 @@ TEST(SocketLevel3Test, TimeoutTimerWins)
 	const WsaScope wsa;
 	IocpEngine engine;
 	ASSERT_TRUE(engine.IsValid());
-	Context context{ engine };
 	ne::time::TimerWheel wheel;
-	context.SetTimerWheel(&wheel);
+	Context context{ engine, &wheel };
 
 	SOCKET rawA = INVALID_SOCKET;
 	SOCKET rawB = INVALID_SOCKET;
@@ -438,6 +453,49 @@ TEST(SocketLevel3Test, TimeoutTimerWins)
 	while (idle < 3 && std::chrono::steady_clock::now() < drainDeadline) idle = context.RunOnce(std::chrono::milliseconds{ 10 }) ? 0 : idle + 1;
 
 	(void_t)sender.IsValid(); // sender 는 연결 유지 목적(소켓을 열어둠)
+}
+
+// ── WhenAny: 가장 빨리 끝난 태스크의 인덱스+값을 돌려주고 진 태스크(타이머)는 파괴로 취소 ──
+TEST(SocketLevel3Test, WhenAnyShortestWins)
+{
+	const WsaScope wsa;
+	IocpEngine engine;
+	ASSERT_TRUE(engine.IsValid());
+	ne::time::TimerWheel wheel;
+	Context context{ engine, &wheel };
+
+	std::vector<ne::Task<int_t>> tasks;
+	tasks.push_back(DelayValue(context, std::chrono::milliseconds(400), 100)); // 느림
+	tasks.push_back(DelayValue(context, std::chrono::milliseconds(30), 200));  // 빠름 → 승리(index 1)
+	tasks.push_back(DelayValue(context, std::chrono::milliseconds(800), 300)); // 느림
+
+	auto task = WhenAny(context, std::move(tasks));
+	auto result = Drive(context, task);
+	EXPECT_EQ(result.index, 1u);
+	EXPECT_EQ(result.value, 200);
+
+	// 진 두 타이머는 파괴로 Cancel 됐어야 한다 — 남아서 발화하면 여기서 완료가 잡혀 idle 이 리셋된다.
+	DrainQuiescent(context);
+}
+
+// ── WhenAny: 단일 태스크면 그 태스크가 곧 승자(index 0) ──
+TEST(SocketLevel3Test, WhenAnySingleTask)
+{
+	const WsaScope wsa;
+	IocpEngine engine;
+	ASSERT_TRUE(engine.IsValid());
+	ne::time::TimerWheel wheel;
+	Context context{ engine, &wheel };
+
+	std::vector<ne::Task<int_t>> tasks;
+	tasks.push_back(DelayValue(context, std::chrono::milliseconds(20), 42));
+
+	auto task = WhenAny(context, std::move(tasks));
+	auto result = Drive(context, task);
+	EXPECT_EQ(result.index, 0u);
+	EXPECT_EQ(result.value, 42);
+
+	DrainQuiescent(context);
 }
 
 #endif // _WIN32

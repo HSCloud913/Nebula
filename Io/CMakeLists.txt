@@ -8,60 +8,74 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(HEADERS
-    IoType.h
-    IoError.h
-    IoResult.h
-    Context/Context.h
-    Context/ContextPool.h
+    # 공개 진입점(루트) — 일상 표면
+    Runtime.h
+    Context.h
+    ContextPool.h
+    Engine.h
+    Socket.h
+    Listener.h
+    File.h
+
+    # 공개 패밀리 — 코루틴 결합 계층
     Coroutine/Awaitable.h
     Coroutine/Timeout.h
-    File/File.h
-    Socket/Socket.h
 
-    Buffer/BufferView.h
-    Buffer/BufferChain.h
+    # 공개 패밀리 — 등록 버퍼(zero-copy 고급 표면)
+    Buffer/RegisteredBufferProvider.h
     Buffer/RegisteredBuffer.h
     Buffer/BufferPool.h
 
-    Context/Operation.h
-    Engine/IEngine.h
-        Engine/IRegisteredBufferProvider.h
-    Engine/IoUring/IoUringEngine.h
-    Engine/IoUring/Provider/IoUringProvider.h
-    Engine/Epoll/EpollEngine.h
-    Engine/Iocp/IocpEngine.h
-    Engine/Iocp/Provider/RioExtension.h
-    Engine/Iocp/Provider/RioProvider.h
-    Engine/WsaPoll/WsaPollEngine.h
+    # 공개 값 타입
+		Diagnostic/Type.h
+    Diagnostic/Error.h
+
+    # 내부 구현(엔진 백엔드)
+    Internal/Engine/Iovec.h
+    Internal/Engine/Iocp/IocpEngine.h
+    Internal/Engine/Iocp/RioExtension.h
+    Internal/Engine/Iocp/RioProvider.h
+    Internal/Engine/WsaPoll/WsaPollEngine.h
+    Internal/Engine/Epoll/EpollEngine.h
+    Internal/Engine/IoUring/IoUringEngine.h
+    Internal/Engine/IoUring/IoUringProvider.h
 )
 
 set(SOURCES
-    Context/Context.cpp
-    Context/ContextPool.cpp
-        File/File.cpp
-    Socket/Socket.cpp
+    Diagnostic/Error.cpp
+    Runtime.cpp
+    Context.cpp
+    ContextPool.cpp
+    Socket.cpp
+    Listener.cpp
+    File.cpp
     Buffer/BufferPool.cpp
+    Internal/EngineFactory.cpp
 )
 
 if (WIN32)
-	list(APPEND SOURCES Engine/Iocp/IocpEngine.cpp)
-	list(APPEND SOURCES Engine/WsaPoll/WsaPollEngine.cpp)
-	list(APPEND SOURCES Engine/Iocp/Provider/RioProvider.cpp)
+	list(APPEND SOURCES Internal/Engine/Iocp/IocpEngine.cpp)
+	list(APPEND SOURCES Internal/Engine/Iocp/RioProvider.cpp)
+	list(APPEND SOURCES Internal/Engine/WsaPoll/WsaPollEngine.cpp)
 elseif (UNIX AND NOT APPLE)
-	list(APPEND SOURCES Engine/Epoll/EpollEngine.cpp)
-	list(APPEND SOURCES Engine/IoUring/IoUringEngine.cpp)
-	list(APPEND SOURCES Engine/IoUring/Provider/IoUringProvider.cpp)
+	list(APPEND SOURCES Internal/Engine/Epoll/EpollEngine.cpp)
+	list(APPEND SOURCES Internal/Engine/IoUring/IoUringEngine.cpp)
+	list(APPEND SOURCES Internal/Engine/IoUring/IoUringProvider.cpp)
 endif ()
 
 add_library(${PROJECT_NAME} STATIC ${HEADERS} ${SOURCES})
+add_library(Nebula::Io ALIAS ${PROJECT_NAME})
 target_include_directories(${PROJECT_NAME} PUBLIC
-                           ${CMAKE_CURRENT_SOURCE_DIR}
-                           ${CMAKE_SOURCE_DIR}/Base
-                           ${CMAKE_SOURCE_DIR}/Concurrency
-                           ${CMAKE_SOURCE_DIR}/Time
-                           ${CMAKE_SOURCE_DIR}/Memory
-)
-target_link_libraries(${PROJECT_NAME} PUBLIC NebulaBase NebulaConcurrency NebulaTime NebulaMemory)
+                           $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>
+                           $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+
+set_target_properties(${PROJECT_NAME} PROPERTIES EXPORT_NAME Io)
+install(TARGETS ${PROJECT_NAME} EXPORT NebulaTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+# 실제 소스 의존: Base(타입/코루틴), Time(TimerWheel/SleepFor — Context.h 가 공개 include),
+# Memory(BufferView/BufferChain — Socket/File/Operation 이 공개 include). Concurrency 는 사용
+# 근거가 없어 링크하지 않는다(유령 의존 제거, 2026-08-02).
+target_link_libraries(${PROJECT_NAME} PUBLIC NebulaBase NebulaTime NebulaMemory)
 
 if (MSVC)
 	# 이 저장소 소스는 BOM 없는 UTF-8 이라, /utf-8 없이는 MSVC 가 시스템 코드페이지(한국어 Windows

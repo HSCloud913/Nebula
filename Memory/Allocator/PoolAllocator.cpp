@@ -5,37 +5,39 @@
 #include "Memory/Allocator/PoolAllocator.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cstdlib>
 #include <limits>
 
 
 
-namespace
+namespace ne::memory
 {
-	[[nodiscard]] std::size_t RoundUp(const std::size_t _value, const std::size_t _multiple) noexcept { return (_value + _multiple - 1) / _multiple * _multiple; }
-
-	[[nodiscard]] ne::void_t* AlignedAlloc(const std::size_t _alignment, const std::size_t _size) noexcept
+	namespace
 	{
+		[[nodiscard]] std::size_t RoundUp(const std::size_t _value, const std::size_t _multiple) noexcept { return (_value + _multiple - 1) / _multiple * _multiple; }
+
+		[[nodiscard]] ne::void_t* AlignedAlloc(const std::size_t _alignment, const std::size_t _size) noexcept
+		{
 #if defined(_WIN32)
-		return ::_aligned_malloc(_size, _alignment);
+			return ::_aligned_malloc(_size, _alignment);
 #elif defined(IS_POSIX)
-		return std::aligned_alloc(_alignment, _size);
+			return std::aligned_alloc(_alignment, _size);
 #endif
+		}
+
+		ne::void_t AlignedFree(ne::void_t* _ptr) noexcept
+		{
+#if defined(_WIN32)
+			::_aligned_free(_ptr);
+#elif defined(IS_POSIX)
+			std::free(_ptr);
+#endif
+		}
 	}
 
-	ne::void_t AlignedFree(ne::void_t* _ptr) noexcept
-	{
-#if defined(_WIN32)
-		::_aligned_free(_ptr);
-#elif defined(IS_POSIX)
-		std::free(_ptr);
-#endif
-	}
-}
 
 
-
-BEGIN_NS(ne::memory)
 	PoolAllocator::PoolAllocator(const std::size_t _blockSize, const std::size_t _blockCount, const std::size_t _alignment)
 		: alignment(std::max(_alignment, alignof(FreeNode)))
 		, blockSize(RoundUp(std::max(_blockSize, sizeof(FreeNode)), alignment)) // alignment 의 배수로 올림 → 모든 블록 정렬 보장
@@ -43,8 +45,7 @@ BEGIN_NS(ne::memory)
 		, available(0)
 	{
 		// 곱셈 오버플로 검사 — 초과하면 할당하지 않는다. (pool == nullptr → Allocate 는 값으로 nullptr 반환)
-		if (_blockCount != 0 && blockSize <= (std::numeric_limits<std::size_t>::max)() / _blockCount)
-			pool = static_cast<ne::byte_t*>(AlignedAlloc(alignment, blockSize * _blockCount));
+		if (_blockCount != 0 && blockSize <= (std::numeric_limits<std::size_t>::max)() / _blockCount) pool = static_cast<ne::byte_t*>(AlignedAlloc(alignment, blockSize * _blockCount));
 
 		if (pool == nullptr) return; // available 은 이미 0, head 는 기본값(InvalidIndex)이라 빈 풀 상태로 남는다.
 
@@ -58,6 +59,10 @@ BEGIN_NS(ne::memory)
 
 		head.store(Pack({ 0, 0 }), std::memory_order_relaxed);
 		available.store(_blockCount, std::memory_order_relaxed);
+
+#ifndef NDEBUG
+		debugAllocated = std::make_unique<std::atomic<bool_t>[]>(_blockCount); // 전부 false(미할당)로 시작
+#endif
 	}
 
 	PoolAllocator::~PoolAllocator() { AlignedFree(pool); }
@@ -85,6 +90,13 @@ BEGIN_NS(ne::memory)
 			if (head.compare_exchange_weak(oldPacked, newPacked, std::memory_order_acquire, std::memory_order_relaxed))
 			{
 				available.fetch_sub(1, std::memory_order_relaxed);
+#ifndef NDEBUG
+				if (debugAllocated)
+				{
+					const bool_t wasAllocated = debugAllocated[index].exchange(true, std::memory_order_relaxed);
+					assert(!wasAllocated && "PoolAllocator: free list handed out an already-allocated block (corruption)");
+				}
+#endif
 				return node;
 			}
 		}
@@ -96,6 +108,23 @@ BEGIN_NS(ne::memory)
 
 		auto* node = static_cast<FreeNode*>(_ptr);
 		const auto index = static_cast<std::uint32_t>((reinterpret_cast<ne::byte_t*>(node) - pool) / blockSize);
+
+#ifndef NDEBUG
+		{
+			auto* raw = reinterpret_cast<ne::byte_t*>(_ptr);
+			const bool_t inRange = pool != nullptr && raw >= pool && raw < pool + blockCount * blockSize;
+			assert(inRange && "PoolAllocator: Deallocate() pointer is not from this pool");
+
+			const bool_t aligned = inRange && (static_cast<std::size_t>(raw - pool) % blockSize == 0);
+			assert(aligned && "PoolAllocator: Deallocate() pointer is not block-aligned (invalid or interior pointer)");
+
+			if (aligned && debugAllocated)
+			{
+				const bool_t wasAllocated = debugAllocated[index].exchange(false, std::memory_order_relaxed);
+				assert(wasAllocated && "PoolAllocator: double free (block was already free)");
+			}
+		}
+#endif
 
 		// Treiber 스택 push: 이 노드를 현재 head 앞에 연결한 새 head 후보를 CAS 로 밀어넣는다.
 		// pop 과 마찬가지로 tag 를 증가시켜, 이 노드가 다시 pop 됐다가 재차 push 되는 ABA 상황과 구분한다.
@@ -111,5 +140,4 @@ BEGIN_NS(ne::memory)
 
 		available.fetch_add(1, std::memory_order_relaxed);
 	}
-
-END_NS
+}

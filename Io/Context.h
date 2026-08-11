@@ -1,0 +1,120 @@
+//
+// Created by hscloud on 26. 7. 8.
+//
+
+#pragma once
+#include <atomic>
+#include <chrono>
+#include <coroutine>
+#include <mutex>
+#include <vector>
+#include "Base/Type.h"
+#include "Base/Coroutine/IExecutor.h"
+#include "Io/Engine.h"
+#include "Time/Coroutine/Awaitable.h"
+
+namespace ne::io
+{
+	/**
+	 * @class HandlerState
+	 * @brief CompletionHandler 의 소유권 상태입니다.
+	 *
+	 * 대기자(Awaitable)와 이벤트 루프 중 **나중에 상태를 바꾼 쪽이 해제 책임을 진다**는 규약을 단일
+	 * 원자 변수로 표현합니다. 과거에는 isCompleted/isAbandoned 두 개의 비원자 bool 이었고, 양쪽이
+	 * 서로의 갱신을 보지 못하면 이중 해제 또는 영구 누수가 났습니다.
+	 */
+	enum class HandlerState : byte_t
+	{
+		PENDING,   // 커널이 op 을 들고 있음 — 어느 쪽도 해제하지 않는다
+		COMPLETED, // 루프가 완료를 회수함 — 대기자가 결과를 읽고 해제한다
+		ABANDONED, // 대기자가 먼저 사라짐 — 루프가 완료를 회수할 때 해제한다
+	};
+
+	/**
+	 * @class CompletionHandler
+	 * @brief 엔진에 제출한 I/O 요청 하나의 완료를 코루틴 재개로 연결하는 디스패치 단위.
+	 *
+	 * 엔진에 넘기는 Request.userData 는 이 구조체를 가리킨다. Context 의 이벤트 루프가 완료를
+	 * 회수하면 result 를 채우고 state 를 COMPLETED 로 교체한 뒤 handle 을 resume 한다.
+	 *
+	 * @note addressStorage 는 커널이 **완료 시점까지** 읽거나 쓰는 sockaddr 을 담는다. 이것이 코루틴
+	 * 프레임에 있으면(과거 구조) 취소/타임아웃으로 프레임이 먼저 파괴됐을 때 커널이 해제된 메모리에
+	 * 접근한다. 수명이 op 과 일치하는 이 구조체가 소유해야 안전하다. sockaddr 타입을 직접 쓰지 않는
+	 * 이유는 이 헤더가 저장소 전반에 include 되어 <winsock2.h> 를 다시 퍼뜨리게 되기 때문이다 —
+	 * 크기/정렬 일치는 Socket.cpp 에서 static_assert 로 못박는다.
+	 */
+	struct CompletionHandler
+	{
+		static constexpr std::size_t AddressStorageSize = 128; // sizeof(sockaddr_storage), Windows·Linux 공통
+
+		std::coroutine_handle<> handle{};
+		longlong_t result{ 0 };
+		std::atomic<HandlerState> state{ HandlerState::PENDING };
+
+		alignas(8) byte_t addressStorage[AddressStorageSize]{};
+		int_t addressLength{ 0 };
+	};
+
+	/**
+	 * @class Context
+	 * @brief 단일 스레드 위에서 구동되는 executor 겸 I/O 이벤트 루프.
+	 *
+	 * 엔진을 구동해 완료를 회수하고, 각 완료의 userData(CompletionHandler*)를 통해 대기 중인
+	 * 코루틴을 resume 한다. 타이머 휠이 있으면 매 루프에서 Tick 하며, 다른 스레드가 Post() 로
+	 * 넘긴 작업은 Wake() 로 루프를 깨워 다음 iteration 에서 처리한다. 코루틴은 자신이 속한
+	 * Context 스레드 위에서만 구동되어야 하며, 코어 간 이동은 Post() 로만 명시적으로 이뤄진다.
+	 *
+	 * ne::IExecutor 를 구현하므로, Base 계층의 코루틴 프리미티브(Event::SignalDeferred, WhenAny)에
+	 * 지연 재개 실행자로 그대로 넘길 수 있다.
+	 */
+	class Context final : public IExecutor
+	{
+	public:
+		explicit Context(IEngine& _engine, ne::time::TimerWheel* _timerWheel = nullptr) noexcept;
+		~Context() override = default;
+
+		NEBULA_NON_COPYABLE_MOVABLE(Context)
+
+	private:
+		static constexpr int_t MaxBatch = 128;
+
+		/**
+		 * @class RunState
+		 * @brief Start()/Stop() 핸드셰이크 상태입니다.
+		 *
+		 * "실행 중" 과 "정지 요청됨" 을 별개 bool 두 개로 두면, Start() 가 정지 플래그를 확인한 뒤
+		 * 실행 플래그를 세우기 **전** 에 Stop() 이 끼어드는 창이 생겨 요청이 사라집니다(그 결과 루프가
+		 * 영원히 돌아 join 이 멈춤). 단일 원자 상태 + CAS 로 그 창을 없앱니다.
+		 */
+		enum class RunState : byte_t
+		{
+			IDLE,           // 루프가 돌지 않는 상태
+			RUNNING,        // 루프 진행 중
+			STOP_REQUESTED, // 정지 요청 — 돌고 있으면 곧 빠져나오고, 아직 진입 전이면 진입 자체를 막는다
+		};
+
+	private:
+		IEngine& engine;
+		ne::time::TimerWheel* timerWheel;
+		std::mutex postMutex;
+		std::vector<std::coroutine_handle<>> postedHandles;
+		std::atomic<RunState> state{ RunState::IDLE };
+
+	public:
+		void_t Start();
+		void_t Stop() noexcept;
+
+		bool_t RunOnce(std::chrono::milliseconds _timeout);
+		void_t Post(std::coroutine_handle<> _handle) override;
+
+		[[nodiscard]] ne::time::Awaitable SleepFor(std::chrono::milliseconds _duration) const noexcept;
+
+	private:
+		[[nodiscard]] std::chrono::milliseconds EffectiveTimeout(std::chrono::milliseconds _timeout) const noexcept;
+		void_t DrainPosted();
+
+	public:
+		[[nodiscard]] IEngine& Engine() const noexcept { return engine; }
+		[[nodiscard]] bool_t IsRunning() const noexcept { return state.load(std::memory_order_acquire) == RunState::RUNNING; }
+	};
+}

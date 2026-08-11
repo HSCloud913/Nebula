@@ -6,7 +6,8 @@
 #include <format>
 #include "Base/Type.h"
 
-BEGIN_NS(ne)
+namespace ne
+{
 	/**
 	 * @class Exception
 	 * @brief 모듈명과 메시지를 함께 담는 표준 예외 타입입니다.
@@ -36,5 +37,4 @@ BEGIN_NS(ne)
 	public:
 		[[nodiscard]] virtual const char_t* what() const noexcept override { return message.c_str(); }
 	};
-
-END_NS
+}

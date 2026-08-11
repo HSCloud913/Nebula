@@ -4,90 +4,19 @@
 
 #pragma once
 #include <string>
+#include "Base/Platform.h"
+#include "Base/Macro.h"
 
-/* OS */
-#if _WIN32
-#	ifndef WIN32_LEAN_AND_MEAN
-#		define WIN32_LEAN_AND_MEAN
-#	endif
-#	ifndef NOMINMAX
-#		define NOMINMAX // windows.h 의 max/min 매크로가 std::max/std::min 을 텍스트 치환해 깨뜨리는 것을 방지
-#	endif
+// 이 헤더는 프로젝트 공통 typedef 를 담고, 플랫폼 감지(Platform.h)와 매크로(Macro.h)를 함께
+// 전파합니다 — 둘 다 OS 헤더를 include 하지 않아 비용이 없고, 특히 IS_POSIX 는 정의가 누락되면
+// `#if defined(IS_POSIX)` 가 **에러 없이 조용히 거짓**이 되어 엉뚱한 분기가 컴파일되므로 의도적으로
+// 어디서나 보이게 둡니다.
+//
+// **<windows.h> 는 여기서 들어오지 않습니다**(2026-08-11 분리). Windows API 타입/함수를 쓰는 파일만
+// "Base/WindowsApi.h" 를 직접 include 하세요.
 
-#	include <windows.h>
-#	ifdef _WIN64
-//define something for Windows (64-bit only)
-#	endif
-#elif __linux__
-// linux
-#elif __unix__
-// Unix
-#elif __APPLE__
-#	include "TargetConditionals.h"
-#	if TARGET_IPHONE_SIMULATOR
-// iOS Simulator
-#	elif TARGET_OS_IPHONE
-// iOS device
-#	elif TARGET_OS_MAC
-// Other kinds of Mac OS
-#	else
-#		error "Unknown Apple platform"
-#	endif
-#elif defined(_POSIX_VERSION)
-// POSIX
-#else
-#	error "Unknown compiler"
-#endif
-
-#ifdef _WIN32
-
-#elif __has_include(<unistd.h>)
-#define IS_POSIX
-#endif
-
-
-#define BEGIN_NS(name) namespace name {
-#define END_NS }
-
-#if defined(_USRDLL)
-#define NEBULA_API __declspec(dllexport)
-#else
-#define NEBULA_API
-#endif
-
-#ifndef NOT_BUILD_NEBULA_DEPRECATE
-#	if defined(_MSC_VER)
-#		define NOT_BUILD_NEBULA_DEPRECATE __declspec(deprecated)
-#	else
-#		define NOT_BUILD_NEBULA_DEPRECATE [[deprecated]]
-#	endif
-#endif
-
-#define NEBULA_DEFAULT_COPY(Class) \
-Class(const Class &) = default;\
-Class &operator=(const Class &) = default;
-
-#define NEBULA_DEFAULT_MOVE(Class) \
-Class(Class &&) noexcept = default; \
-Class &operator=(Class &&) noexcept = default;
-
-#define NEBULA_NON_COPYABLE(Class) \
-Class(const Class &) = delete;\
-Class &operator=(const Class &) = delete;
-
-#define NEBULA_NON_MOVABLE(Class) \
-Class(Class &&) noexcept = delete; \
-Class &operator=(Class &&) noexcept = delete;
-
-#define NEBULA_DEFAULT_COPY_MOVE(Class) \
-NEBULA_DEFAULT_COPY(Class) \
-NEBULA_DEFAULT_MOVE(Class)
-
-#define NEBULA_NON_COPYABLE_MOVABLE(Class) \
-NEBULA_NON_COPYABLE(Class) \
-NEBULA_NON_MOVABLE(Class)
-
-BEGIN_NS(ne)
+namespace ne
+{
 	typedef std::string string_t;
 	typedef std::string_view string_view_t;
 
@@ -121,5 +50,4 @@ BEGIN_NS(ne)
 	typedef bool bool_t;
 
 	typedef void void_t;
-
-END_NS
+}

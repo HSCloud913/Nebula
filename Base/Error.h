@@ -6,12 +6,15 @@
 #include <format>
 #include "Base/Type.h"
 
-#if defined(IS_POSIX)
+#if defined(_WIN32)
+#	include "Base/WindowsApi.h" // FormatMessageA/GetLastError — OsMessage()/LastOsError() 가 직접 호출
+#elif defined(IS_POSIX)
 #	include <cerrno>
 #   include <cstring>
 #endif
 
-BEGIN_NS(ne)
+namespace ne
+{
 	/**
 	 * @class Error
 	 * @brief 예외 없이 실패를 표현하기 위한 기본 에러 타입입니다.
@@ -98,5 +101,4 @@ BEGIN_NS(ne)
 #elif defined(IS_POSIX)
 	[[nodiscard]] inline ulong_t LastOsError() noexcept { return static_cast<ulong_t>(errno); }
 #endif
-
-END_NS
+}

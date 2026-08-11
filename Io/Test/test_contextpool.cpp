@@ -6,8 +6,8 @@
 #include <functional>
 #include <thread>
 #include <unordered_map>
-#include "Io/Context/ContextPool.h"
-#include "Io/Context/Context.h"
+#include "Io/ContextPool.h"
+#include "Io/Context.h"
 
 using namespace ne;
 using namespace ne::io;
@@ -23,8 +23,8 @@ namespace
 			Detached get_return_object() { return Detached{ std::coroutine_handle<promise_type>::from_promise(*this) }; }
 			std::suspend_always initial_suspend() noexcept { return {}; }
 			std::suspend_never final_suspend() noexcept { return {}; }
-			void_t return_void() noexcept {}
-			void_t unhandled_exception() noexcept { std::terminate(); }
+			void return_void() noexcept {}
+			void unhandled_exception() noexcept { std::terminate(); }
 		};
 
 		std::coroutine_handle<promise_type> handle;

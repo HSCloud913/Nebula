@@ -7,10 +7,11 @@
 #include <optional>
 #include <vector>
 #include "Base/Type.h"
-#include "Io/IoResult.h"
+#include "Io/Diagnostic/Error.h"
 #include "Io/Buffer/RegisteredBuffer.h"
 
-BEGIN_NS(ne::io)
+namespace ne::io
+{
 	class BufferPool;
 
 	/**
@@ -25,7 +26,7 @@ BEGIN_NS(ne::io)
 		friend class BufferPool;
 
 	private:
-		BufferPoolSlot(BufferPool& _pool, const BufferView _view, const std::size_t _index) noexcept
+		BufferPoolSlot(BufferPool& _pool, const ne::memory::BufferView _view, const std::size_t _index) noexcept
 			: pool(&_pool)
 			, view(_view)
 			, index(_index) {}
@@ -40,11 +41,11 @@ BEGIN_NS(ne::io)
 
 	private:
 		BufferPool* pool{ nullptr };
-		BufferView view{};
+		ne::memory::BufferView view{};
 		std::size_t index{ 0 };
 
 	public:
-		[[nodiscard]] const BufferView& View() const noexcept { return view; }
+		[[nodiscard]] const ne::memory::BufferView& View() const noexcept { return view; }
 		[[nodiscard]] BufferHandle Handle() const noexcept;
 	};
 
@@ -88,5 +89,4 @@ BEGIN_NS(ne::io)
 		[[nodiscard]] std::size_t Capacity() const noexcept { return totalSlots; }
 		[[nodiscard]] std::size_t Available() const noexcept { return freeSlots.size(); }
 	};
-
-END_NS
+}

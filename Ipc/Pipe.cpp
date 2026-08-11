@@ -6,7 +6,7 @@
 
 #include "Base/Exception.h"
 #include "Util/StringFormat.h"
-#include "Io/Engine/IEngine.h"
+#include "Io/Engine.h"
 #include "Io/Coroutine/Awaitable.h"
 
 #if defined(IS_POSIX)
@@ -19,13 +19,14 @@
 
 
 
-BEGIN_NS (ne::ipc)
+namespace ne::ipc
+{
 #if defined(_WIN32)
 class Pipe::Impl final
 {
 public:
 	explicit Impl(const string_view_t _name)
-		: pipeName(LR"(\\.\pipe\)" + StringFormat::UTF8toWCS(string_t(_name).c_str())) {}
+		: pipeName(LR"(\\.\pipe\)" + ne::util::StringFormat::UTF8toWCS(string_t(_name).c_str())) {}
 	~Impl() { if (handle != INVALID_HANDLE_VALUE) ::CloseHandle(handle); }
 
 private:
@@ -316,4 +317,4 @@ ne::Task<ne::Result<std::size_t, ne::OsError>> Pipe::WriteAsync(const std::span<
 
 bool_t Pipe::IsConnected() const noexcept { return impl->IsConnected(); }
 
-END_NS
+}

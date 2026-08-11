@@ -5,6 +5,7 @@
 #include "Ipc/SharedMemory.h"
 
 #include "Base/Exception.h"
+#include "Base/WindowsApi.h"
 #include "Util/StringFormat.h"
 
 #if defined(IS_POSIX)
@@ -16,7 +17,8 @@
 
 
 
-BEGIN_NS (ne::ipc)
+namespace ne::ipc
+{
 #if defined(_WIN32)
 class SharedMemory::Impl final
 {
@@ -24,7 +26,7 @@ public:
 	Impl(const string_view_t _name, const std::size_t _size)
 		: size(_size)
 	{
-		const auto wideName = StringFormat::UTF8toWCS(string_t(_name).c_str());
+		const auto wideName = ne::util::StringFormat::UTF8toWCS(string_t(_name).c_str());
 
 		mappingHandle = ::CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, static_cast<ulonglong_t>(_size) >> 32, static_cast<ulonglong_t>(_size) & 0xFFFFFFFFu, wideName.c_str());
 		if (!mappingHandle) { throw ne::Exception("[SharedMemory/Impl]", std::format("Failed to CreateFileMappingW function (error: {})", ::GetLastError())); }
@@ -110,4 +112,4 @@ SharedMemory& SharedMemory::operator=(SharedMemory&&) noexcept = default;
 
 std::span<std::byte> SharedMemory::GetView() const noexcept { return impl->GetView(); }
 
-END_NS
+}

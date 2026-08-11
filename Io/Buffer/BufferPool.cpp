@@ -8,7 +8,8 @@
 
 
 
-BEGIN_NS(ne::io)
+namespace ne::io
+{
 	BufferPoolSlot::~BufferPoolSlot() { if (pool != nullptr) pool->Release(index); }
 
 	BufferPoolSlot::BufferPoolSlot(BufferPoolSlot&& _other) noexcept
@@ -74,5 +75,4 @@ BEGIN_NS(ne::io)
 
 		return BufferPoolSlot{ *this, buffer.View(index * slotSize, slotSize), index };
 	}
-
-END_NS
+}

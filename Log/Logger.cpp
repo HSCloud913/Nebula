@@ -4,31 +4,27 @@
 
 #include "Log/Logger.h"
 
-#include <filesystem>
-#include <format>
-#include <iomanip>
-#include <sstream>
-#include <ctime>
+#include "Log/Sink/FileSink.h"
 
 
 
-using namespace std::chrono_literals;
-namespace fs = std::filesystem;
-
-
-
-BEGIN_NS(ne)
-	Logger::Logger(const string_t& _fileName)
-		: logLevel(LogLevel::NE_TRACE)
+namespace ne::log
+{
+	Logger::Logger(std::unique_ptr<ISink> _sink)
 	{
-		if (!Open(_fileName)) {}
+		sinks.push_back(std::move(_sink));
 		backendThread = std::thread(&Logger::BackendLoop, this);
 	}
 
-	Logger::Logger(const string_t& _filePath, const string_t& _fileName)
-		: logLevel(LogLevel::NE_TRACE)
+	Logger::Logger(std::vector<std::unique_ptr<ISink>> _sinks)
+		: sinks(std::move(_sinks))
 	{
-		if (!Open(_filePath, _fileName)) {}
+		backendThread = std::thread(&Logger::BackendLoop, this);
+	}
+
+	Logger::Logger(const string_t& _fileName)
+	{
+		sinks.push_back(std::make_unique<FileSink>(_fileName));
 		backendThread = std::thread(&Logger::BackendLoop, this);
 	}
 
@@ -43,63 +39,8 @@ BEGIN_NS(ne)
 
 		if (backendThread.joinable()) backendThread.join();
 
-		FlushPending(); // 백엔드 종료 후 남은 레코드 최종 드레인(파괴 중 동시 로깅은 계약 위반)
-		Close();
-	}
-
-
-
-	bool_t Logger::Open(const string_t& _fileName)
-	{
-		std::lock_guard<std::mutex> lockGuard(mutex); // os 는 항상 락 하에서만 접근(비스레드안전 ofstream)
-
-		if (os.is_open()) return true;
-
-		fs::path path = fs::current_path();
-		path /= _fileName;
-
-		try
-		{
-			if (!fs::exists(path.parent_path())) fs::create_directories(path.parent_path());
-
-			os.open(path, std::ios_base::out | std::ios_base::app | std::ios_base::binary);
-		} catch (const fs::filesystem_error&) { return false; }
-
-		return os.is_open();
-	}
-
-	bool_t Logger::Open(const string_t& _filePath, const string_t& _fileName)
-	{
-		std::lock_guard<std::mutex> lockGuard(mutex); // os 는 항상 락 하에서만 접근(비스레드안전 ofstream)
-
-		if (os.is_open()) return true;
-
-		fs::path path(_filePath);
-		path /= _fileName;
-
-		try
-		{
-			if (!fs::exists(path.parent_path())) fs::create_directories(path.parent_path());
-
-			os.open(path, std::ios_base::out | std::ios_base::app | std::ios_base::binary);
-		} catch (const fs::filesystem_error&) { return false; }
-
-		return os.is_open();
-	}
-
-	bool_t Logger::Close()
-	{
-		std::lock_guard<std::mutex> lockGuard(mutex);
-
-		if (os.is_open()) os.close();
-
-		return !os.is_open();
-	}
-
-	bool_t Logger::IsOpen() const
-	{
-		std::lock_guard<std::mutex> lock(mutex);
-		return os.is_open();
+		DrainToSinks(); // 백엔드 종료 후 남은 레코드 최종 기록(파괴 중 동시 로깅은 계약 위반)
+		FlushSinks();
 	}
 
 
@@ -114,77 +55,63 @@ BEGIN_NS(ne)
 		wake.notify_one();
 	}
 
-	void_t Logger::WriteToFile(const LogRecord& _record)
+	void_t Logger::Flush()
 	{
-		std::lock_guard<std::mutex> lockGuard(mutex);
+		ulonglong_t generation = 0;
+		{
+			std::lock_guard<std::mutex> lock(wakeMutex);
+			generation = flushRequest.fetch_add(1, std::memory_order_acq_rel) + 1;
+		}
+		wake.notify_one();
 
-		if (!os.is_open()) return;
-
-		os << std::format("{} {} {}", GetDateTime(_record.timestamp), LogLevelToString(_record.level), _record.message) << '\n';
-
-		if (_record.level >= LogLevel::NE_FATAL) os.flush();
+		// 백엔드가 이 세대까지 드레인+flush 를 끝낼 때까지 대기.
+		for (ulonglong_t done = flushComplete.load(std::memory_order_acquire); done < generation; done = flushComplete.load(std::memory_order_acquire))
+			flushComplete.wait(done, std::memory_order_acquire);
 	}
 
 	void_t Logger::BackendLoop()
 	{
+		ulonglong_t lastFlush = 0;
 		while (isRunning.load(std::memory_order_relaxed))
 		{
-			// 유휴 시 스핀(1ms 폴링) 대신 condvar 로 블록. pending.exchange 로 lost-wakeup 을 흡수한다.
+			// 유휴 시 스핀 대신 condvar 로 블록. pending.exchange 로 lost-wakeup 을 흡수하고, flush 요청도 깨움 조건에 포함.
 			{
 				std::unique_lock<std::mutex> lock(wakeMutex);
-				wake.wait(lock, [this] { return !isRunning.load(std::memory_order_relaxed) || isPending.exchange(false, std::memory_order_acq_rel); });
+				wake.wait(lock, [this, lastFlush]
+				{
+					return !isRunning.load(std::memory_order_relaxed)
+						|| isPending.exchange(false, std::memory_order_acq_rel)
+						|| flushRequest.load(std::memory_order_acquire) != lastFlush;
+				});
 			}
 
-			LogRecord record;
-			while (queue.Dequeue(record)) WriteToFile(record);
+			DrainToSinks();
+
+			if (const ulonglong_t request = flushRequest.load(std::memory_order_acquire); request != lastFlush)
+			{
+				FlushSinks();
+				lastFlush = request;
+				flushComplete.store(request, std::memory_order_release);
+				flushComplete.notify_all();
+			}
 		}
 	}
 
-	void_t Logger::FlushPending()
+	void_t Logger::DrainToSinks()
 	{
 		LogRecord record;
-		while (queue.Dequeue(record)) WriteToFile(record);
-	}
-
-
-
-	string_t Logger::LogLevelToString(const LogLevel _logLevel)
-	{
-		switch (_logLevel)
+		while (queue.Dequeue(record))
 		{
-			case LogLevel::NE_TRACE:
-				return "[TRACE]";
-			case LogLevel::NE_DEBUG:
-				return "[DEBUG]";
-			case LogLevel::NE_INFO:
-				return "[INFO]";
-			case LogLevel::NE_WARNING:
-				return "[WARNING]";
-			case LogLevel::NE_ERROR:
-				return "[ERROR]";
-			case LogLevel::NE_FATAL:
-				return "[FATAL]";
-			default:
-				return "";
+			for (const auto& sink : sinks)
+			{
+				sink->Write(record);
+				if (record.level >= LogLevel::NE_FATAL) sink->Flush(); // FATAL 은 즉시 내보내 크래시 시 유실 방지
+			}
 		}
 	}
 
-	string_t Logger::GetDateTime(const std::chrono::time_point<std::chrono::system_clock> _timePoint)
+	void_t Logger::FlushSinks()
 	{
-		const std::time_t now = std::chrono::system_clock::to_time_t(_timePoint);
-		auto millisecond = std::chrono::duration_cast<std::chrono::milliseconds>(_timePoint.time_since_epoch()) % 1000;
-
-		std::tm tm{};
-#if defined(_WIN32)
-		localtime_s(&tm, &now);
-#else
-		localtime_r(&now, &tm);
-#endif
-
-		std::ostringstream oss;
-		oss << "[" << std::put_time(&tm, "%Y-%m-%d %H:%M:%S") << ":" << std::setw(3) << std::setfill('0') << millisecond.count() << "]";
-
-		return oss.str();
+		for (const auto& sink : sinks) sink->Flush();
 	}
-
-END_NS
+}

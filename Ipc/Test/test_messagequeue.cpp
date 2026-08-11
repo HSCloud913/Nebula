@@ -15,11 +15,11 @@
 #include "Ipc/MessageQueue.h"
 
 #if defined(IS_POSIX)
-#   include "Io/Engine/Epoll/EpollEngine.h"
+#   include "Io/Internal/Engine/Epoll/EpollEngine.h"
 using TestIoEngine = ne::io::EpollEngine;
 #elif defined(_WIN32)
 
-#   include "Io/Engine/Iocp/IocpEngine.h"
+#   include "Io/Internal/Engine/Iocp/IocpEngine.h"
 using TestIoEngine = ne::io::IocpEngine;
 #endif
 

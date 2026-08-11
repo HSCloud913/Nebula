@@ -16,12 +16,14 @@ set(SOURCES
 )
 
 add_library(${PROJECT_NAME} STATIC ${SOURCES})
+add_library(Nebula::Ipc ALIAS ${PROJECT_NAME})
 target_include_directories(${PROJECT_NAME} PUBLIC
                            ${CMAKE_CURRENT_SOURCE_DIR}
                            ${CMAKE_SOURCE_DIR}/Base
-                           ${CMAKE_SOURCE_DIR}/Util
-                           ${CMAKE_SOURCE_DIR}/Io)
-target_link_libraries(${PROJECT_NAME} PUBLIC NebulaBase NebulaUtil NebulaIo)
+                           ${CMAKE_SOURCE_DIR}/Util)
+# Io 는 Pipe/MessageQueue 의 .cpp 구현 세부에서만 쓰인다(공개 헤더 노출 0) — PRIVATE 로 좁힌다.
+target_link_libraries(${PROJECT_NAME} PUBLIC NebulaBase NebulaUtil)
+target_link_libraries(${PROJECT_NAME} PRIVATE NebulaIo)
 
 if (WIN32)
 	target_link_libraries(${PROJECT_NAME} PRIVATE Ws2_32 crypt32 bcrypt)

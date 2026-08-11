@@ -4,52 +4,41 @@
 
 #pragma once
 #include <atomic>
-#include <chrono>
 #include <condition_variable>
-#include <fstream>
+#include <memory>
 #include <mutex>
 #include <thread>
+#include <vector>
 #include "Base/Type.h"
 #include "Concurrency/Queue/MpscQueue.h"
+#include "Log/LogRecord.h"
+#include "Log/Sink/ISink.h"
 
-BEGIN_NS(ne)
-	enum class LogLevel
-	{
-		NE_TRACE,
-		NE_DEBUG,
-		NE_INFO,
-		NE_WARNING,
-		NE_ERROR,
-		NE_FATAL
-	};
-
-	struct LogRecord
-	{
-		LogLevel level{ LogLevel::NE_TRACE };
-		string_t message;
-		std::chrono::system_clock::time_point timestamp;
-	};
-
+namespace ne::log
+{
 	/**
 	 * @class Logger
-	 * @brief 파일에 로그를 비동기로 기록하는 로거입니다.
+	 * @brief 하나 이상의 ISink 로 로그를 비동기 기록하는 로거입니다.
 	 *
-	 * 호출 스레드는 Trace()~Fatal() 로 LogRecord를 MpscQueue에 밀어넣기만 하고,
-	 * 별도의 백엔드 스레드가 이를 꺼내 실제 파일 I/O(WriteToFile)를 수행합니다.
-	 * 백엔드는 1ms 폴링 대신 condition_variable로 대기하며, 다중 스레드에서 동시에
-	 * 로그를 기록해도 안전합니다.
+	 * 호출 스레드는 Trace()~Fatal() 로 LogRecord 를 MpscQueue 에 밀어넣기만 하고, 단일 백엔드
+	 * 스레드가 이를 꺼내 각 sink 에 기록합니다. 레벨 필터는 호출 스레드에서 즉시 적용됩니다.
+	 * FATAL 은 즉시 flush 되며, Flush() 로 지금까지의 로그를 강제로 내보낼 수 있습니다(크래시 세이프티).
+	 *
+	 * @note 파일 전용이던 이전 API(Open/Close/IsOpen)는 제거되었습니다 — 출력 대상은 sink 가 관리합니다.
 	 */
 	class Logger final
 	{
 	public:
-		explicit Logger(const string_t& _fileName);
-		explicit Logger(const string_t& _filePath, const string_t& _fileName);
+		explicit Logger(std::unique_ptr<ISink> _sink);
+		explicit Logger(std::vector<std::unique_ptr<ISink>> _sinks);
+		explicit Logger(const string_t& _fileName); // 편의: 단일 FileSink
 		~Logger();
 
+		NEBULA_NON_COPYABLE_MOVABLE(Logger)
+
 	private:
-		mutable std::mutex mutex; // os(파일) 보호. IsOpen() const 에서도 잠그므로 mutable.
-		std::ofstream os;
-		std::atomic<LogLevel> logLevel;
+		std::vector<std::unique_ptr<ISink>> sinks;
+		std::atomic<LogLevel> logLevel{ LogLevel::NE_TRACE };
 
 	private:
 		ne::concurrency::MpscQueue<LogRecord> queue;
@@ -57,19 +46,18 @@ BEGIN_NS(ne)
 		std::atomic<bool_t> isRunning{ true };
 
 	private:
-		std::mutex wakeMutex; // lost-wakeup 과 MPSC 의 순간적 false-empty(생산자 enqueue 도중) 를 함께 방어한다. (생산자가 Enqueue 완료 후 pending=true 를 세우므로, 그 사이 놓친 레코드는 다음 wait 에서 다시 드레인)
+		std::mutex wakeMutex; // lost-wakeup 및 MPSC 순간적 false-empty 방어(생산자가 Enqueue 후 isPending 세팅).
 		std::condition_variable wake;
 		std::atomic<bool_t> isPending{ false };
 
-	public:
-		LogLevel GetLogLevel() const { return logLevel.load(std::memory_order_relaxed); }
-		void_t SetLogLevel(const LogLevel& _logLevel) { logLevel.store(_logLevel, std::memory_order_relaxed); }
+	private:
+		// Flush() 세대 핸드셰이크: 호출자가 flushRequest 를 올리고, 백엔드가 드레인+flush 후 flushComplete 를 맞춘다.
+		std::atomic<ulonglong_t> flushRequest{ 0 };
+		std::atomic<ulonglong_t> flushComplete{ 0 };
 
 	public:
-		[[nodiscard]] bool_t Open(const string_t& _fileName);
-		[[nodiscard]] bool_t Open(const string_t& _filePath, const string_t& _fileName);
-		[[nodiscard]] bool_t Close();
-		[[nodiscard]] bool_t IsOpen() const;
+		[[nodiscard]] LogLevel GetLogLevel() const noexcept { return logLevel.load(std::memory_order_relaxed); }
+		void_t SetLogLevel(const LogLevel _logLevel) noexcept { logLevel.store(_logLevel, std::memory_order_relaxed); }
 
 	public:
 		void_t Trace(const string_t& _message) { Write(LogLevel::NE_TRACE, _message); }
@@ -79,15 +67,18 @@ BEGIN_NS(ne)
 		void_t Error(const string_t& _message) { Write(LogLevel::NE_ERROR, _message); }
 		void_t Fatal(const string_t& _message) { Write(LogLevel::NE_FATAL, _message); }
 
+		/** @brief 지금까지 큐에 쌓인 레코드를 백엔드가 모두 sink 에 기록하고 flush 할 때까지 블록한다. */
+		void_t Flush();
+
 	private:
 		void_t Write(LogLevel _logLevel, const string_t& _message);
-		void_t WriteToFile(const LogRecord& _record);
 		void_t BackendLoop();
-		void_t FlushPending();
-
-	private:
-		static string_t LogLevelToString(LogLevel _logLevel);
-		static string_t GetDateTime(std::chrono::time_point<std::chrono::system_clock> _timePoint);
+		void_t DrainToSinks();
+		void_t FlushSinks();
 	};
+}
 
-END_NS
+namespace ne
+{
+	using Logger = log::Logger;
+}

@@ -7,10 +7,12 @@
 #include <memory>
 #include "Base/Type.h"
 
-template <typename T>
-concept IsTrivial = std::is_trivial_v<T>;
+namespace ne
+{
+	/** @brief 원시 핸들 값으로 쓸 수 있는(trivial) 타입인지 판정하는 concept 입니다. */
+	template <typename T>
+	concept IsTrivial = std::is_trivial_v<T>;
 
-BEGIN_NS(ne)
 	/**
 	 * @class Handle
 	 * @brief 원시 핸들(fd, HANDLE, socket 등)을 소유하는 move-only RAII 래퍼입니다.
@@ -84,5 +86,4 @@ BEGIN_NS(ne)
 			}
 		}
 	};
-
-END_NS
+}

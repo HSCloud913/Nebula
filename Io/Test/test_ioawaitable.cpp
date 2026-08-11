@@ -2,15 +2,14 @@
 
 #if defined(_WIN32)
 
-#include <winsock2.h>
-#include <windows.h>
+#include "Base/WinsockApi.h"
 #include <chrono>
 #include <cstring>
 #include <stop_token>
-#include "Io/Context/Context.h"
+#include "Io/Context.h"
 #include "Io/Coroutine/Awaitable.h"
 #include "Base/Coroutine/Task.h"
-#include "Io/Engine/Iocp/IocpEngine.h"
+#include "Io/Internal/Engine/Iocp/IocpEngine.h"
 
 using namespace ne;
 using namespace ne::io;
@@ -120,7 +119,7 @@ TEST(IoAwaitableTest, AbandonedInFlightIsSafe)
 		// 데이터가 없어 WSARecv 는 pending — Resume 후 suspend 된다. 그 상태로 Task 를 파괴한다.
 		auto task = ReceiveOp(context, static_cast<ulonglong_t>(b), buffer, sizeof(buffer));
 		task.Resume();
-	} // task 파괴 → IoAwaitable 소멸자가 handler->abandoned = true (heap handler 는 생존)
+	} // task 파괴 → Awaitable 소멸자가 handler 를 ABANDONED 로 넘기고 커널 취소를 요청한다
 
 	// 소켓을 닫아 pending recv 를 완료(취소)시킨다 — 루프가 abandoned 완료를 안전하게 해제해야 한다.
 	::closesocket(a);
@@ -162,6 +161,39 @@ TEST(IoAwaitableTest, StopTokenCancelsInFlight)
 	auto result = task.await_resume();
 	ASSERT_TRUE(result.IsError());
 	EXPECT_EQ(result.Error().Code(), static_cast<ne::ulong_t>(ERROR_OPERATION_ABORTED));
+	EXPECT_TRUE(result.Error().IsCancelled()); // 플랫폼 코드가 이식 가능한 분류로 정규화된다
+
+	::closesocket(a);
+	::closesocket(b);
+}
+
+// ── 진행 중 op 를 버리면 소켓을 닫지 않아도 커널 취소가 일어나 완료가 회수된다 ──
+//
+// 예전에는 소멸자가 소유권만 루프로 넘기고 Cancel() 을 하지 않았다. 그러면 커널은 계속 op 을 들고
+// 있으면서, 이미 파괴된 코루틴 프레임의 버퍼/sockaddr 에 쓰기를 시도한다(use-after-free). 아래는
+// "소켓을 닫는" 외부 자극 없이도 완료가 도착하는지 봄으로써 취소가 실제로 요청됐음을 확인한다.
+TEST(IoAwaitableTest, AbandonedInFlightIsCancelledWithoutClosingSocket)
+{
+	const WsaScope wsa;
+	IocpEngine engine;
+	Context context{ engine };
+
+	SOCKET a = INVALID_SOCKET;
+	SOCKET b = INVALID_SOCKET;
+	ASSERT_TRUE(MakeConnectedPair(a, b));
+
+	char buffer[16]{};
+	{
+		auto task = ReceiveOp(context, static_cast<ulonglong_t>(b), buffer, sizeof(buffer));
+		task.Resume(); // 데이터가 없어 pending
+	} // 여기서 취소가 요청되어야 한다
+
+	// 소켓은 그대로 열어 둔다 — 취소 외에는 이 op 을 끝낼 방법이 없다.
+	bool_t sawCompletion = false;
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+	while (!sawCompletion && std::chrono::steady_clock::now() < deadline) sawCompletion = context.RunOnce(std::chrono::milliseconds{ 20 });
+
+	EXPECT_TRUE(sawCompletion) << "취소 완료가 도착하지 않았다 — 버려진 op 이 여전히 커널에 남아 있다";
 
 	::closesocket(a);
 	::closesocket(b);

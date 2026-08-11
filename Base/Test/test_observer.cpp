@@ -25,7 +25,8 @@ public:
 			if (_data.type() == typeid(ne::string_t)) { stringData = std::any_cast<ne::string_t>(_data); }
 			else if (_data.type() == typeid(ne::int_t)) { numberData = std::any_cast<ne::int_t>(_data); }
 			else { stringData = "Unknown type"; }
-		} catch (const std::bad_any_cast& e) { stringData = "Bad cast!"; }
+		}
+		catch (const std::bad_any_cast& e) { stringData = "Bad cast!"; }
 	}
 };
 

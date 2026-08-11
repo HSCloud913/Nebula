@@ -8,7 +8,8 @@
 #include <utility>
 #include "Base/Type.h"
 
-BEGIN_NS(ne)
+namespace ne
+{
 	/**
 	 * @class Task
 	 * @brief co_await 가능한 코루틴 반환 타입입니다. move-only이며, symmetric transfer로 완료 시
@@ -33,7 +34,7 @@ BEGIN_NS(ne)
 			/** @brief symmetric transfer: 완료 시 호출자 코루틴으로 즉시 이동합니다. (스택 성장 없음) */
 			struct FinalAwaiter
 			{
-				bool_t await_ready() const noexcept { return false; }
+				bool await_ready() const noexcept { return false; }
 
 				std::coroutine_handle<> await_suspend(std::coroutine_handle<promise_type> _handle) noexcept
 				{
@@ -41,7 +42,7 @@ BEGIN_NS(ne)
 					return promise.continuation ? promise.continuation : std::noop_coroutine();
 				}
 
-				void_t await_resume() const noexcept {}
+				void await_resume() const noexcept {}
 			};
 
 		public:
@@ -58,8 +59,8 @@ BEGIN_NS(ne)
 			std::suspend_always initial_suspend() noexcept { return {}; }
 			FinalAwaiter final_suspend() noexcept { return {}; }
 
-			void_t return_value(T _value) noexcept { result.emplace(std::move(_value)); }
-			void_t unhandled_exception() noexcept { std::terminate(); }
+			void return_value(T _value) noexcept { result.emplace(std::move(_value)); }
+			void unhandled_exception() noexcept { std::terminate(); }
 
 		public:
 			/** @brief co_return 된 결과값을 소유권째로 꺼냅니다. 호출 후 result 는 빈 상태가 됩니다. */
@@ -94,7 +95,7 @@ BEGIN_NS(ne)
 		std::coroutine_handle<promise_type> handle;
 
 	public:
-		[[nodiscard]] bool_t await_ready() const noexcept { return handle.done(); }
+		[[nodiscard]] bool await_ready() const noexcept { return handle.done(); }
 
 		std::coroutine_handle<promise_type> await_suspend(std::coroutine_handle<> _caller) noexcept
 		{
@@ -131,7 +132,7 @@ BEGIN_NS(ne)
 			/** @brief symmetric transfer: 완료 시 호출자 코루틴으로 즉시 이동합니다. (스택 성장 없음) */
 			struct FinalAwaiter
 			{
-				bool_t await_ready() const noexcept { return false; }
+				bool await_ready() const noexcept { return false; }
 
 				std::coroutine_handle<> await_suspend(const std::coroutine_handle<promise_type> _handle) noexcept
 				{
@@ -139,7 +140,7 @@ BEGIN_NS(ne)
 					return promise.continuation ? promise.continuation : std::noop_coroutine();
 				}
 
-				void_t await_resume() const noexcept {}
+				void await_resume() const noexcept {}
 			};
 
 			std::coroutine_handle<> continuation;
@@ -150,8 +151,8 @@ BEGIN_NS(ne)
 			std::suspend_always initial_suspend() noexcept { return {}; }
 			FinalAwaiter final_suspend() noexcept { return {}; }
 
-			void_t return_void() noexcept {}
-			void_t unhandled_exception() noexcept { std::terminate(); }
+			void return_void() noexcept {}
+			void unhandled_exception() noexcept { std::terminate(); }
 
 			/** @brief 완료 시 resume 할 호출자 코루틴 handle 을 등록합니다(symmetric transfer 용). */
 			void_t SetContinuation(const std::coroutine_handle<> _continuation) noexcept { continuation = _continuation; }
@@ -182,7 +183,7 @@ BEGIN_NS(ne)
 		std::coroutine_handle<promise_type> handle;
 
 	public:
-		[[nodiscard]] bool_t await_ready() const noexcept { return handle.done(); }
+		[[nodiscard]] bool await_ready() const noexcept { return handle.done(); }
 
 		std::coroutine_handle<promise_type> await_suspend(const std::coroutine_handle<> _caller) noexcept
 		{
@@ -190,7 +191,7 @@ BEGIN_NS(ne)
 			return handle;
 		}
 
-		void_t await_resume() const noexcept {}
+		void await_resume() const noexcept {}
 
 	public:
 		/** @brief 코루틴을 재개합니다. 이미 완료됐거나 handle 이 없으면 아무 일도 하지 않습니다. */
@@ -202,5 +203,4 @@ BEGIN_NS(ne)
 		/** @brief move-out 등으로 handle 을 잃지 않은, 유효한 Task 인지 확인합니다. */
 		[[nodiscard]] bool_t IsValid() const noexcept { return static_cast<bool_t>(handle); }
 	};
-
-END_NS
+}

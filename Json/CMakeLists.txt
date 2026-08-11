@@ -9,18 +9,23 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(HEADERS
     Json.h
-    JsonValue.h
+    Value.h
 )
 
 set(SOURCES
     Json.cpp
-    JsonValue.cpp
+    Value.cpp
 )
 
 add_library(${PROJECT_NAME} STATIC ${HEADERS} ${SOURCES})
+add_library(Nebula::Json ALIAS ${PROJECT_NAME})
 target_include_directories(${PROJECT_NAME} PUBLIC
-                           ${CMAKE_CURRENT_SOURCE_DIR}
-                           ${CMAKE_SOURCE_DIR}/Base)
+                           $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>
+                           $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+
+set_target_properties(${PROJECT_NAME} PROPERTIES EXPORT_NAME Json)
+install(TARGETS ${PROJECT_NAME} EXPORT NebulaTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 target_link_libraries(${PROJECT_NAME} PUBLIC NebulaBase)
 
 

@@ -10,7 +10,7 @@
 class NebulaJsonValueTest :public ::testing::Test
 {
 protected:
-	ne::JsonValue jsonValue; // 테스트를 위한 JsonValue 객체
+	ne::json::Value jsonValue; // 테스트를 위한 JsonValue 객체
 };
 
 
@@ -18,7 +18,7 @@ protected:
 // Json 직렬화
 TEST_F(NebulaJsonValueTest, SerializeJson)
 {
-	ne::JsonObject object;
+	ne::json::Object object;
 	object["bool_value"] = false;
 	object["number_value"] = -1;
 	object["positive_number_value"] = 4294967295U;
@@ -27,7 +27,7 @@ TEST_F(NebulaJsonValueTest, SerializeJson)
 	object["real_value"] = 0.123456789f;
 	object["string_value"] = "Test string";
 
-	auto string = ne::Json::Stringify(object);
+	auto string = ne::json::Stringify(object);
 	EXPECT_EQ(string,
 			R"({"bool_value":false,"large_number_value":9223372036854775807,"number_value":-1,"positive_large_number_value":18446744073709551615,"positive_number_value":4294967295,"real_value":0.123456791043282,"string_value":"Test string"})");
 }
@@ -35,24 +35,70 @@ TEST_F(NebulaJsonValueTest, SerializeJson)
 // 유효한 JSON parse
 TEST_F(NebulaJsonValueTest, ParseValidJson)
 {
-	auto root = ne::Json::Parse(R"({"key":"value"})");
+	auto root = ne::json::Parse(R"({"key":"value"})");
 	EXPECT_TRUE(root.IsObject());
 
 	auto object = root.AsObject();
 	EXPECT_EQ(*object["key"].AsString(), "value");
 }
 
+// TryAs*(): 타입 일치 → Ok, 불일치 → Err (예외 없이 Result 로 표현)
+TEST_F(NebulaJsonValueTest, TryAsReturnsResult)
+{
+	auto root = ne::json::Parse(R"({"n":-1,"s":"hi"})");
+	ASSERT_TRUE(root.IsObject());
+	const auto& obj = root.AsObject();
+
+	const auto n = obj.at("n").TryAsNumber();
+	ASSERT_TRUE(n.IsOk());
+	EXPECT_EQ(n.Value(), -1);
+
+	// 타입 불일치: 숫자를 bool 로 요청 → Err (throw 없음)
+	EXPECT_TRUE(obj.at("n").TryAsBool().IsError());
+
+	// 문자열/객체/배열은 포인터 Result
+	const auto s = obj.at("s").TryAsString();
+	ASSERT_TRUE(s.IsOk());
+	EXPECT_EQ(*s.Value(), "hi");
+
+	const auto o = root.TryAsObject();
+	ASSERT_TRUE(o.IsOk());
+	EXPECT_NE(o.Value(), nullptr);
+
+	EXPECT_TRUE(root.TryAsArray().IsError()); // object 를 array 로 요청
+}
+
+// TryParse(): 성공 시 Ok, 실패 시 위치(offset)+사유를 담은 Err
+TEST_F(NebulaJsonValueTest, TryParseReportsError)
+{
+	EXPECT_TRUE(ne::json::TryParse(R"({"k":1})").IsOk());
+
+	const auto empty = ne::json::TryParse("   ");
+	ASSERT_TRUE(empty.IsError());
+	EXPECT_FALSE(empty.Error().message.empty());
+
+	const auto bad = ne::json::TryParse("@");
+	ASSERT_TRUE(bad.IsError());
+	EXPECT_EQ(bad.Error().position, 0u);
+
+	const auto trailing = ne::json::TryParse("1 2");
+	ASSERT_TRUE(trailing.IsError());
+	EXPECT_EQ(trailing.Error().position, 2u);
+
+	EXPECT_TRUE(ne::json::TryParse(R"({"k":1)").IsError()); // 미완결(EOF)
+}
+
 // 잘못된 JSON parse
 TEST_F(NebulaJsonValueTest, ParseInvalidJson)
 {
-	auto root = ne::Json::Parse(R"({"key":"value")");
+	auto root = ne::json::Parse(R"({"key":"value")");
 	EXPECT_FALSE(root.IsObject());
 }
 
 // JSON 직렬화 후 다시 파싱
 TEST_F(NebulaJsonValueTest, SerializeAndParseJson)
 {
-	ne::JsonObject object;
+	ne::json::Object object;
 	object["bool_value"] = false;
 	object["number_value"] = -1;
 	object["positive_number_value"] = 4294967295U;
@@ -61,14 +107,14 @@ TEST_F(NebulaJsonValueTest, SerializeAndParseJson)
 	object["real_value"] = 0.123456789f;
 	object["string_value"] = "Test string";
 
-	auto string = ne::Json::Stringify(object);
+	auto string = ne::json::Stringify(object);
 	EXPECT_EQ(string,
 			R"({"bool_value":false,"large_number_value":9223372036854775807,"number_value":-1,"positive_large_number_value":18446744073709551615,"positive_number_value":4294967295,"real_value":0.123456791043282,"string_value":"Test string"})");
 
-	auto root = ne::Json::Parse(string.c_str());
+	auto root = ne::json::Parse(string.c_str());
 	EXPECT_TRUE(root.IsObject());
 
-	ne::JsonObject parseObject = root.AsObject();
+	ne::json::Object parseObject = root.AsObject();
 	EXPECT_EQ(parseObject["bool_value"].AsBool(), false);
 	EXPECT_EQ(parseObject["number_value"].AsNumber(), -1);
 	EXPECT_EQ(parseObject["positive_number_value"].AsPositiveNumber(), 4294967295U);
@@ -81,15 +127,15 @@ TEST_F(NebulaJsonValueTest, SerializeAndParseJson)
 // 소수점 없는 지수 표기법 파싱 (예: 3e2 = 300.0)
 TEST_F(NebulaJsonValueTest, ParseIntegerExponent)
 {
-	auto v1 = ne::Json::Parse("3e2");
+	auto v1 = ne::json::Parse("3e2");
 	EXPECT_TRUE(v1.IsReal());
 	EXPECT_NEAR(v1.AsReal(), 300.0, 1e-9);
 
-	auto v2 = ne::Json::Parse("5e3");
+	auto v2 = ne::json::Parse("5e3");
 	EXPECT_TRUE(v2.IsReal());
 	EXPECT_NEAR(v2.AsReal(), 5000.0, 1e-9);
 
-	auto v3 = ne::Json::Parse("2e-1");
+	auto v3 = ne::json::Parse("2e-1");
 	EXPECT_TRUE(v3.IsReal());
 	EXPECT_NEAR(v3.AsReal(), 0.2, 1e-9);
 }
@@ -97,16 +143,16 @@ TEST_F(NebulaJsonValueTest, ParseIntegerExponent)
 // JSON 객체에 값 추가
 TEST_F(NebulaJsonValueTest, AddValue)
 {
-	ne::JsonObject subObject;
+	ne::json::Object subObject;
 	subObject["sub1"] = true;
 	subObject["sub2"] = 2;
 	subObject["sub3"] = 0.12f;
 	subObject["sub4"] = "Test sub string";
 
-	ne::JsonArray subArray;
+	ne::json::Array subArray;
 	for (ne::int_t i = 0; i < 3; i++) { subArray.emplace_back(subObject); }
 
-	ne::JsonObject object;
+	ne::json::Object object;
 	object["bool_value"] = false;
 	object["number_value"] = -1;
 	object["positive_number_value"] = 4294967295U;
@@ -145,7 +191,7 @@ TEST_F(NebulaJsonValueTest, AddValue)
 // JSON 객체에 존재하는 값 제거
 TEST_F(NebulaJsonValueTest, RemoveValue)
 {
-	ne::JsonObject object;
+	ne::json::Object object;
 	object["bool_value"] = false;
 	EXPECT_EQ(object["bool_value"].AsBool(), false);
 
@@ -156,7 +202,7 @@ TEST_F(NebulaJsonValueTest, RemoveValue)
 // 중복된 key
 TEST_F(NebulaJsonValueTest, DuplicateKeys)
 {
-	ne::JsonObject object;
+	ne::json::Object object;
 	object["bool_value"] = false;
 	object["bool_value"] = true;
 
@@ -183,17 +229,17 @@ TEST_F(NebulaJsonValueTest, Whitespace)
  	\"array_letters\" : [ \"a\", \"b\", \"c\", [ 1, 2, 3  ]  ] \
  }                                                           ";
 
-	auto root = ne::Json::Parse(EXAMPLE);
+	auto root = ne::json::Parse(EXAMPLE);
 	EXPECT_TRUE(root.IsObject());
 
-	ne::JsonObject parseObject = root.AsObject();
+	ne::json::Object parseObject = root.AsObject();
 	EXPECT_EQ(*parseObject["string_name"].AsString(), "asdf");
 	EXPECT_EQ(parseObject["bool_name"].AsBool(), true);
 	EXPECT_EQ(parseObject["bool_second"].AsBool(), true);
 	EXPECT_TRUE(parseObject["null_name"].IsNull());
 	EXPECT_EQ(parseObject["nua"].AsLargeNumber(), 9223372036854775807LL);
 	EXPECT_EQ(parseObject["max"].AsPositiveLargeNumber(), 18446744073709551615ULL);
-	EXPECT_EQ(*parseObject["oor"].AsString(), "The value is out of range.");
+	EXPECT_FALSE(parseObject.contains("oor")); // 표현 범위 초과 값은 INVALID → 객체에 추가되지 않음
 	EXPECT_NEAR(parseObject["negative"].AsReal(), -34.276f, 1e-3);
 
 	auto& subObject = parseObject["sub_object"].AsObject();

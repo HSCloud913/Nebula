@@ -3,12 +3,10 @@
 
 #if defined(_WIN32)
 
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <windows.h>
+#include "Base/WinsockApi.h"
 #include <chrono>
 #include <cstring>
-#include "Io/Engine/Iocp/IocpEngine.h"
+#include "Io/Internal/Engine/Iocp/IocpEngine.h"
 
 using namespace ne;
 using namespace ne::io;
@@ -260,8 +258,8 @@ TEST(IoEngineTest, WakeUnblocksWait)
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/socket.h>
-#include "Io/Engine/Epoll/EpollEngine.h"
-#include "Io/Engine/IoUring/IoUringEngine.h"
+#include "Io/Internal/Engine/Epoll/EpollEngine.h"
+#include "Io/Internal/Engine/IoUring/IoUringEngine.h"
 
 using namespace ne;using namespace ne::io;namespace
 {

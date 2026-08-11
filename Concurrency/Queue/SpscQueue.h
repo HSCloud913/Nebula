@@ -8,8 +8,10 @@
 #include <cstddef>
 #include <vector>
 #include "Base/Type.h"
+#include "Concurrency/Queue/SingleRoleGuard.h"
 
-BEGIN_NS(ne::concurrency)
+namespace ne::concurrency
+{
 	/**
 	 * @class SpscQueue
 	 * @brief 단일 생산자·단일 소비자(SPSC) 전용 lock-free 링버퍼입니다.
@@ -36,10 +38,14 @@ BEGIN_NS(ne::concurrency)
 		std::vector<T> buffer;
 		alignas(64) std::atomic<std::size_t> writePos{ 0 };
 		alignas(64) std::atomic<std::size_t> readPos{ 0 };
+		SingleRoleGuard producerGuard; // Enqueue 단일 생산자 검사(디버그 전용)
+		SingleRoleGuard consumerGuard; // Dequeue 단일 소비자 검사(디버그 전용)
 
 	public:
 		[[nodiscard]] bool_t Enqueue(T _value) noexcept
 		{
+			[[maybe_unused]] const auto guard = producerGuard.Enter("SpscQueue::Enqueue must be called from a single producer thread");
+
 			const std::size_t pos = writePos.load(std::memory_order_relaxed);
 			const std::size_t next = (pos + 1) & mask;
 			if (next == readPos.load(std::memory_order_acquire)) return false;
@@ -52,6 +58,8 @@ BEGIN_NS(ne::concurrency)
 
 		[[nodiscard]] bool_t Dequeue(T& _out) noexcept
 		{
+			[[maybe_unused]] const auto guard = consumerGuard.Enter("SpscQueue::Dequeue must be called from a single consumer thread");
+
 			const std::size_t pos = readPos.load(std::memory_order_relaxed);
 			if (pos == writePos.load(std::memory_order_acquire)) return false;
 
@@ -70,5 +78,4 @@ BEGIN_NS(ne::concurrency)
 			return next == readPos.load(std::memory_order_acquire);
 		}
 	};
-
-END_NS
+}

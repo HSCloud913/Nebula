@@ -9,8 +9,7 @@
 
 #if defined(_WIN32)
 
-#include <winsock2.h>
-#include <ws2tcpip.h>
+#include "Base/WinsockApi.h"
 #include <chrono>
 #include <cstring>
 #include <span>
@@ -18,14 +17,16 @@
 #include <vector>
 #include "Base/Coroutine/Task.h"
 #include "Io/Buffer/RegisteredBuffer.h"
-#include "Io/Context/Context.h"
-#include "Io/Engine/Iocp/IocpEngine.h"
-#include "Io/File/File.h"
-#include "Io/Socket/Socket.h"
-#include "Network/Stream/Plain/PlainStream.h"
+#include "Io/Context.h"
+#include "Io/Internal/Engine/Iocp/IocpEngine.h"
+#include "Io/File.h"
+#include "Io/Socket.h"
+#include "Network/Stream/PlainStream.h"
 
 using namespace ne;
 using namespace ne::io;
+using ne::memory::BufferView;
+using ne::memory::BufferChain;
 using ne::network::PlainStream;
 
 namespace
@@ -405,7 +406,8 @@ TEST(PlainStreamTest, SendRegisteredRioFastPathRoundTrip)
 	std::memcpy(region.data(), payload, payloadLen);
 
 	auto regResult = RegisteredBuffer::Register(engine, std::span<byte_t>{ region });
-	if (regResult.IsError() && regResult.Error().IsUnsupported()) GTEST_SKIP() << "engine has no registered buffer provider";
+	if (regResult.IsError() && regResult.Error().IsUnsupported())
+		GTEST_SKIP() << "engine has no registered buffer provider";
 	ASSERT_TRUE(regResult.IsOk()) << regResult.Error().What();
 	RegisteredBuffer rb = std::move(regResult.Value());
 
@@ -449,7 +451,8 @@ TEST(PlainStreamTest, SendRegisteredFallsBackToPlainSendOnNonRioSocket)
 	std::memcpy(region.data(), payload, payloadLen);
 
 	auto regResult = RegisteredBuffer::Register(engine, std::span<byte_t>{ region });
-	if (regResult.IsError() && regResult.Error().IsUnsupported()) GTEST_SKIP() << "engine has no registered buffer provider";
+	if (regResult.IsError() && regResult.Error().IsUnsupported())
+		GTEST_SKIP() << "engine has no registered buffer provider";
 	ASSERT_TRUE(regResult.IsOk()) << regResult.Error().What();
 	RegisteredBuffer rb = std::move(regResult.Value());
 

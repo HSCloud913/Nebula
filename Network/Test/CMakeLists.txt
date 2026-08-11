@@ -8,27 +8,27 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(${PROJECT_NAME}
-               test.cpp
+               env_winsock.cpp # WSAStartup/WSACleanup 전역 환경 — 소켓 테스트의 선행 조건
                test_socket.cpp
                test_tls_config.cpp
                test_tls_stream.cpp
+               test_http_type.cpp
+               test_http_router.cpp
+               test_http1_client_server.cpp
+               test_http2_client_server.cpp
 )
 
-target_include_directories(${PROJECT_NAME} PRIVATE
-                           ${CMAKE_SOURCE_DIR}/Network
-                           ${CMAKE_SOURCE_DIR}/Base
-)
-
+# include 경로는 NebulaNetwork 의 INTERFACE(저장소 루트)로 충분하다 — 모듈 접두 include 규약.
 target_link_libraries(${PROJECT_NAME} gtest gtest_main NebulaNetwork)
 
 if (WIN32)
 	target_link_libraries(${PROJECT_NAME} Ws2_32 Secur32 Crypt32)
 endif ()
 
+# NEBULA_WITH_OPENSSL 은 NebulaNetwork 가 PUBLIC 으로 전파하므로 여기서 재정의하지 않는다.
 if (UNIX)
 	find_package(OpenSSL QUIET)
 	if (TARGET OpenSSL::SSL)
-		target_compile_definitions(${PROJECT_NAME} PRIVATE NEBULA_WITH_OPENSSL)
 		target_link_libraries(${PROJECT_NAME} OpenSSL::SSL OpenSSL::Crypto)
 	endif ()
 endif ()

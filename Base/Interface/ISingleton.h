@@ -6,7 +6,8 @@
 #include <memory>
 #include "Base/Type.h"
 
-BEGIN_NS(ne)
+namespace ne
+{
 	/**
 	 * @class ISingleton
 	 * @brief 파생 클래스 T를 프로세스 전역에서 단일 인스턴스로 관리하는 CRTP 베이스입니다.
@@ -34,5 +35,4 @@ BEGIN_NS(ne)
 			return *instance;
 		}
 	};
-
-END_NS
+}

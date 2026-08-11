@@ -7,7 +7,8 @@
 #include "Time/Timer/TimerWheel.h"
 #include "Base/Type.h"
 
-BEGIN_NS(ne::time)
+namespace ne::time
+{
 	/**
 	 * @class Awaitable
 	 * @brief TimerWheel 기반의 타이머 awaitable입니다.
@@ -27,8 +28,8 @@ BEGIN_NS(ne::time)
 		 *
 		 * 코루틴 프레임이 타이머 만료 전에 파괴되면(취소/타임아웃/예외로 상위 Task 폐기), 스케줄된
 		 * 콜백이 이미 파괴된 handle을 resume해 use-after-free가 됩니다. 소멸 시 예약 타이머를
-		 * 취소해 콜백이 절대 실행되지 않게 합니다. 이미 발화됐다면 Cancel은 no-op입니다(그 id는
-		 * Tick이 live에서 이미 제거).
+		 * 취소해 콜백이 절대 실행되지 않게 합니다. 이미 발화됐다면 Cancel은 no-op입니다. (그 id는
+		 * Tick이 live에서 이미 제거)
 		 */
 		~Awaitable() { if (timerId != 0) wheel.Cancel(timerId); }
 
@@ -40,11 +41,11 @@ BEGIN_NS(ne::time)
 		uint64_t timerId{ 0 };
 
 	public:
-		[[nodiscard]] bool_t await_ready() const noexcept { return duration.count() <= 0; }
+		[[nodiscard]] bool await_ready() const noexcept { return duration.count() <= 0; }
 
-		void_t await_suspend(std::coroutine_handle<> _handle) { timerId = wheel.Schedule(duration, [_handle]() mutable { _handle.resume(); }); }
+		void await_suspend(std::coroutine_handle<> _handle) { timerId = wheel.Schedule(duration, [_handle]() mutable { _handle.resume(); }); }
 
-		void_t await_resume() const noexcept {}
+		void await_resume() const noexcept {}
 	};
 
 	[[nodiscard]] inline Awaitable SleepFor(TimerWheel& _wheel, const std::chrono::milliseconds _duration) { return Awaitable{ _wheel, _duration }; }
@@ -56,5 +57,4 @@ BEGIN_NS(ne::time)
 
 		return Awaitable{ _wheel, diff.count() > 0 ? diff : std::chrono::milliseconds{ 0 } };
 	}
-
-END_NS
+}

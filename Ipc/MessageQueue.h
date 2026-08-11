@@ -20,7 +20,8 @@ namespace ne::io
 	#endif
 }
 
-BEGIN_NS (ne::ipc)
+namespace ne::ipc
+{
 
 class MessageQueue final
 {
@@ -64,4 +65,4 @@ public:
 	#endif
 };
 
-END_NS
+}

@@ -5,12 +5,13 @@
 #pragma once
 #include <span>
 #include "Base/Type.h"
-#include "Io/IoResult.h"
-#include "Io/Buffer/BufferView.h"
-#include "Io/Engine/IEngine.h"
-#include "Io/Engine/IRegisteredBufferProvider.h"
+#include "Io/Diagnostic/Error.h"
+#include "Memory/Buffer/BufferView.h"
+#include "Io/Engine.h"
+#include "Io/Buffer/RegisteredBufferProvider.h"
 
-BEGIN_NS(ne::io)
+namespace ne::io
+{
 	/**
 	 * @class RegisteredBuffer
 	 * @brief 엔진에 사전 등록된 zero-copy 메모리 영역을 관리하는 RAII 래퍼.
@@ -81,10 +82,10 @@ BEGIN_NS(ne::io)
 			return IoResult<RegisteredBuffer>::Ok(RegisteredBuffer{ *provider, result.Value(), _region });
 		}
 
-		[[nodiscard]] BufferView View(const std::size_t _offset = 0, const std::size_t _length = 0) const noexcept
+		[[nodiscard]] ne::memory::BufferView View(const std::size_t _offset = 0, const std::size_t _length = 0) const noexcept
 		{
 			const std::size_t length = (_length == 0) ? (region.size() - _offset) : _length;
-			return BufferView{ region.data() + _offset, length };
+			return ne::memory::BufferView{ region.data() + _offset, length };
 		}
 
 	private:
@@ -101,5 +102,4 @@ BEGIN_NS(ne::io)
 		[[nodiscard]] std::span<ne::byte_t> Region() const noexcept { return region; }
 		[[nodiscard]] bool_t IsValid() const noexcept { return handle.IsValid(); }
 	};
-
-END_NS
+}

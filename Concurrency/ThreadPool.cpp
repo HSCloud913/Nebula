@@ -6,7 +6,8 @@
 
 
 
-BEGIN_NS(ne)
+namespace ne::concurrency
+{
 	ThreadPool::ThreadPool(const size_t _count)
 	{
 		threads.reserve(_count);
@@ -60,5 +61,4 @@ BEGIN_NS(ne)
 
 		for (auto& thread : threads) { if (thread.joinable()) thread.join(); }
 	}
-
-END_NS
+}
