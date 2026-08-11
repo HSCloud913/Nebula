@@ -14,7 +14,6 @@ set(HEADERS
     ContextPool.h
     Engine.h
     Socket.h
-    Listener.h
     File.h
 
     # 공개 패밀리 — 코루틴 결합 계층
@@ -24,7 +23,6 @@ set(HEADERS
     # 공개 패밀리 — 등록 버퍼(zero-copy 고급 표면)
     Buffer/RegisteredBufferProvider.h
     Buffer/RegisteredBuffer.h
-    Buffer/BufferPool.h
 
     # 공개 값 타입
 		Diagnostic/Type.h
@@ -38,7 +36,6 @@ set(HEADERS
     Internal/Engine/WsaPoll/WsaPollEngine.h
     Internal/Engine/Epoll/EpollEngine.h
     Internal/Engine/IoUring/IoUringEngine.h
-    Internal/Engine/IoUring/IoUringProvider.h
 )
 
 set(SOURCES
@@ -47,9 +44,7 @@ set(SOURCES
     Context.cpp
     ContextPool.cpp
     Socket.cpp
-    Listener.cpp
     File.cpp
-    Buffer/BufferPool.cpp
     Internal/EngineFactory.cpp
 )
 
@@ -60,7 +55,6 @@ if (WIN32)
 elseif (UNIX AND NOT APPLE)
 	list(APPEND SOURCES Internal/Engine/Epoll/EpollEngine.cpp)
 	list(APPEND SOURCES Internal/Engine/IoUring/IoUringEngine.cpp)
-	list(APPEND SOURCES Internal/Engine/IoUring/IoUringProvider.cpp)
 endif ()
 
 add_library(${PROJECT_NAME} STATIC ${HEADERS} ${SOURCES})

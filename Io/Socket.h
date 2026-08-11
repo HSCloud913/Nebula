@@ -91,6 +91,14 @@ namespace ne::io
 		[[nodiscard]] IoResult<void_t> SetNoDelay(bool_t _enable);
 
 	public:
+		/**
+		 * @brief 이 소켓에 바인딩된 로컬 포트를 반환합니다(조회 실패 시 0).
+		 *
+		 * 포트 0 으로 Bind 해 커널이 임시 포트를 배정한 뒤 그 값을 알아내는 것이 주 용도입니다.
+		 */
+		[[nodiscard]] uint16_t LocalPort() const noexcept;
+
+	public:
 		[[nodiscard]] IoResult<void_t> Shutdown();
 		[[nodiscard]] IoResult<void_t> Close();
 

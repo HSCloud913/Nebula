@@ -118,8 +118,8 @@ namespace ne::network::http_2::internal
 			bool_t done{ false };
 			bool_t failed{ false };
 			std::int64_t sendWindow{ DefaultInitialWindowSize };
-			Event complete;    // done/failed 시 신호
-			Event windowReady; // 송신 윈도우 갱신 시 신호
+			ne::Event complete;    // done/failed 시 신호
+			ne::Event windowReady; // 송신 윈도우 갱신 시 신호
 
 			// 스트리밍 수신 sink(SendStreaming 프레임 소유). 설정 시 body 에 누적하지 않고 조각째 콜백으로 흘린다.
 			const http::ResponseCallbacks* sink{ nullptr };
@@ -134,7 +134,7 @@ namespace ne::network::http_2::internal
 		string_t failReason;
 		std::optional<ne::Task<void_t>> driver;
 		std::stop_source driverStop;
-		Event driverDone;             // 드라이버 코루틴이 종료될 때 신호
+		ne::Event driverDone;             // 드라이버 코루틴이 종료될 때 신호
 		bool_t driverFinished{ false };
 
 	public:

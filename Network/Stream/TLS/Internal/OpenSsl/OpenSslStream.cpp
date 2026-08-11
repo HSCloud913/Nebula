@@ -73,7 +73,6 @@ namespace ne::network
 			sniHost = std::move(_other.sniHost);
 			alpnCandidates = std::move(_other.alpnCandidates);
 			negotiatedProtocol = std::move(_other.negotiatedProtocol);
-			allocator = _other.allocator;
 			ctx = std::exchange(_other.ctx, nullptr);
 			ssl = std::exchange(_other.ssl, nullptr);
 		}
@@ -173,7 +172,7 @@ namespace ne::network
 			}
 		}
 
-		TlsStream stream(std::move(plainTransport), sslCtx, tempSsl, _allocator);
+		TlsStream stream(std::move(plainTransport), sslCtx, tempSsl);
 		stream.sniHost = string_t(_host);
 		stream.alpnCandidates = _config.alpnProtocols;
 
@@ -219,7 +218,7 @@ namespace ne::network
 		PlainStream plainTransport = std::move(transportResult.Value());
 		SSL_set_fd(tempSsl, static_cast<int>(plainTransport.Handle()));
 
-		TlsStream stream(std::move(plainTransport), sslCtx, tempSsl, _allocator);
+		TlsStream stream(std::move(plainTransport), sslCtx, tempSsl);
 		stream.alpnCandidates = _config.alpnProtocols;
 
 		// 콜백은 SSL_accept() 진행 중(아래 루프, stream 이 아직 이 지역 변수 위치에 있는 동안)에만 호출된다 —

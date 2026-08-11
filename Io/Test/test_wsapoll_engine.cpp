@@ -255,7 +255,6 @@ TEST(WsaPollEngineTest, SupportsMatrix)
 	EXPECT_TRUE(engine.Supports(Capability::SEND_FILE_ZERO_COPY));
 	EXPECT_FALSE(engine.Supports(Capability::SEND_MEM_ZERO_COPY));
 	EXPECT_FALSE(engine.Supports(Capability::RECEIVE_OVERHEAD_REDUCED));
-	EXPECT_FALSE(engine.Supports(Capability::RECEIVE_TRUE_ZERO_COPY));
 }
 
 // ── Wake 가 완료 없이도 대기를 즉시 해제 ──

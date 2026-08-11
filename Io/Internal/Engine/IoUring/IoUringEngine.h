@@ -14,7 +14,6 @@
 #	include <sys/uio.h>
 #	include <sys/socket.h>
 #	include "Io/Engine.h"
-#	include "Io/Internal/Engine/IoUring/IoUringProvider.h"
 
 namespace ne::io
 {
@@ -25,8 +24,7 @@ namespace ne::io
 	 * op 별로 SQE(Submission Queue Entry)를 준비해 제출하고, CQE(Completion Queue Entry)를
 	 * peek_batch_cqe/wait_cqe_timeout 으로 회수해 IEngine::Completion 으로 정규화한다. ring 은
 	 * 단일 루프 스레드에서만 조작하며, 다른 스레드의 Cancel()/Wake() 요청은 pendingCancels 로
-	 * 지연시켰다가 루프 스레드가 ASYNC_CANCEL SQE 로 제출한다. IoUringProvider 를 합성해
-	 * ReadFixed/WriteFixed 용 등록 버퍼(Fixed Buffer)를 제공한다.
+	 * 지연시켰다가 루프 스레드가 ASYNC_CANCEL SQE 로 제출한다.
 	 */
 	class IoUringEngine final :public IEngine
 	{
@@ -64,7 +62,6 @@ namespace ne::io
 		std::unordered_map<void_t*, UringOperation*> inflight;
 		std::vector<void_t*> pendingCancels;
 		std::vector<Completion> readyCompletions;
-		std::unique_ptr<IoUringProvider> bufferProvider;
 
 	public: /* IEngine */
 		/**
@@ -108,8 +105,9 @@ namespace ne::io
 		[[nodiscard]] virtual bool_t Supports(Capability _capability) const noexcept override;
 		/** @brief 링 초기화와 Wake() 용 eventfd 확보가 모두 성공했는지 반환한다. */
 		[[nodiscard]] virtual bool_t IsValid() const noexcept override { return isValid; }
-		/** @brief io_uring Fixed Buffer 기반 등록 버퍼 provider(IoUringProvider)를 노출한다. */
-		[[nodiscard]] virtual IRegisteredBufferProvider* AsRegisteredBufferProvider() noexcept override { return bufferProvider.get(); }
+		// 등록 버퍼 provider 를 두지 않는다 — 고정 버퍼를 소비할 공개 API(ReadFixed/WriteFixed)가
+		// 없어 등록만 가능하고 사용할 수는 없는 상태였다. 소비 경로가 생기면 함께 되살린다.
+		// (기반 클래스의 nullptr 반환을 그대로 쓴다.)
 
 	private:
 		/**

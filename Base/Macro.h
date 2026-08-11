@@ -11,14 +11,6 @@
 #define NEBULA_API
 #endif
 
-#ifndef NOT_BUILD_NEBULA_DEPRECATE
-#	if defined(_MSC_VER)
-#		define NOT_BUILD_NEBULA_DEPRECATE __declspec(deprecated)
-#	else
-#		define NOT_BUILD_NEBULA_DEPRECATE [[deprecated]]
-#	endif
-#endif
-
 
 // 복사/이동 특수 멤버를 한 줄로 선언하는 보일러플레이트 매크로.
 // @note NEBULA_NON_COPYABLE_MOVABLE 은 "복사 불가 + **이동도 불가**" 를 뜻한다(이름이 오해를 부르기

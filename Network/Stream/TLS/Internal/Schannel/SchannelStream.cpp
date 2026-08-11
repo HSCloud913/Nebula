@@ -92,7 +92,6 @@ namespace ne::network
 			sniHost = std::move(_other.sniHost);
 			alpnCandidates = std::move(_other.alpnCandidates);
 			negotiatedProtocol = std::move(_other.negotiatedProtocol);
-			allocator = _other.allocator;
 			credHandle = std::exchange(_other.credHandle, nullptr);
 			ctxHandle = std::exchange(_other.ctxHandle, nullptr);
 			messageBuffer = std::exchange(_other.messageBuffer, nullptr);
@@ -125,7 +124,7 @@ namespace ne::network
 		auto plainStream = PlainStream::Create(std::move(_socket), _context, _allocator);
 		if (plainStream.IsError()) co_return R::Error(std::move(plainStream.Error()).Context("[TlsStream/Connect]"));
 
-		TlsStream stream(std::move(plainStream.Value()), tempCredHandle.release(), nullptr, new TlsMessageBuffer(TlsMessageBuffer::Allocate()), _allocator);
+		TlsStream stream(std::move(plainStream.Value()), tempCredHandle.release(), nullptr, new TlsMessageBuffer(TlsMessageBuffer::Allocate()));
 		stream.sniHost = string_t(_host);
 		stream.alpnCandidates = _config.alpnProtocols;
 
@@ -176,7 +175,7 @@ namespace ne::network
 		auto plainStream = PlainStream::Create(std::move(_socket), _context, _allocator);
 		if (plainStream.IsError()) co_return R::Error(std::move(plainStream.Error()).Context("[TlsStream/Accept]"));
 
-		TlsStream stream(std::move(plainStream.Value()), tempCredHandle.release(), nullptr, new TlsMessageBuffer(TlsMessageBuffer::Allocate()), _allocator);
+		TlsStream stream(std::move(plainStream.Value()), tempCredHandle.release(), nullptr, new TlsMessageBuffer(TlsMessageBuffer::Allocate()));
 		stream.alpnCandidates = _config.alpnProtocols;
 
 		auto* nativeCred = static_cast<CredHandle*>(stream.credHandle);

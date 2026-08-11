@@ -28,9 +28,8 @@ namespace ne::io
 	 *
 	 * RIO(IocpEngine)/io_uring Fixed Buffer(IoUringEngine)처럼 커널/드라이버에 버퍼 영역을 미리
 	 * 등록해야 하는 엔진만 구현하며, IEngine::AsRegisteredBufferProvider() 로 접근한다(미지원
-	 * 엔진은 nullptr). RegisterBuffer 로 등록한 영역 내부의 포인터만 SubmitSendRegistered/
-	 * SubmitReceiveRegistered 에 넘길 수 있고, 그 영역은 완료 및 UnregisterBuffer 전까지 주소가
-	 * 바뀌면 안 된다.
+	 * 엔진은 nullptr). RegisterBuffer 로 등록한 영역 내부의 포인터만 SubmitSendRegistered 에 넘길 수
+	 * 있고, 그 영역은 완료 및 UnregisterBuffer 전까지 주소가 바뀌면 안 된다.
 	 */
 	class IRegisteredBufferProvider
 	{
@@ -70,16 +69,10 @@ namespace ne::io
 		 * @return 제출 자체의 성공/실패. 실제 전송 결과는 IEngine::WaitCompletions() 로 비동기 통지된다.
 		 */
 		[[nodiscard]] virtual IoResult<void_t> SubmitSendRegistered(socket_t _socket, BufferHandle _handle, const void_t* _buffer, std::size_t _length, void_t* _userData) noexcept = 0;
-		/**
-		 * @brief 등록된 버퍼 내부의 포인터로 zero-copy 수신을 제출한다.
-		 * @param _socket 대상 소켓.
-		 * @param _handle RegisterBuffer() 로 얻은, _buffer 가 속한 영역의 핸들.
-		 * @param _buffer 수신 데이터를 받을 주소(반드시 _handle 로 등록된 영역 내부).
-		 * @param _length 수신 가능한 최대 길이.
-		 * @param _userData 완료 통지 시 식별에 쓸 사용자 데이터.
-		 * @return 제출 자체의 성공/실패. 실제 수신 결과는 IEngine::WaitCompletions() 로 비동기 통지된다.
-		 */
-		[[nodiscard]] virtual IoResult<void_t> SubmitReceiveRegistered(socket_t _socket, BufferHandle _handle, void_t* _buffer, std::size_t _length, void_t* _userData) noexcept = 0;
+
+		// zero-copy **수신** 제출 경로는 없다. io::Socket 에 그것을 노출하는 API(ReceiveZeroCopy)가 없어
+		// 호출자가 존재할 수 없었고, 도달 불가능한 가상 함수를 남겨 두면 구현체마다 스텁을 강요한다.
+		// 소비자가 생기면 Socket 쪽 API 와 함께 되살리는 것이 순서다.
 
 	public:
 		/**

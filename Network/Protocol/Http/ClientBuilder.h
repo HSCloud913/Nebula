@@ -77,7 +77,6 @@ namespace ne::network::http
 
 	public:
 		ClientBuilder& Header(const string_view_t _name, const string_view_t _value);
-		ClientBuilder& WithHeaders(http::Headers _headers);
 		ClientBuilder& Body(http::Body _body);
 		ClientBuilder& Body(const string_view_t _text);
 		ClientBuilder& Timeout(const std::chrono::milliseconds _timeout);

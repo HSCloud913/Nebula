@@ -258,8 +258,6 @@ namespace ne::io
 				return false;
 			case Capability::RECEIVE_OVERHEAD_REDUCED:
 				return false;
-			case Capability::RECEIVE_TRUE_ZERO_COPY:
-				return false;
 		}
 
 		return false;
@@ -381,58 +379,6 @@ namespace ne::io
 
 				ulong_t written = 0;
 				if (::WriteFile(handle, _request.buffer, _request.length, &written, &overlapped))
-				{
-					_result = static_cast<longlong_t>(written);
-					return true;
-				}
-
-				if (::GetLastError() == ERROR_IO_PENDING)
-				{
-					ulong_t transferred = 0;
-					if (::GetOverlappedResult(handle, &overlapped, &transferred, TRUE))
-					{
-						_result = static_cast<longlong_t>(transferred);
-						return true;
-					}
-				}
-				break;
-			}
-			case RequestKind::READ_FIXED:
-			{
-				const HANDLE handle = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(_request.handle));
-
-				OVERLAPPED overlapped{};
-				overlapped.Offset = static_cast<ulong_t>(_request.offset & 0xFFFFFFFFull);
-				overlapped.OffsetHigh = static_cast<ulong_t>(_request.offset >> 32);
-
-				ulong_t read = 0;
-				if (::ReadFile(handle, _request.buffer, static_cast<ulong_t>(_request.length), &read, &overlapped))
-				{
-					_result = static_cast<longlong_t>(read);
-					return true;
-				}
-
-				if (::GetLastError() == ERROR_IO_PENDING)
-				{
-					ulong_t transferred = 0;
-					if (::GetOverlappedResult(handle, &overlapped, &transferred, TRUE))
-					{
-						_result = static_cast<longlong_t>(transferred);
-						return true;
-					}
-				}
-				break;
-			}
-			case RequestKind::WRITE_FIXED:
-			{
-				const HANDLE handle = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(_request.handle));
-
-				OVERLAPPED overlapped{};
-				overlapped.Offset = static_cast<ulong_t>(_request.offset & 0xFFFFFFFFull);
-				overlapped.OffsetHigh = static_cast<ulong_t>(_request.offset >> 32);
-
-				ulong_t written = 0;
-				if (::WriteFile(handle, _request.buffer, static_cast<ulong_t>(_request.length), &written, &overlapped))
 				{
 					_result = static_cast<longlong_t>(written);
 					return true;
@@ -592,7 +538,6 @@ namespace ne::io
 		return _requestKind == RequestKind::WRITE ||
 				_requestKind == RequestKind::SEND ||
 				_requestKind == RequestKind::CONNECT ||
-				_requestKind == RequestKind::WRITE_FIXED ||
 				_requestKind == RequestKind::SEND_FILE ||
 				_requestKind == RequestKind::SEND_TO ||
 				_requestKind == RequestKind::WAIT_WRITABLE;

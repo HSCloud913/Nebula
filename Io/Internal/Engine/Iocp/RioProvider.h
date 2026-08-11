@@ -24,7 +24,7 @@ namespace ne::io
 	 * IocpEngine 이 소유(합성)하는 zero-copy 송수신 provider. 소켓별 RIO_RQ 와 공유 RIO_CQ 를
 	 * lazy 생성하며, RIO_CQ 완료 통지는 별도 엔진 클래스 없이 IocpEngine 의 IOCP 핸들에
 	 * RIO_IOCP_COMPLETION 으로 바인딩해 받는다. RegisterBuffer 로 등록된 영역만 SubmitSendRegistered/
-	 * SubmitReceiveRegistered 로 송수신할 수 있다.
+	 * 로 송신할 수 있다.
 	 *
 	 * @note mutex 로 초기화/등록/해제/RQ 생성을 보호하며, 멀티스레드에서 호출될 수 있다.
 	 */
@@ -84,8 +84,6 @@ namespace ne::io
 	public: /* IRegisteredBufferProvider */
 		/** @brief 등록된 버퍼로 zero-copy 송신을 제출한다(내부적으로 Submit(..., true) 로 위임). */
 		[[nodiscard]] virtual IoResult<void_t> SubmitSendRegistered(const socket_t _socket, const BufferHandle _handle, const void_t* _buffer, const std::size_t _length, void_t* _userData) noexcept override { return Submit(_socket, _handle, _buffer, _length, _userData, true); }
-		/** @brief 등록된 버퍼로 zero-copy 수신을 제출한다(내부적으로 Submit(..., false) 로 위임). */
-		[[nodiscard]] virtual IoResult<void_t> SubmitReceiveRegistered(const socket_t _socket, const BufferHandle _handle, void_t* _buffer, const std::size_t _length, void_t* _userData) noexcept override { return Submit(_socket, _handle, _buffer, _length, _userData, false); }
 
 	public: /* IRegisteredBufferProvider */
 		/**

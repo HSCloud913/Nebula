@@ -181,8 +181,6 @@ namespace ne::io
 				return true;
 			case Capability::RECEIVE_OVERHEAD_REDUCED:
 				return false;
-			case Capability::RECEIVE_TRUE_ZERO_COPY:
-				return false;
 		}
 
 		return false;
@@ -207,6 +205,11 @@ namespace ne::io
 
 	void_t IocpEngine::Deregister(const ulonglong_t _handleKey) noexcept
 	{
+		// RIO provider 의 소켓별 상태(RIO_RQ)도 함께 정리해야 한다. 예전에는 ReleaseSocket 을 아무도
+		// 호출하지 않아 requestQueues 가 무한히 자랐고, 더 나쁘게는 Windows 가 SOCKET 값을 재사용하므로
+		// **새 소켓이 죽은 소켓의 RQ 를 물려받아** 엉뚱한 큐로 데이터를 제출할 수 있었다.
+		if (rioProvider != nullptr) rioProvider->ReleaseSocket(static_cast<socket_t>(_handleKey));
+
 		std::lock_guard lock(mutex);
 		associated.erase(_handleKey);
 	}
@@ -374,18 +377,6 @@ namespace ne::io
 				break;
 			}
 			case RequestKind::WRITE:
-			{
-				ulong_t written = 0;
-				if (!::WriteFile(_handle, _request.buffer, static_cast<ulong_t>(_request.length), &written, &_operation->overlapped)) if (const ulong_t error = ::GetLastError(); error != ERROR_IO_PENDING) syncError = static_cast<int_t>(error);
-				break;
-			}
-			case RequestKind::READ_FIXED:
-			{
-				ulong_t read = 0;
-				if (!::ReadFile(_handle, _request.buffer, static_cast<ulong_t>(_request.length), &read, &_operation->overlapped)) if (const ulong_t error = ::GetLastError(); error != ERROR_IO_PENDING) syncError = static_cast<int_t>(error);
-				break;
-			}
-			case RequestKind::WRITE_FIXED:
 			{
 				ulong_t written = 0;
 				if (!::WriteFile(_handle, _request.buffer, static_cast<ulong_t>(_request.length), &written, &_operation->overlapped)) if (const ulong_t error = ::GetLastError(); error != ERROR_IO_PENDING) syncError = static_cast<int_t>(error);

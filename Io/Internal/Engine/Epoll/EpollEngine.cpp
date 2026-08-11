@@ -207,8 +207,6 @@ namespace ne::io
 				return true;
 			case Capability::RECEIVE_OVERHEAD_REDUCED:
 				return false;
-			case Capability::RECEIVE_TRUE_ZERO_COPY:
-				return false;
 		}
 
 		return false;
@@ -294,26 +292,6 @@ namespace ne::io
 					break;
 				}
 
-				const ssize_t bytes = ::pwrite(fd, _request.buffer, _request.length, static_cast<off_t>(_request.offset));
-				if (bytes >= 0)
-				{
-					_result = static_cast<longlong_t>(bytes);
-					return true;
-				}
-				break;
-			}
-			case RequestKind::READ_FIXED:
-			{
-				const ssize_t bytes = ::pread(fd, _request.buffer, _request.length, static_cast<off_t>(_request.offset));
-				if (bytes >= 0)
-				{
-					_result = static_cast<longlong_t>(bytes);
-					return true;
-				}
-				break;
-			}
-			case RequestKind::WRITE_FIXED:
-			{
 				const ssize_t bytes = ::pwrite(fd, _request.buffer, _request.length, static_cast<off_t>(_request.offset));
 				if (bytes >= 0)
 				{
@@ -448,7 +426,7 @@ namespace ne::io
 
 	bool_t EpollEngine::IsWriteDirection(const RequestKind _requestKind) noexcept
 	{
-		return _requestKind == RequestKind::WRITE || _requestKind == RequestKind::SEND || _requestKind == RequestKind::CONNECT || _requestKind == RequestKind::WRITE_FIXED || _requestKind == RequestKind::SEND_ZERO_COPY || _requestKind == RequestKind::SEND_FILE || _requestKind == RequestKind::SEND_TO ||
+		return _requestKind == RequestKind::WRITE || _requestKind == RequestKind::SEND || _requestKind == RequestKind::CONNECT || _requestKind == RequestKind::SEND_ZERO_COPY || _requestKind == RequestKind::SEND_FILE || _requestKind == RequestKind::SEND_TO ||
 				_requestKind == RequestKind::WAIT_WRITABLE;
 	}
 

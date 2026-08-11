@@ -102,7 +102,7 @@ namespace ne::network::http
 
 		// HTTP/1.1 엔진은 무상태(핸들러/한도만 소유)라 모든 연결이 공유한다. TLS accept 는 이 계층
 		// (AcceptStream)에서 이미 끝났으므로 엔진에는 tlsConfig 를 넘기지 않는다.
-		const http_1::internal::Server http1Engine(handler, nullptr, limits);
+		const http_1::internal::Server http1Engine(handler, limits);
 
 		// 각 연결은 독립 태스크로 동시 처리한다 — 느린/유휴 연결이 다른 연결의 accept 를 막지 않는다.
 		// 종료 시(외부 stop 또는 Accept 실패) connectionStop 으로 진행 중인 연결들의 I/O 를 일괄 취소한다.

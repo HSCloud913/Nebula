@@ -11,9 +11,6 @@
 
 namespace ne::network::http_2::internal
 {
-	// 범용 코루틴 이벤트는 Io 계층으로 승격됨 — 기존 사용처(스트림 완료/드라이버 종료 신호)를 위해 별칭 유지.
-		using Event = ne::Event;
-
 	/**
 	 * @class AsyncMutex
 	 * @brief 코루틴용 비재진입 상호배제(단일 스레드 전용).

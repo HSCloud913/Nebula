@@ -7,7 +7,6 @@
 #include <span>
 #include "Io/Runtime.h"
 #include "Io/Socket.h"
-#include "Io/Listener.h"
 #include "Base/Coroutine/Task.h"
 
 using namespace ne;
@@ -128,17 +127,20 @@ TEST(RuntimeTest, BlockOnDrivesSocketIo)
 	EXPECT_EQ(buffer[1], static_cast<ne::byte_t>('i'));
 }
 
-// ── Listener: Bind(create+bind+listen) → LocalPort 조회 → Accept 로 연결 수락 ──
-TEST(RuntimeTest, ListenerAcceptsConnection)
+// ── Socket 으로 리스너를 세우고(Bind+Listen) LocalPort 조회 → Accept 로 연결 수락 ──
+TEST(RuntimeTest, ListeningSocketAcceptsConnection)
 {
 	const WsaScope wsa;
 	Runtime runtime;
 	ASSERT_TRUE(runtime.IsValid());
 	Context& context = runtime.GetContext();
 
-	auto bound = Listener::Bind(context, "127.0.0.1", 0); // 임시 포트
-	ASSERT_TRUE(bound.IsOk()) << bound.Error().What();
-	Listener listener = std::move(bound.Value());
+	auto created = Socket::Create(context, AF_INET);
+	ASSERT_TRUE(created.IsOk()) << created.Error().What();
+	Socket listener = std::move(created.Value());
+
+	ASSERT_TRUE(listener.Bind("127.0.0.1", 0).IsOk()); // 임시 포트
+	ASSERT_TRUE(listener.Listen(1).IsOk());
 
 	const uint16_t port = listener.LocalPort();
 	ASSERT_NE(port, 0);

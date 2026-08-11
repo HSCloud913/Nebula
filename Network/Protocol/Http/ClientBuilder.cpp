@@ -179,11 +179,6 @@ namespace ne::network::http
 		return *this;
 	}
 
-	ClientBuilder& ClientBuilder::WithHeaders(http::Headers _headers) {
-		request.headers = std::move(_headers);
-		return *this;
-	}
-
 	ClientBuilder& ClientBuilder::Body(http::Body _body) {
 		request.body = std::move(_body);
 		return *this;

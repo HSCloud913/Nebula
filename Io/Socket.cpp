@@ -332,6 +332,23 @@ namespace ne::io
 
 
 
+	uint16_t Socket::LocalPort() const noexcept
+	{
+		sockaddr_storage address{};
+#if defined(_WIN32)
+		int length = static_cast<int>(sizeof(address));
+#else
+		socklen_t length = static_cast<socklen_t>(sizeof(address));
+#endif
+		if (::getsockname(handle.Get(), reinterpret_cast<sockaddr*>(&address), &length) != 0) return 0;
+
+		if (address.ss_family == AF_INET6) return ::ntohs(reinterpret_cast<const sockaddr_in6*>(&address)->sin6_port);
+
+		return ::ntohs(reinterpret_cast<const sockaddr_in*>(&address)->sin_port);
+	}
+
+
+
 	IoResult<void_t> Socket::Shutdown()
 	{
 #if defined(_WIN32)

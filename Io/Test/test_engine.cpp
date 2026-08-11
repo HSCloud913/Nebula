@@ -231,7 +231,6 @@ TEST(IoEngineTest, SupportsMatrix)
 	EXPECT_TRUE(engine.Supports(Capability::SEND_FILE_ZERO_COPY));
 	EXPECT_TRUE(engine.Supports(Capability::SEND_MEM_ZERO_COPY));
 	EXPECT_FALSE(engine.Supports(Capability::RECEIVE_OVERHEAD_REDUCED)); // ReadFixed/WriteFixed 는 일반 파일 I/O 폴백(RIO 는 소켓 전용)
-	EXPECT_FALSE(engine.Supports(Capability::RECEIVE_TRUE_ZERO_COPY));
 }
 
 // ── Wake 가 완료 없이도 대기를 즉시 해제 ──
@@ -343,7 +342,6 @@ using namespace ne;using namespace ne::io;namespace
 	EXPECT_TRUE(engine.Supports(Capability::SEND_FILE_ZERO_COPY));
 	EXPECT_TRUE(engine.Supports(Capability::SEND_MEM_ZERO_COPY));      // MSG_ZEROCOPY
 	EXPECT_FALSE(engine.Supports(Capability::RECEIVE_OVERHEAD_REDUCED)); // 등록 버퍼 없음(plain epoll)
-	EXPECT_FALSE(engine.Supports(Capability::RECEIVE_TRUE_ZERO_COPY));
 }
 
 // io_uring 은 커널(<5.1)/컨테이너 seccomp 로 막힐 수 있다 — 그 경우 SKIP(EpollEngine 폴백이 담당).

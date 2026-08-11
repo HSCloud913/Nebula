@@ -30,22 +30,19 @@ namespace ne::network
 	class TlsStream final :public IStream
 	{
 #if defined(_WIN32)
-		explicit TlsStream(PlainStream&& _transport, void* _credHandle, void* _ctxHandle, void* _messageBuffer, ne::memory::IAllocator* _allocator) noexcept
+		explicit TlsStream(PlainStream&& _transport, void* _credHandle, void* _ctxHandle, void* _messageBuffer) noexcept
 			: transport(std::move(_transport))
-			, allocator(_allocator)
 			, credHandle(_credHandle)
 			, ctxHandle(_ctxHandle)
 			, messageBuffer(_messageBuffer) {}
 #elif defined(NEBULA_WITH_OPENSSL)
-		explicit TlsStream(PlainStream&& _transport, void* _ctx, void* _ssl, ne::memory::IAllocator* _allocator) noexcept
+		explicit TlsStream(PlainStream&& _transport, void* _ctx, void* _ssl) noexcept
 			: transport(std::move(_transport))
-			, allocator(_allocator)
 			, ctx(_ctx)
 			, ssl(_ssl) {}
 #else
-		explicit TlsStream(PlainStream&& _transport, ne::memory::IAllocator* _allocator) noexcept
-			: transport(std::move(_transport))
-			, allocator(_allocator) {}
+		explicit TlsStream(PlainStream&& _transport) noexcept
+			: transport(std::move(_transport)) {}
 #endif
 
 	public:
@@ -56,7 +53,6 @@ namespace ne::network
 			, sniHost(std::move(_other.sniHost))
 			, alpnCandidates(std::move(_other.alpnCandidates))
 			, negotiatedProtocol(std::move(_other.negotiatedProtocol))
-			, allocator(_other.allocator)
 #if defined(_WIN32)
 			, credHandle(std::exchange(_other.credHandle, nullptr))
 			, ctxHandle(std::exchange(_other.ctxHandle, nullptr))
@@ -77,7 +73,6 @@ namespace ne::network
 		string_t sniHost;
 		std::vector<string_t> alpnCandidates; // TlsConfig::alpnProtocols 복사본 — Handshake()/Accept() 가 소비
 		string_t negotiatedProtocol;          // ALPN 결과, 없으면 빈 문자열
-		ne::memory::IAllocator* allocator{ nullptr };
 
 #if defined(_WIN32)
 		void* credHandle{};    // CredHandle*       (SChannel)

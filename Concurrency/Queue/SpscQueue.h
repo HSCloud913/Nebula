@@ -26,14 +26,12 @@ namespace ne::concurrency
 	{
 	public:
 		explicit SpscQueue(std::size_t _capacity)
-			: capacity(_capacity)
-			, mask(_capacity - 1)
+			: mask(_capacity - 1)
 			, buffer(_capacity) { assert((_capacity & (_capacity - 1)) == 0 && "SpscQueue: capacity must be power of 2"); }
 
 		NEBULA_NON_COPYABLE_MOVABLE(SpscQueue)
 
 	private:
-		std::size_t capacity;
 		std::size_t mask;
 		std::vector<T> buffer;
 		alignas(64) std::atomic<std::size_t> writePos{ 0 };

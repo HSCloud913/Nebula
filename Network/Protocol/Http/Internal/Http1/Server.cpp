@@ -27,25 +27,6 @@ namespace ne::network::http_1::internal
 			return connection && ne::util::StringFormat::EqualCaseInsensitive(string_view_t(*connection), string_view_t("close"));
 		}
 
-		// Accept 된 소켓을 TLS(설정 시)/평문 IStream 으로 감싼다. HandleOne/HandleConnection 이 공유한다.
-		ne::Task<http::HttpResult<std::unique_ptr<IStream>>> AcceptStream(ne::io::Socket&& _socket, ne::io::Context& _context, const TlsConfig* _tlsConfig, std::stop_token _stopToken)
-		{
-			using R = http::HttpResult<std::unique_ptr<IStream>>;
-
-			if (_tlsConfig != nullptr)
-			{
-				auto tls = co_await TlsStream::Accept(std::move(_socket), _context, *_tlsConfig, _stopToken);
-				if (tls.IsError()) co_return R::Error(http::HttpError(std::move(tls.Error())).Context("[Server/AcceptStream]"));
-
-				co_return R::Ok(std::make_unique<TlsStream>(std::move(tls.Value())));
-			}
-
-			auto plain = PlainStream::Create(std::move(_socket), _context);
-			if (plain.IsError()) co_return R::Error(http::HttpError(std::move(plain.Error())).Context("[Server/AcceptStream]"));
-
-			co_return R::Ok(std::make_unique<PlainStream>(std::move(plain.Value())));
-		}
-
 		// 스트리밍 본문을 chunked 프레이밍으로 보낸다 — 생산자를 반복 호출해 조각마다 "<hex>\r\n<data>\r\n",
 		// 빈 조각(EOF)에서 종료 청크 "0\r\n\r\n". 생산자 실패 시 chunked 를 종결할 수 없으므로 에러 반환(연결 폐기).
 		ne::Task<http::HttpResult<void_t>> SendChunkedBody(IStream& _stream, const http::BodyProducer& _producer, std::stop_token _stopToken)
@@ -121,53 +102,6 @@ namespace ne::network::http_1::internal
 
 
 
-	ne::Task<http::HttpResult<void_t>> Server::HandleOne(ne::io::Socket _socket, ne::io::Context& _context, std::stop_token _stopToken) const
-	{
-		using R = http::HttpResult<void_t>;
-
-		auto streamResult = co_await AcceptStream(std::move(_socket), _context, tlsConfig, _stopToken);
-		if (streamResult.IsError()) co_return R::Error(std::move(streamResult.Error()));
-
-		std::unique_ptr<IStream> stream = std::move(streamResult.Value());
-
-		MessageReader reader(*stream, limits);
-		auto request = co_await reader.ReadRequest(_stopToken);
-		if (request.IsError())
-		{
-			(void_t)co_await SendReadErrorResponse(*stream, request.Error(), _stopToken);
-			(void_t)stream->Close();
-			co_return R::Error(std::move(request.Error()));
-		}
-
-		auto response = co_await handler(request.Value());
-		if (response.IsError())
-		{
-			(void_t)stream->Close();
-			co_return R::Error(std::move(response.Error()));
-		}
-
-		http::Response& res = response.Value();
-		if (res.body.IsStreaming()) { if (!res.headers.Has("Transfer-Encoding")) res.headers.Set("Transfer-Encoding", "chunked"); }
-		else if (!res.body.IsEmpty() && !res.headers.Has("Content-Length")) res.headers.Set("Content-Length", std::to_string(res.body.Size()));
-		if (!res.headers.Has("Connection")) res.headers.Set("Connection", "close");
-
-		auto sent = co_await SendResponse(*stream, res, _stopToken);
-		(void_t)stream->Close();
-		if (sent.IsError()) co_return R::Error(std::move(sent.Error()));
-
-		co_return R::Ok();
-	}
-
-	ne::Task<http::HttpResult<void_t>> Server::HandleConnection(ne::io::Socket _socket, ne::io::Context& _context, std::stop_token _stopToken) const
-	{
-		using R = http::HttpResult<void_t>;
-
-		auto streamResult = co_await AcceptStream(std::move(_socket), _context, tlsConfig, _stopToken);
-		if (streamResult.IsError()) co_return R::Error(std::move(streamResult.Error()));
-
-		co_return co_await HandleEstablished(std::move(streamResult.Value()), std::move(_stopToken));
-	}
-
 	ne::Task<http::HttpResult<void_t>> Server::HandleEstablished(std::unique_ptr<IStream> _stream, std::stop_token _stopToken) const
 	{
 		using R = http::HttpResult<void_t>;
@@ -224,55 +158,5 @@ namespace ne::network::http_1::internal
 
 		(void_t)stream->Close();
 		co_return R::Ok();
-	}
-
-	ne::Task<void_t> Server::RunConnection(ne::io::Socket _socket, ne::io::Context& _context, std::stop_token _stopToken, std::size_t& _active, ne::Event& _allDone) const
-	{
-		// 연결 하나의 처리 실패가 전체 Accept 루프를 끊지 않도록, HandleConnection() 의 에러는 무시한다.
-		(void_t)co_await HandleConnection(std::move(_socket), _context, std::move(_stopToken));
-
-		// SignalDeferred: Serve 는 깨어나면 이 태스크의 프레임을 파괴하므로, 이 프레임이 완전히
-		// 끝난 뒤(다음 tick) 재개되도록 지연 신호한다 — 실행 중인 프레임 파괴 방지.
-		if (--_active == 0) _allDone.SignalDeferred(_context);
-	}
-
-	ne::Task<http::HttpResult<void_t>> Server::Serve(ne::io::Socket _listener, ne::io::Context& _context, std::stop_token _stopToken) const
-	{
-		using R = http::HttpResult<void_t>;
-
-		// 각 연결은 독립 태스크로 동시 처리한다 — 느린/유휴 keep-alive 연결이 다른 연결의 accept 를 막지 않는다.
-		// 종료 시(외부 stop 또는 Accept 실패) connectionStop 으로 진행 중인 연결들의 I/O 를 일괄 취소한다.
-		std::stop_source connectionStop;
-		std::stop_callback forwardStop{ _stopToken, [&connectionStop] { connectionStop.request_stop(); } };
-
-		std::size_t active = 0;
-		ne::Event allDone;
-		std::vector<ne::Task<void_t>> connections; // 연결 태스크 소유 컨테이너(완료 프레임은 다음 accept 때 회수)
-
-		R result = R::Ok();
-
-		while (!_stopToken.stop_requested())
-		{
-			auto accepted = co_await _listener.Accept(false, _stopToken);
-			if (accepted.IsError())
-			{
-				// stop 요청에 의한 Accept 취소는 정상 종료로 본다.
-				if (!_stopToken.stop_requested()) result = R::Error(http::HttpError(std::move(accepted.Error())).Context("[Server/Serve]"));
-				break;
-			}
-
-			std::erase_if(connections, [](const ne::Task<void_t>& _task) { return _task.IsReady(); });
-
-			++active;
-			connections.push_back(RunConnection(std::move(accepted.Value()), _context, connectionStop.get_token(), active, allDone));
-			connections.back().Resume();
-		}
-
-		// 남은 연결의 I/O 를 취소하고 전부 끝날 때까지 기다린 뒤 반환한다 — in-flight op 를 문 채
-		// 반환하면 호출자가 엔진을 파괴할 때 완료가 파괴된 엔진으로 배달되어 크래시할 수 있다.
-		connectionStop.request_stop();
-		while (active > 0) co_await allDone;
-
-		co_return result;
 	}
 }

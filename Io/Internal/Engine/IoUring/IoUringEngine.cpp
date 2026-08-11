@@ -37,7 +37,6 @@ namespace ne::io
 			return;
 		}
 
-		bufferProvider = std::make_unique<IoUringProvider>(&ring);
 
 		isValid = true;
 		ArmWakePoll();
@@ -107,14 +106,6 @@ namespace ne::io
 					::io_uring_prep_writev(sqe, fd, operation->iovecs.data(), static_cast<uint_t>(operation->iovecs.size()), _request.offset);
 				}
 				else { ::io_uring_prep_write(sqe, fd, _request.buffer, static_cast<uint_t>(_request.length), _request.offset); }
-				break;
-			case RequestKind::READ_FIXED:
-				// bufferId 는 IoUringProvider::RegisterBuffer() 가 "슬롯 인덱스 + 1" 로 발급하므로
-				// 여기서 -1 을 해 원래의 0-based 슬롯 인덱스(buf_index)로 되돌린다.
-				::io_uring_prep_read_fixed(sqe, fd, _request.buffer, static_cast<uint_t>(_request.length), _request.offset, static_cast<int_t>(_request.bufferId) - 1);
-				break;
-			case RequestKind::WRITE_FIXED:
-				::io_uring_prep_write_fixed(sqe, fd, _request.buffer, static_cast<uint_t>(_request.length), _request.offset, static_cast<int_t>(_request.bufferId) - 1);
 				break;
 			case RequestKind::WAIT_READABLE:
 				::io_uring_prep_poll_add(sqe, fd, POLLIN);
@@ -296,8 +287,6 @@ namespace ne::io
 				return true;
 			case Capability::RECEIVE_OVERHEAD_REDUCED:
 				return true;
-			case Capability::RECEIVE_TRUE_ZERO_COPY:
-				return false;
 		}
 
 		return false;
