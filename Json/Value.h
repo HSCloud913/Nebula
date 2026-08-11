@@ -174,10 +174,6 @@ namespace ne::json
 		Value& operator=(const Array& _value);
 		Value& operator=(Array&& _value);
 
-	public:
-		/** @brief 이 값이 객체(OBJECT)일 때 키 목록을 반환합니다. 객체가 아니면 빈 벡터를 반환합니다. */
-		[[nodiscard]] std::vector<string_t> ObjectKeys() const;
-
 	protected:
 		/** @brief 재귀 하강 파서의 진입점입니다. _depth 가 MaxParseDepth 를 넘으면 무효 값으로 실패시킵니다. */
 		static Value Parse(lpcstr_t* _data, int_t _depth = 0);

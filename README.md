@@ -23,11 +23,11 @@ C++23 기반의 모듈러 공용 라이브러리. 저수준 I/O(코루틴 기반
 | Log | `ne::log` (별칭 `ne::Logger`) | 비동기 파일 로거 | ✅ |
 | Json | `ne::json` | `Value`/`Object`/`Array`, 자유함수 `Parse`/`Stringify` | ✅ |
 | Util | `ne::util` | `Ascii`, `Base64`, `StringFormat` | ✅ |
-| Time | `ne::time` | `TimerWheel`(min-heap), 코루틴 `Awaitable` | ✅ |
+| Time | `ne::time` | `TimerQueue`(min-heap, 반복 타이머), `Sleep`/`Deadline` awaitable, `HttpDate` | ✅ |
 | Io | `ne::io` | 비동기 엔진(IOCP/WsaPoll/epoll/io_uring) + `Context`/`Task`/`IStream`/`Socket`/`File` | ✅ |
 | Cryptography | `ne::crypto` | Hash(MD5/SHA1/2/3/CRC32)/HMAC/AES/RSA/BigInt/SecureRandom | 🚧 |
 | Ipc | `ne::ipc` | `Pipe`/`SharedMemory`/`Semaphore`/`MessageQueue` | 🚧 |
-| Network | `ne::network` | `PlainStream`/`TlsStream`(Schannel/OpenSSL)/`Dns`, HTTP/1(진행 중) | 🚧 |
+| Network | `ne::network` | `PlainStream`/`TlsStream`(Schannel/OpenSSL)/`Dns`, HTTP/1.1·HTTP/2 통합 API(`ne::network::http`) | 🚧 |
 
 🚧 = 활발히 개발 중(HTTP 등). `find_package` 설치 대상에는 아직 미포함.
 
@@ -36,7 +36,7 @@ C++23 기반의 모듈러 공용 라이브러리. 저수준 I/O(코루틴 기반
 - **CMake ≥ 3.28**
 - **컴파일러:** Windows = MSVC(Visual Studio 2022), Linux = GCC/Clang (C++23 지원)
 - 소스는 **BOM 없는 UTF-8**. MSVC에서는 `/utf-8`이 필요하며 빌드 스크립트가 자동 적용한다.
-- 의존성은 `FetchContent`로 자동 취득: googletest(테스트), libssh2(Network).
+- 의존성은 `FetchContent`로 자동 취득: googletest(테스트).
 - (Linux) Io는 `liburing`을 요구한다.
 
 ## 빌드 & 테스트
@@ -66,7 +66,7 @@ target_link_libraries(app PRIVATE
         Nebula::Io)
 ```
 
-> 현재 export 범위: 핵심(Base·Memory·Concurrency·Log·Json·Util·Time) + Io. Network/Ipc는 외부 의존성(libssh2/OpenSSL/liburing) 정리 후 추가 예정.
+> 현재 export 범위: 핵심(Base·Memory·Concurrency·Log·Json·Util·Time) + Io. Network/Ipc는 외부 의존성(OpenSSL/liburing) 정리 후 추가 예정.
 
 ## 최소 사용 예제
 

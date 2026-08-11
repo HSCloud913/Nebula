@@ -10,6 +10,8 @@
 #	include <cerrno>
 #endif
 
+
+
 namespace ne::io
 {
 	// 여기 목록은 "이식 가능한 사용자 코드가 실제로 분기해야 하는 것"만 담는다. 나머지는 OS_FAILURE 로

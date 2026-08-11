@@ -42,7 +42,7 @@
 
 **Phase 5 — Io-Network 확장 (D-3/D-4/D-5 step 2·3·4)**
 - `when_any` 콤비네이터: `WhenAny(ctx, vector<Task<T>>)` → 최초 완료 태스크의 `{index, value}` 반환, 진 태스크는 파괴로 취소. 공유 race 프리미티브 `RaceState`/`AwaitDecision`를 `Io/Coroutine/Internal/Race.h`(`ne::io::internal`)로 추출하고 `Timeout` 리팩터 [D-3/D-5 step2]
-- 엔진 팩토리 `MakeEngine(EngineType)` + 최상위 `Runtime` 파사드(engine+TimerWheel+Context RAII, `BlockOn(Task<T>)`로 한 줄 동기 실행) [D-4/D-5 step3]
+- 엔진 팩토리 `MakeEngine(EngineType)` + 최상위 `Runtime` 파사드(engine+TimerQueue+Context RAII, `BlockOn(Task<T>)`로 한 줄 동기 실행) [D-4/D-5 step3]
 - `AsyncListener`: 서버측 accept 헬퍼(create+bind+listen 팩토리, `Accept()` 코루틴, `LocalPort()`) [D-3/D-5 step2]
 - 프로토콜 Client 한 줄 파사드: `http_1::FetchGet`/`FetchPost`(자체 Runtime으로 dns→connect→(tls)→요청/응답을 한 줄에). 기존 `Client`/`Server` 무수정, 신규 `Fetch.{h,cpp}` [D-4/D-5 step4]
 - 신규 Io 테스트 7개(WhenAny 2·Runtime 4·AsyncListener 1) 통과, `Fetch`는 `NebulaNetwork` 오브젝트로 컴파일 확인(E2E는 NetworkTest WIP 링크 문제로 보류)
@@ -121,7 +121,7 @@
 - [ ] 이동 후(moved-from) 객체의 유효 상태가 정의돼 있는가. *(미점검)*
 
 ### A-5. 스레드 안전성
-- [x] 각 공개 타입의 스레드 안전 계약이 헤더에 명시돼 있는가. — **⚠️ 부분:** 큐(Mpsc/Spsc)는 명시, TimerWheel·IStream은 미명시.
+- [x] 각 공개 타입의 스레드 안전 계약이 헤더에 명시돼 있는가. — **⚠️ 부분:** 큐(Mpsc/Spsc)는 명시, TimerQueue·IStream은 미명시.
 - [x] `memory_order` 사용이 정당한가. lock-free 경로는 리뷰 + TSan 필수. — **⚠️ 부분:** PoolAllocator 태그드 CAS 등 구현은 확인, 그러나 TSan/CI 부재로 실증 안 됨.
 - [x] false sharing 방지(`alignas(64)`)가 실제 경합 필드에 적용됐고, 반대로 과도하게 남발되지 않았는가. — **✅ 확인:** SpscQueue.h:37-38 read/writePos에 alignas(64), 과남발 징후 없음.
 - [x] ABA·lost-wakeup 대비가 주석 주장대로 코드에서 성립하는가. — **✅ 확인:** PoolAllocator 32bit index+32bit tag 패킹 CAS로 ABA 방어(PoolAllocator.h:41-45).
@@ -145,7 +145,7 @@
 ### A-8. 문서 · 예제
 - [x] README가 실제 내용을 반영하는가. — **✅ 확인(미흡):** README 7줄, 모듈 목록·빌드법·예제 없음.
 - [x] 각 공개 타입에 **복붙 가능한 최소 사용 예제**가 있는가. — **❌ 부재.**
-- [x] Doxygen 주석의 서술이 현재 구현과 일치하는가. — **⚠️ 부분:** 표본상 대체로 일치하나 괴리 존재(예: `TimerWheel`이 실제로는 min-heap, `SecureRandom` 주석 "사실상 실패 안 함").
+- [x] Doxygen 주석의 서술이 현재 구현과 일치하는가. — **⚠️ 부분:** `TimerWheel`→`TimerQueue` 리네이밍으로 이름/구현 괴리는 해소(2026-08-11). `SecureRandom` 주석 "사실상 실패 안 함" 은 남아 있음.
 - [x] 스레드 안전/수명/에러 계약이 "코드에만 있고 문서에 없는" 상태가 아닌가. — **⚠️ 확인:** 상당수 계약이 코드/주석에만 존재, 공개 문서 없음.
 
 ### A-9. 테스트 · 이식성
@@ -212,9 +212,9 @@
 - [x] `StringFormat`이 `std::format`과 중복이면 존재 이유가 명확한가. — **❌ 중복 아님:** 포매팅이 아니라 Trim/Lower/Upper/인코딩(MBCS/WCS/UTF-8) 변환 유틸. 이름이 오해 소지.
 - [x] `Ascii` 유틸이 로캘 비의존인가. — **✅ 확인:** Ascii는 고정 테이블·산술 변환으로 로캘 무관. (단 StringFormat의 Lower/UpperTransform은 `std::tolower` 사용 — 함정 잔존.)
 
-### B-7. Time — `TimerWheel` · `Coroutine/Awaitable`
+### B-7. Time — `TimerQueue` · `Sleep` · `HttpDate`
 > 비교 기준선: Asio timers, folly HHWheelTimer, libuv timers
-- [x] `TimerWheel`의 해상도/최대 지연 범위와 tick 비용이 문서화됐는가. — **⚠️ 부분:** 해상도(ms)·복잡도(O(expired·log n)) 문서화, 최대 지연 범위 미문서. (실제 구현은 min-heap이며 이름이 "Wheel"이라 괴리.)
+- [x] `TimerQueue`의 해상도/최대 지연 범위와 tick 비용이 문서화됐는가. — **⚠️ 부분:** 해상도(ms)·복잡도(O(expired·log n)) 문서화, 최대 지연 범위 미문서. (이름/구현 괴리는 2026-08-11 리네이밍으로 해소.)
 - [x] 타이머 **취소** API가 있고, 발화 직전 취소의 경쟁 조건이 정의돼 있는가. — **✅ 확인:** `Cancel(id)` 존재, cancel/fire 모두 mutex 하 `live.erase(id)`로 경쟁 결정적.
 - [x] 스레드 안전성 — 어느 스레드에서 add/cancel/advance 가능한지 명시. — **⚠️ 부분:** 전 연산 mutex 보호(안전)하나 스레드 계약 문서 없음. 콜백은 락 밖 실행.
 - [x] `TimerAwaitable`이 취소·예외 상황에서 코루틴을 안전히 재개/파괴하는가. — **✅ 확인:** `~Awaitable`가 `timerId!=0`이면 타이머 취소(Awaitable.h:33)로 파괴된 프레임 재개 방지.
@@ -278,7 +278,7 @@
 - [x] **서버측 공통:** `AsyncListener`(accept 루프) 헬퍼. — **✅ 개선:** `io::AsyncListener` 추가(create+bind+listen 팩토리 + `Accept()` 코루틴 + `LocalPort()`). 단 연결별 동시 처리(spawn)는 호출자 몫 — `http_1::Server::Serve`는 순차 처리.
 
 ### D-4. 최종 사용자 한 줄 호출 (ergonomics)
-- [x] **Runtime(Level 4) 도입** — engine+context+timer+thread를 RAII 하나로. — **✅ 완료:** `io::Runtime`(engine+TimerWheel+Context RAII, `BlockOn(Task<T>)`로 한 줄 동기 실행) 추가. 다중코어는 `ContextPool` 유지.
+- [x] **Runtime(Level 4) 도입** — engine+context+timer+thread를 RAII 하나로. — **✅ 완료:** `io::Runtime`(engine+TimerQueue+Context RAII, `BlockOn(Task<T>)`로 한 줄 동기 실행) 추가. 다중코어는 `ContextPool` 유지.
 - [x] **엔진 팩토리** — 플랫폼 best 엔진 자동 선택. — **✅ 완료:** 명명 팩토리 `io::MakeEngine(EngineType)` 추가(`ContextPool`/`Runtime` 공용 진입점).
 - [x] **프로토콜 클라이언트 파사드** — dns→connect→tls→프로토콜을 한 줄로. — **✅ 개선:** `http_1::FetchGet`/`FetchPost`가 자체 Runtime으로 한 줄 호출 완성(HTTPS는 TlsStream ALPN 라우팅). keep-alive 없음(1요청=1연결)은 잔여.
 - [x] 위 세 조각이 **순수 additive**인가. — **✅ 가능:** 계층이 단방향으로 깨끗(D-1).

@@ -199,19 +199,6 @@ namespace ne::json
 
 
 
-	std::vector<string_t> Value::ObjectKeys() const
-	{
-		if (!IsObject()) return {};
-
-		std::vector<string_t> keys;
-		for (const auto& value : AsObject())
-		{
-			keys.push_back(value.first);
-		}
-
-		return keys;
-	}
-
 
 
 	Value Value::Parse(lpcstr_t* _data, const int_t _depth)

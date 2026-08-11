@@ -56,7 +56,9 @@ add_subdirectory(Network)
 install(DIRECTORY Base Memory Concurrency Log Json Util Time Io Cryptography
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
         FILES_MATCHING PATTERN "*.h"
-        REGEX "/Internal/" EXCLUDE
+        # "/Internal/" 로만 쓰면 파일은 제외되지만 디렉터리 자체(.../Io/Internal)는 매치되지 않아
+        # 설치 트리에 빈 폴더가 남는다. 경로 끝도 함께 매치시켜 폴더 생성까지 막는다.
+        REGEX "/Internal(/|$)" EXCLUDE
         REGEX "/Test" EXCLUDE)
 
 install(EXPORT NebulaTargets
