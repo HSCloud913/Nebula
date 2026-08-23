@@ -25,9 +25,9 @@ namespace
 		co_return left + right;
 	}
 
-	Task<void_t> SetFlag(bool_t& _flag)
+	Task<void_t> SetFlag(bool_t& _isSet)
 	{
-		_flag = true;
+		_isSet = true;
 		co_return;
 	}
 
@@ -41,17 +41,17 @@ namespace
 		void await_resume() const noexcept {}
 	};
 
-	// 대기 중 소멸되면 destroyed 를 켜는 감시자 — 프레임 파괴 시 지역 객체 소멸자가 도는지 확인한다.
+	// 대기 중 소멸되면 isDestroyed 를 켜는 감시자 — 프레임 파괴 시 지역 객체 소멸자가 도는지 확인한다.
 	struct DestructionWitness
 	{
-		bool_t& destroyed;
+		bool_t& isDestroyed;
 
-		~DestructionWitness() { destroyed = true; }
+		~DestructionWitness() { isDestroyed = true; }
 	};
 
-	Task<void_t> SuspendForever(std::coroutine_handle<>& _slot, bool_t& _destroyed)
+	Task<void_t> SuspendForever(std::coroutine_handle<>& _slot, bool_t& _isDestroyed)
 	{
-		const DestructionWitness witness{ _destroyed };
+		const DestructionWitness witness{ _isDestroyed };
 
 		co_await ManualAwaiter{ _slot };
 		co_return;
@@ -85,14 +85,14 @@ TEST(TaskTest, ResumeProducesResult)
 
 TEST(TaskTest, VoidSpecializationRuns)
 {
-	bool_t flag = false;
-	auto task = SetFlag(flag);
+	bool_t isSet = false;
+	auto task = SetFlag(isSet);
 
-	EXPECT_FALSE(flag); // 아직 시작 전
+	EXPECT_FALSE(isSet); // 아직 시작 전
 	task.Resume();
 
 	EXPECT_TRUE(task.IsReady());
-	EXPECT_TRUE(flag);
+	EXPECT_TRUE(isSet);
 }
 
 TEST(TaskTest, AwaitChainsNestedTasks)
@@ -142,22 +142,22 @@ TEST(TaskTest, IsMoveOnly)
 
 TEST(TaskTest, MoveAssignmentDestroysPreviousFrame)
 {
-	bool_t firstDestroyed = false;
+	bool_t isFirstDestroyed = false;
 	std::coroutine_handle<> slot{};
 
-	auto task = SuspendForever(slot, firstDestroyed);
+	auto task = SuspendForever(slot, isFirstDestroyed);
 	task.Resume(); // 대기 지점까지 진행
 	ASSERT_FALSE(task.IsReady());
-	ASSERT_FALSE(firstDestroyed);
+	ASSERT_FALSE(isFirstDestroyed);
 
 	// 다른 Task 를 대입하면 기존 프레임(대기 중)이 파괴되어야 한다.
-	bool_t replacementFlag = false;
-	task = SetFlag(replacementFlag);
+	bool_t isReplacementSet = false;
+	task = SetFlag(isReplacementSet);
 
-	EXPECT_TRUE(firstDestroyed) << "대입으로 밀려난 프레임이 파괴되지 않았다";
+	EXPECT_TRUE(isFirstDestroyed) << "대입으로 밀려난 프레임이 파괴되지 않았다";
 
 	task.Resume();
-	EXPECT_TRUE(replacementFlag);
+	EXPECT_TRUE(isReplacementSet);
 }
 
 
@@ -168,34 +168,34 @@ TEST(TaskTest, MoveAssignmentDestroysPreviousFrame)
 // WhenAny/Timeout 이 진 쪽을 파괴해 취소하는 방식이 이 계약에 기대고 있다.
 TEST(TaskTest, DestroyingSuspendedTaskIsSafe)
 {
-	bool_t destroyed = false;
+	bool_t isDestroyed = false;
 	std::coroutine_handle<> slot{};
 
 	{
-		auto task = SuspendForever(slot, destroyed);
+		auto task = SuspendForever(slot, isDestroyed);
 		task.Resume();
 
 		ASSERT_FALSE(task.IsReady());           // 대기 중
-		ASSERT_FALSE(destroyed);
+		ASSERT_FALSE(isDestroyed);
 		ASSERT_TRUE(static_cast<bool_t>(slot)); // 대기점이 핸들을 넘겨받았다
 	} // 여기서 파괴 — 재개 없이 폐기하는 것이 정상 경로
 
-	EXPECT_TRUE(destroyed) << "대기 중 파괴에서 코루틴 지역 객체의 소멸자가 돌지 않았다";
+	EXPECT_TRUE(isDestroyed) << "대기 중 파괴에서 코루틴 지역 객체의 소멸자가 돌지 않았다";
 }
 
 // 시작조차 하지 않은(initial_suspend 상태) Task 를 파괴해도 안전해야 한다.
 TEST(TaskTest, DestroyingNeverStartedTaskIsSafe)
 {
-	bool_t destroyed = false;
+	bool_t isDestroyed = false;
 	std::coroutine_handle<> slot{};
 
 	{
-		auto task = SuspendForever(slot, destroyed);
+		auto task = SuspendForever(slot, isDestroyed);
 		ASSERT_FALSE(task.IsReady());
 	}
 
 	// Resume 을 한 번도 하지 않았으므로 본문이 실행되지 않았다 — witness 자체가 만들어지지 않는다.
-	EXPECT_FALSE(destroyed);
+	EXPECT_FALSE(isDestroyed);
 	EXPECT_FALSE(static_cast<bool_t>(slot));
 }
 

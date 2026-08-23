@@ -66,31 +66,31 @@ namespace ne::network::http_2::internal
 		_out.insert(_out.end(), _payload.begin(), _payload.end());
 	}
 
-	void_t AppendData(std::vector<byte_t>& _out, const std::uint32_t _streamId, const std::span<const byte_t> _data, const bool_t _endStream)
+	void_t AppendData(std::vector<byte_t>& _out, const std::uint32_t _streamId, const std::span<const byte_t> _data, const bool_t _isEndStream)
 	{
-		AppendFrame(_out, FrameType::DATA, _endStream ? FLAG_END_STREAM : FLAG_NONE, _streamId, _data);
+		AppendFrame(_out, FrameType::DATA, _isEndStream ? FLAG_END_STREAM : FLAG_NONE, _streamId, _data);
 	}
 
-	void_t AppendHeaderBlock(std::vector<byte_t>& _out, const std::uint32_t _streamId, const std::span<const byte_t> _headerBlock, const bool_t _endStream, const std::uint32_t _maxFrameSize)
+	void_t AppendHeaderBlock(std::vector<byte_t>& _out, const std::uint32_t _streamId, const std::span<const byte_t> _headerBlock, const bool_t _isEndStream, const std::uint32_t _maxFrameSize)
 	{
 		const std::uint32_t maxChunk = _maxFrameSize == 0 ? DefaultMaxFrameSize : _maxFrameSize;
 
 		std::size_t offset = 0;
-		bool_t first = true;
+		bool_t isFirst = true;
 		do
 		{
 			const std::size_t remaining = _headerBlock.size() - offset;
 			const std::size_t chunk = std::min<std::size_t>(remaining, maxChunk);
-			const bool_t last = (offset + chunk) >= _headerBlock.size();
+			const bool_t isLast = (offset + chunk) >= _headerBlock.size();
 
 			byte_t flags = FLAG_NONE;
-			if (last) flags |= FLAG_END_HEADERS;
-			if (first && _endStream) flags |= FLAG_END_STREAM;
+			if (isLast) flags |= FLAG_END_HEADERS;
+			if (isFirst && _isEndStream) flags |= FLAG_END_STREAM;
 
-			AppendFrame(_out, first ? FrameType::HEADERS : FrameType::CONTINUATION, flags, _streamId, _headerBlock.subspan(offset, chunk));
+			AppendFrame(_out, isFirst ? FrameType::HEADERS : FrameType::CONTINUATION, flags, _streamId, _headerBlock.subspan(offset, chunk));
 
 			offset += chunk;
-			first = false;
+			isFirst = false;
 		}
 		while (offset < _headerBlock.size());
 	}
@@ -127,11 +127,11 @@ namespace ne::network::http_2::internal
 		AppendFrame(_out, FrameType::RST_STREAM, FLAG_NONE, _streamId, payload);
 	}
 
-	void_t AppendPing(std::vector<byte_t>& _out, const std::span<const byte_t> _opaque8, const bool_t _ack)
+	void_t AppendPing(std::vector<byte_t>& _out, const std::span<const byte_t> _opaque8, const bool_t _isAck)
 	{
 		byte_t opaque[8] = {};
 		for (std::size_t i = 0; i < 8 && i < _opaque8.size(); ++i) opaque[i] = _opaque8[i];
-		AppendFrame(_out, FrameType::PING, _ack ? FLAG_ACK : FLAG_NONE, 0, std::span<const byte_t>(opaque, 8));
+		AppendFrame(_out, FrameType::PING, _isAck ? FLAG_ACK : FLAG_NONE, 0, std::span<const byte_t>(opaque, 8));
 	}
 
 	void_t AppendGoAway(std::vector<byte_t>& _out, const std::uint32_t _lastStreamId, const ErrorCode _code, const std::span<const byte_t> _debug)

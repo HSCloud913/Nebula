@@ -22,7 +22,7 @@ namespace ne::network::http
 
 
 
-	string_t UrlDecode(const string_view_t _text, const bool_t _plusAsSpace)
+	string_t UrlDecode(const string_view_t _text, const bool_t _isPlusAsSpace)
 	{
 		string_t result;
 		result.reserve(_text.size());
@@ -43,7 +43,7 @@ namespace ne::network::http
 				}
 			}
 
-			result += (_plusAsSpace && current == '+') ? ' ' : current;
+			result += (_isPlusAsSpace && current == '+') ? ' ' : current;
 		}
 
 		return result;

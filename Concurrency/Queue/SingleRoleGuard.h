@@ -27,26 +27,26 @@ namespace ne::concurrency
 		class Scope
 		{
 		public:
-			Scope(std::atomic<bool_t>& _active, const char* _role) noexcept
-				: active(_active)
+			Scope(std::atomic<bool_t>& _isActive, const char* _role) noexcept
+				: isActive(_isActive)
 			{
-				const bool_t wasActive = active.exchange(true, std::memory_order_acquire);
+				const bool_t wasActive = isActive.exchange(true, std::memory_order_acquire);
 				assert(!wasActive && _role);
 				(void_t)_role;
 			}
 
-			~Scope() { active.store(false, std::memory_order_release); }
+			~Scope() { isActive.store(false, std::memory_order_release); }
 
 			NEBULA_NON_COPYABLE_MOVABLE(Scope)
 
 		private:
-			std::atomic<bool_t>& active;
+			std::atomic<bool_t>& isActive;
 		};
 
-		[[nodiscard]] Scope Enter(const char* _role) noexcept { return Scope{ active, _role }; }
+		[[nodiscard]] Scope Enter(const char* _role) noexcept { return Scope{ isActive, _role }; }
 
 	private:
-		std::atomic<bool_t> active{ false };
+		std::atomic<bool_t> isActive{ false };
 	};
 #else
 	class SingleRoleGuard

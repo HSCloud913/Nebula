@@ -167,10 +167,10 @@ namespace ne::network::http_2::internal
 		co_return R::Ok();
 	}
 
-	ne::Task<ne::io::IoResult<void_t>> Connection::SendSettings(const bool_t _ack, std::stop_token _stopToken)
+	ne::Task<ne::io::IoResult<void_t>> Connection::SendSettings(const bool_t _isAck, std::stop_token _stopToken)
 	{
 		std::vector<byte_t> out;
-		if (_ack) AppendSettingsAck(out);
+		if (_isAck) AppendSettingsAck(out);
 		else
 		{
 			const auto settings = LocalSettings();
@@ -235,7 +235,7 @@ namespace ne::network::http_2::internal
 		ids.reserve(streams.size());
 		for (auto& [id, stream] : streams)
 		{
-			stream->failed = true;
+			stream->hasFailed = true;
 			ids.push_back(id);
 		}
 
@@ -262,7 +262,7 @@ namespace ne::network::http_2::internal
 		if (_frame.header.type == FrameType::HEADERS || _frame.header.type == FrameType::CONTINUATION)
 		{
 			stream.headerBlock.insert(stream.headerBlock.end(), _frame.payload.begin(), _frame.payload.end());
-			if (_frame.header.type == FrameType::HEADERS && _frame.header.HasFlag(FLAG_END_STREAM)) stream.endStreamFlag = true;
+			if (_frame.header.type == FrameType::HEADERS && _frame.header.HasFlag(FLAG_END_STREAM)) stream.hasEndStreamFlag = true;
 
 			if (_frame.header.HasFlag(FLAG_END_HEADERS))
 			{
@@ -270,8 +270,8 @@ namespace ne::network::http_2::internal
 				stream.headerBlock.clear();
 				if (!decoded)
 				{
-					failReason = "HPACK decode failed";
-					stream.failed = true;
+					failReason = "HPACK decode hasFailed";
+					stream.hasFailed = true;
 					stream.complete.SignalDeferred(context);
 					return;
 				}
@@ -282,12 +282,12 @@ namespace ne::network::http_2::internal
 					else if (!header.name.empty() && header.name.front() == ':') continue; // 기타 pseudo 무시
 					else stream.headers.Add(header.name, header.value);
 				}
-				stream.headersDone = true;
+				stream.isHeadersDone = true;
 
 				// 스트리밍 sink: 헤더가 완성되는 즉시 onHead 를 1회 호출. false 반환 시 스트림 중단(RST 예약).
 				if (stream.sink && stream.sink->onHead && !stream.sink->onHead(stream.statusCode, {}, stream.headers))
 				{
-					stream.done = true;
+					stream.isDone = true;
 					pendingResets.push_back(_frame.header.streamId);
 					stream.complete.SignalDeferred(context);
 					return;
@@ -300,7 +300,7 @@ namespace ne::network::http_2::internal
 			{
 				if (stream.sink->onBody && !_frame.payload.empty() && !stream.sink->onBody(std::span<const byte_t>(_frame.payload)))
 				{
-					stream.done = true;
+					stream.isDone = true;
 					pendingResets.push_back(_frame.header.streamId);
 					stream.complete.SignalDeferred(context);
 					return;
@@ -310,15 +310,15 @@ namespace ne::network::http_2::internal
 
 			if (_frame.header.HasFlag(FLAG_END_STREAM))
 			{
-				stream.done = true;
+				stream.isDone = true;
 				stream.complete.SignalDeferred(context);
 				return;
 			}
 		}
 
-		if (stream.headersDone && stream.endStreamFlag && !stream.done)
+		if (stream.isHeadersDone && stream.hasEndStreamFlag && !stream.isDone)
 		{
-			stream.done = true;
+			stream.isDone = true;
 			stream.complete.SignalDeferred(context);
 		}
 	}
@@ -326,7 +326,7 @@ namespace ne::network::http_2::internal
 	ne::Task<void_t> ClientConnection::RunDriver()
 	{
 		co_await RunDriverLoop();
-		driverFinished = true;
+		isDriverFinished = true;
 
 		// SignalDeferred: 동기 Signal 이면 DrainClose 대기자가 이 드라이버 스택 안에서 재개되어,
 		// 그 연장선에서 connection(=이 프레임의 소유자)을 파괴할 수 있다 — 실행 중인 프레임의 자기
@@ -340,7 +340,7 @@ namespace ne::network::http_2::internal
 		driverStop.request_stop();
 		Close(); // 진행 중인 Receive/Send 완료를 취소로 깨운다
 
-		if (driver && !driverFinished) co_await driverDone; // 드라이버가 완전히 끝날 때까지 대기(엔진 파괴 전 in-flight op 제거)
+		if (driver && !isDriverFinished) co_await driverDone; // 드라이버가 완전히 끝날 때까지 대기(엔진 파괴 전 in-flight op 제거)
 		co_return;
 	}
 
@@ -412,7 +412,7 @@ namespace ne::network::http_2::internal
 				}
 				case FrameType::GOAWAY:
 				{
-					goawayReceived = true;
+					isGoawayReceived = true;
 					break;
 				}
 				case FrameType::RST_STREAM:
@@ -420,7 +420,7 @@ namespace ne::network::http_2::internal
 					if (const auto iter = streams.find(frame.header.streamId); iter != streams.end())
 					{
 						failReason = "stream reset by peer";
-						iter->second->failed = true;
+						iter->second->hasFailed = true;
 						iter->second->complete.SignalDeferred(context);
 					}
 					break;
@@ -484,7 +484,7 @@ namespace ne::network::http_2::internal
 	{
 		using R = http::HttpResult<http::Response>;
 
-		if (!IsOpen() || goawayReceived) co_return R::Error(http::HttpError(http::HttpErrorKind::TRANSPORT, "connection not available").Context("[Http2Client/Send]"));
+		if (!IsOpen() || isGoawayReceived) co_return R::Error(http::HttpError(http::HttpErrorKind::TRANSPORT, "connection not available").Context("[Http2Client/Send]"));
 
 		const std::uint32_t id = nextStreamId;
 		nextStreamId += 2;
@@ -532,11 +532,11 @@ namespace ne::network::http_2::internal
 		while (offset < body.size())
 		{
 			// 연결이 죽었거나(FailAll) 스트림이 리셋되면 더 보낼 이유가 없다 — 깨어난 뒤 반드시 재확인한다.
-			if (self->failed || goawayReceived)
+			if (self->hasFailed || isGoawayReceived)
 			{
 				const string_t reason = failReason;
 				streams.erase(id);
-				co_return R::Error(http::HttpError(http::HttpErrorKind::TRANSPORT, reason.empty() ? string_view_t("connection failed while sending") : string_view_t(reason)).Context("[Http2Client/Send]"));
+				co_return R::Error(http::HttpError(http::HttpErrorKind::TRANSPORT, reason.empty() ? string_view_t("connection hasFailed while sending") : string_view_t(reason)).Context("[Http2Client/Send]"));
 			}
 
 			const std::int64_t available = std::min<std::int64_t>({ static_cast<std::int64_t>(peerMaxFrameSize), connSendWindow, self->sendWindow, static_cast<std::int64_t>(body.size() - offset) });
@@ -547,7 +547,7 @@ namespace ne::network::http_2::internal
 			}
 
 			const std::size_t chunk = static_cast<std::size_t>(available);
-			const bool_t last = (offset + chunk) >= body.size();
+			const bool_t isLast = (offset + chunk) >= body.size();
 
 			// 서버 측과 같은 이유로 **먼저 예약하고** 쓴다 — 차감을 co_await 뒤로 미루면 같은
 			// WINDOW_UPDATE 로 깨어난 두 스트림이 합계로 허용량을 넘긴다.
@@ -555,7 +555,7 @@ namespace ne::network::http_2::internal
 			self->sendWindow -= available;
 
 			std::vector<byte_t> frame;
-			AppendData(frame, id, std::span<const byte_t>(body).subspan(offset, chunk), last);
+			AppendData(frame, id, std::span<const byte_t>(body).subspan(offset, chunk), isLast);
 			if (auto written = co_await WriteRaw(std::move(frame), _stopToken); written.IsError())
 			{
 				connSendWindow += available;
@@ -568,13 +568,13 @@ namespace ne::network::http_2::internal
 			offset += chunk;
 		}
 
-		if (!self->done && !self->failed) co_await self->complete;
+		if (!self->isDone && !self->hasFailed) co_await self->complete;
 
-		if (self->failed)
+		if (self->hasFailed)
 		{
 			const string_t reason = failReason;
 			streams.erase(id);
-			co_return R::Error(http::HttpError(http::HttpErrorKind::TRANSPORT, reason.empty() ? string_view_t("stream failed") : string_view_t(reason)).Context("[Http2Client/Send]"));
+			co_return R::Error(http::HttpError(http::HttpErrorKind::TRANSPORT, reason.empty() ? string_view_t("stream hasFailed") : string_view_t(reason)).Context("[Http2Client/Send]"));
 		}
 
 		http::Response response;
@@ -603,7 +603,7 @@ namespace ne::network::http_2::internal
 		const auto iterator = streams.find(_streamId);
 		if (iterator == streams.end()) return;
 
-		iterator->second->closed = true;
+		iterator->second->isClosed = true;
 		iterator->second->windowReady.SignalDeferred(context); // 대기 중인 송신 루프가 물러날 수 있게
 
 		streams.erase(iterator);
@@ -625,7 +625,7 @@ namespace ne::network::http_2::internal
 		if (--activeDispatches == 0) dispatchesDone.SignalDeferred(context);
 	}
 
-	ne::Task<http::HttpResult<void_t>> ServerConnection::SendDataFlowControlled(const std::uint32_t _streamId, const std::span<const byte_t> _data, const bool_t _endStream, std::stop_token _stopToken)
+	ne::Task<http::HttpResult<void_t>> ServerConnection::SendDataFlowControlled(const std::uint32_t _streamId, const std::span<const byte_t> _data, const bool_t _isEndStream, std::stop_token _stopToken)
 	{
 		using R = http::HttpResult<void_t>;
 
@@ -639,19 +639,19 @@ namespace ne::network::http_2::internal
 		// 빈 본문이라도 END_STREAM 을 실은 DATA 프레임 하나는 보내야 스트림이 종결된다.
 		if (_data.empty())
 		{
-			if (!_endStream) co_return R::Ok();
+			if (!_isEndStream) co_return R::Ok();
 
 			std::vector<byte_t> frame;
 			AppendData(frame, _streamId, {}, true);
 
-			co_return (co_await WriteRaw(std::move(frame), _stopToken)).IsError() ? R::Error(http::HttpError(http::HttpErrorKind::TRANSPORT, "write failed").Context("[Http2Server/SendData]")) : R::Ok();
+			co_return (co_await WriteRaw(std::move(frame), _stopToken)).IsError() ? R::Error(http::HttpError(http::HttpErrorKind::TRANSPORT, "write hasFailed").Context("[Http2Server/SendData]")) : R::Ok();
 		}
 
 		std::size_t offset = 0;
 		while (offset < _data.size())
 		{
 			// 피어가 스트림을 리셋했거나 연결이 정리 중이면 더 보낼 이유가 없다.
-			if (stream->closed || _stopToken.stop_requested()) co_return R::Ok();
+			if (stream->isClosed || _stopToken.stop_requested()) co_return R::Ok();
 
 			// 세 상한(프레임 크기 / 연결 윈도우 / 스트림 윈도우) 중 가장 작은 값만큼 보낼 수 있다.
 			const std::int64_t available = std::min<std::int64_t>({ static_cast<std::int64_t>(peerMaxFrameSize), connSendWindow, stream->sendWindow, static_cast<std::int64_t>(_data.size() - offset) });
@@ -662,7 +662,7 @@ namespace ne::network::http_2::internal
 			}
 
 			const auto chunk = static_cast<std::size_t>(available);
-			const bool_t last = _endStream && (offset + chunk) >= _data.size();
+			const bool_t isLast = _isEndStream && (offset + chunk) >= _data.size();
 
 			// **먼저 예약하고** 나중에 쓴다. 차감을 co_await 뒤로 미루면, 같은 WINDOW_UPDATE 로 깨어난
 			// 두 스트림이 아직 줄어들지 않은 connSendWindow 를 보고 각각 계산해 합계가 허용량을 넘는다
@@ -671,7 +671,7 @@ namespace ne::network::http_2::internal
 			stream->sendWindow -= available;
 
 			std::vector<byte_t> frame;
-			AppendData(frame, _streamId, _data.subspan(offset, chunk), last);
+			AppendData(frame, _streamId, _data.subspan(offset, chunk), isLast);
 			if (auto written = co_await WriteRaw(std::move(frame), _stopToken); written.IsError())
 			{
 				// 실제로 나가지 않았으므로 예약을 되돌린다.
@@ -717,9 +717,9 @@ namespace ne::network::http_2::internal
 	{
 		using R = http::HttpResult<void_t>;
 
-		const bool_t streaming = _response.body.IsStreaming();
-		const std::vector<byte_t> body = streaming ? std::vector<byte_t>{} : CollectBody(_response.body);
-		const bool_t hasBody = streaming || !body.empty();
+		const bool_t isStreaming = _response.body.IsStreaming();
+		const std::vector<byte_t> body = isStreaming ? std::vector<byte_t>{} : CollectBody(_response.body);
+		const bool_t hasBody = isStreaming || !body.empty();
 
 		HeaderList headers;
 		headers.push_back(HpackHeader{ ":status", std::to_string(_response.statusCode) });
@@ -737,7 +737,7 @@ namespace ne::network::http_2::internal
 
 		// RFC 9110 §6.6.1: 시계를 가진 오리진 서버는 Date 를 보내야 한다(HTTP/1.1 경로와 동일).
 		if (!hasDate) headers.push_back(HpackHeader{ "date", http::FormatDate(std::chrono::system_clock::now()) });
-		if (!streaming && hasBody && !hasContentLength) headers.push_back(HpackHeader{ "content-length", std::to_string(body.size()) }); // 스트리밍은 크기 미상
+		if (!isStreaming && hasBody && !hasContentLength) headers.push_back(HpackHeader{ "content-length", std::to_string(body.size()) }); // 스트리밍은 크기 미상
 
 		std::vector<byte_t> block;
 		encoder.Encode(headers, block);
@@ -746,7 +746,7 @@ namespace ne::network::http_2::internal
 		AppendHeaderBlock(out, _streamId, block, !hasBody, peerMaxFrameSize);
 		if (auto written = co_await WriteRaw(std::move(out), _stopToken); written.IsError()) co_return R::Error(http::HttpError(std::move(written.Error())).Context("[Http2Server/SendResponse]"));
 
-		if (streaming) co_return co_await SendStreamingBody(_streamId, *_response.body.Producer(), std::move(_stopToken));
+		if (isStreaming) co_return co_await SendStreamingBody(_streamId, *_response.body.Producer(), std::move(_stopToken));
 
 		// 본문이 없으면 위 HEADERS 에 이미 END_STREAM 이 실렸다 — 여기서 빈 DATA 를 더 보내면 이미 닫힌
 		// 스트림에 프레임을 쓰는 프로토콜 위반이 된다.
@@ -821,7 +821,7 @@ namespace ne::network::http_2::internal
 		// stop 은 I/O awaitable 만 취소한다. 흐름제어 창을 기다리며 windowReady 에 잠든 디스패치는
 		// 아무도 깨워 주지 않으므로, 명시적으로 전부 깨워 stop 을 관측하게 해야 한다 — 그러지 않으면
 		// activeDispatches 가 0 이 되지 않아 여기서 영구 대기한다(창을 열어 줄 피어가 사라진 상황).
-		for (auto& [id, slot] : streams) slot->closed = true;
+		for (auto& [id, slot] : streams) slot->isClosed = true;
 		WakeAllWindowWaiters();
 
 		while (activeDispatches > 0) co_await dispatchesDone;
@@ -901,7 +901,7 @@ namespace ne::network::http_2::internal
 				}
 				case FrameType::GOAWAY:
 				{
-					goaway = true;
+					isGoawayReceived = true;
 					break;
 				}
 				case FrameType::RST_STREAM:
@@ -924,7 +924,7 @@ namespace ne::network::http_2::internal
 
 					// 이미 디스패치된(=응답을 보내는 중이거나 보낸) 스트림에 프레임이 더 오면 재진입해
 					// **두 번째 응답**을 보내게 된다. 그 스트림만 리셋하고 무시한다.
-					if (existing != streams.end() && existing->second->dispatched)
+					if (existing != streams.end() && existing->second->isDispatched)
 					{
 						std::vector<byte_t> rst;
 						AppendRstStream(rst, streamId, ErrorCode::STREAM_CLOSED);
@@ -956,13 +956,13 @@ namespace ne::network::http_2::internal
 						// 헤더 블록 크기 상한 — HPACK 폭탄 등은 연결 자체를 신뢰할 수 없으므로 연결 에러로 처리.
 						if (stream.headerBlock.size() > limits.maxHeaderBytes) co_return R::Error(http::HttpError(http::HttpErrorKind::HEADER_TOO_LARGE).Context("[Http2Server/Run]"));
 
-						if (frame.header.HasFlag(FLAG_END_STREAM)) stream.endStream = true;
+						if (frame.header.HasFlag(FLAG_END_STREAM)) stream.isEndStream = true;
 
 						if (frame.header.HasFlag(FLAG_END_HEADERS))
 						{
 							auto decoded = decoder.Decode(stream.headerBlock);
 							stream.headerBlock.clear();
-							if (!decoded) co_return R::Error(http::HttpError(http::HttpErrorKind::MALFORMED_MESSAGE, "HPACK decode failed").Context("[Http2Server/Run]"));
+							if (!decoded) co_return R::Error(http::HttpError(http::HttpErrorKind::MALFORMED_MESSAGE, "HPACK decode hasFailed").Context("[Http2Server/Run]"));
 
 							for (const auto& header : *decoded)
 							{
@@ -972,24 +972,24 @@ namespace ne::network::http_2::internal
 								else if (!header.name.empty() && header.name.front() == ':') continue;
 								else stream.headers.Add(header.name, header.value);
 							}
-							stream.headersDone = true;
+							stream.isHeadersDone = true;
 						}
 					}
 					else // DATA
 					{
-						if (frame.header.HasFlag(FLAG_END_STREAM)) stream.endStream = true;
+						if (frame.header.HasFlag(FLAG_END_STREAM)) stream.isEndStream = true;
 
 						// 본문 크기 상한 — 초과 스트림만 RST_STREAM 으로 거부하고 연결은 유지한다.
-						if (!stream.rejected && stream.body.size() + frame.payload.size() > limits.maxBodyBytes)
+						if (!stream.isRejected && stream.body.size() + frame.payload.size() > limits.maxBodyBytes)
 						{
-							stream.rejected = true;
+							stream.isRejected = true;
 							stream.body.clear();
 
 							std::vector<byte_t> rst;
 							AppendRstStream(rst, streamId, ErrorCode::CANCEL);
 							if (auto written = co_await WriteRaw(std::move(rst), _stopToken); written.IsError()) co_return R::Error(http::HttpError(std::move(written.Error())));
 						}
-						if (!stream.rejected) stream.body.insert(stream.body.end(), frame.payload.begin(), frame.payload.end());
+						if (!stream.isRejected) stream.body.insert(stream.body.end(), frame.payload.begin(), frame.payload.end());
 
 						if (frame.header.length > 0) // 거부된 스트림도 연결 레벨 윈도우는 회복해야 한다
 						{
@@ -998,9 +998,9 @@ namespace ne::network::http_2::internal
 						}
 					}
 
-					if (stream.headersDone && stream.endStream && !stream.dispatched)
+					if (stream.isHeadersDone && stream.isEndStream && !stream.isDispatched)
 					{
-						if (stream.rejected) { DiscardStream(streamId); } // 이미 RST 로 거부 — 디스패치 없이 정리
+						if (stream.isRejected) { DiscardStream(streamId); } // 이미 RST 로 거부 — 디스패치 없이 정리
 						else if (limits.maxConcurrentStreams > 0 && activeDispatches >= limits.maxConcurrentStreams)
 						{
 							// 동시 스트림 상한 초과 — REFUSED_STREAM 은 클라이언트가 안전하게 재시도할 수 있다.
@@ -1012,7 +1012,7 @@ namespace ne::network::http_2::internal
 						}
 						else
 						{
-							stream.dispatched = true; // 이후 이 스트림에 프레임이 더 와도 재디스패치하지 않는다
+							stream.isDispatched = true; // 이후 이 스트림에 프레임이 더 와도 재디스패치하지 않는다
 
 							// 디스패치를 **별도 태스크로 분리**한다. 그래야 핸들러가 대기하는 동안에도 이
 							// 루프가 계속 프레임을 읽어 다른 스트림을 진행시키고 WINDOW_UPDATE 를 회수한다.

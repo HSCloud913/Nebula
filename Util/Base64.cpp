@@ -11,7 +11,7 @@ namespace ne::util
 		constexpr string_view_t StandardAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 		constexpr string_view_t UrlAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
-		string_t EncodeWith(const string_view_t _data, const string_view_t _alphabet, const bool_t _padding)
+		string_t EncodeWith(const string_view_t _data, const string_view_t _alphabet, const bool_t _isPadded)
 		{
 			string_t out;
 			out.reserve((_data.size() + 2) / 3 * 4);
@@ -34,7 +34,7 @@ namespace ne::util
 				const std::uint32_t triple = static_cast<std::uint32_t>(data[i]) << 16;
 				out += _alphabet[(triple >> 18) & 0x3F];
 				out += _alphabet[(triple >> 12) & 0x3F];
-				if (_padding) out += "==";
+				if (_isPadded) out += "==";
 			}
 			else if (remainder == 2)
 			{
@@ -42,7 +42,7 @@ namespace ne::util
 				out += _alphabet[(triple >> 18) & 0x3F];
 				out += _alphabet[(triple >> 12) & 0x3F];
 				out += _alphabet[(triple >> 6) & 0x3F];
-				if (_padding) out += "=";
+				if (_isPadded) out += "=";
 			}
 
 			return out;
@@ -90,8 +90,8 @@ namespace ne::util
 
 
 
-	string_t Base64::Encode(const string_view_t _data, const bool_t _padding) { return EncodeWith(_data, StandardAlphabet, _padding); }
-	string_t Base64::EncodeURL(const string_view_t _data, const bool_t _padding) { return EncodeWith(_data, UrlAlphabet, _padding); }
+	string_t Base64::Encode(const string_view_t _data, const bool_t _isPadded) { return EncodeWith(_data, StandardAlphabet, _isPadded); }
+	string_t Base64::EncodeURL(const string_view_t _data, const bool_t _isPadded) { return EncodeWith(_data, UrlAlphabet, _isPadded); }
 
 	ne::Result<string_t> Base64::Decode(const string_view_t _text) { return DecodeWith(_text, StandardAlphabet); }
 	ne::Result<string_t> Base64::DecodeURL(const string_view_t _text) { return DecodeWith(_text, UrlAlphabet); }

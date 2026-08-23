@@ -13,12 +13,12 @@
 TEST(ThreadPoolTest, ExecutesSingleJob)
 {
 	ne::concurrency::ThreadPool pool(1);
-	std::atomic<bool> executed{ false };
+	std::atomic<bool> isExecuted{ false };
 
-	auto future = pool.Enqueue([&]() { executed = true; });
+	auto future = pool.Enqueue([&]() { isExecuted = true; });
 	future.get();
 
-	EXPECT_TRUE(executed.load());
+	EXPECT_TRUE(isExecuted.load());
 }
 
 TEST(ThreadPoolTest, ExecutesAllJobs)
@@ -56,16 +56,16 @@ TEST(ThreadPoolTest, EnqueueInvalidAfterShutdown)
 
 TEST(ThreadPoolTest, DestructorWaitsForJobs)
 {
-	std::atomic<bool> executed{ false };
+	std::atomic<bool> isExecuted{ false };
 	{
 		ne::concurrency::ThreadPool pool(2);
 		pool.Enqueue([&]()
 		{
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
-			executed = true;
+			isExecuted = true;
 		});
 	}
-	EXPECT_TRUE(executed.load());
+	EXPECT_TRUE(isExecuted.load());
 }
 
 TEST(ThreadPoolTest, ConcurrentEnqueue)

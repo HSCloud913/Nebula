@@ -19,10 +19,10 @@ namespace ne::util
 		~Base64() = default;
 
 	public:
-		/** @brief 표준 Base64 인코딩. _padding=true 면 '=' 패딩을 채운다. */
-		[[nodiscard]] static string_t Encode(string_view_t _data, bool_t _padding = true);
+		/** @brief 표준 Base64 인코딩. _isPadded=true 면 '=' 패딩을 채운다. */
+		[[nodiscard]] static string_t Encode(string_view_t _data, bool_t _isPadded = true);
 		/** @brief URL-safe Base64 인코딩('-'/'_'). 기본은 패딩 없음. */
-		[[nodiscard]] static string_t EncodeURL(string_view_t _data, bool_t _padding = false);
+		[[nodiscard]] static string_t EncodeURL(string_view_t _data, bool_t _isPadded = false);
 
 		/** @brief 표준 Base64 디코딩. 알파벳 밖 문자나 잘린 길이면 Err. '=' 패딩은 있어도/없어도 허용. */
 		[[nodiscard]] static ne::Result<string_t> Decode(string_view_t _text);

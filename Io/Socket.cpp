@@ -324,9 +324,9 @@ namespace ne::io
 			return IoResult<void_t>::Ok();
 		}
 
-		[[nodiscard]] IoResult<void_t> ApplyFlag(const socket_t _socket, const int_t _level, const int_t _name, const bool_t _enable, const string_view_t _context)
+		[[nodiscard]] IoResult<void_t> ApplyFlag(const socket_t _socket, const int_t _level, const int_t _name, const bool_t _isEnabled, const string_view_t _context)
 		{
-			const int_t value = _enable ? 1 : 0;
+			const int_t value = _isEnabled ? 1 : 0;
 			return ApplyOption(_socket, _level, _name, &value, static_cast<int_t>(sizeof(value)), _context);
 		}
 
@@ -363,23 +363,23 @@ namespace ne::io
 
 
 
-	IoResult<void_t> Socket::SetReuseAddress(const bool_t _enable) { return ApplyFlag(handle.Get(), SOL_SOCKET, SO_REUSEADDR, _enable, "[Socket/SetReuseAddress]"); }
+	IoResult<void_t> Socket::SetReuseAddress(const bool_t _isEnabled) { return ApplyFlag(handle.Get(), SOL_SOCKET, SO_REUSEADDR, _isEnabled, "[Socket/SetReuseAddress]"); }
 
-	IoResult<void_t> Socket::SetNoDelay(const bool_t _enable) { return ApplyFlag(handle.Get(), IPPROTO_TCP, TCP_NODELAY, _enable, "[Socket/SetNoDelay]"); }
+	IoResult<void_t> Socket::SetNoDelay(const bool_t _isEnabled) { return ApplyFlag(handle.Get(), IPPROTO_TCP, TCP_NODELAY, _isEnabled, "[Socket/SetNoDelay]"); }
 
-	IoResult<void_t> Socket::SetReusePort(const bool_t _enable)
+	IoResult<void_t> Socket::SetReusePort(const bool_t _isEnabled)
 	{
 #if defined(SO_REUSEPORT)
-		return ApplyFlag(handle.Get(), SOL_SOCKET, SO_REUSEPORT, _enable, "[Socket/SetReusePort]");
+		return ApplyFlag(handle.Get(), SOL_SOCKET, SO_REUSEPORT, _isEnabled, "[Socket/SetReusePort]");
 #else
 		// Windows 에는 대응 옵션이 없다. SO_REUSEADDR 로 조용히 대체하면 의미가 달라(그쪽은 연결 분산이
 		// 아니라 주소 재사용) 사용자가 없는 기능을 있다고 믿게 되므로 명시적으로 실패시킨다.
-		(void_t)_enable;
+		(void_t)_isEnabled;
 		return IoResult<void_t>::Error(IoError{ IoErrorKind::UNSUPPORTED, "SO_REUSEPORT is not available on this platform" }.Context("[Socket/SetReusePort]"));
 #endif
 	}
 
-	IoResult<void_t> Socket::SetKeepAlive(const bool_t _enable) { return ApplyFlag(handle.Get(), SOL_SOCKET, SO_KEEPALIVE, _enable, "[Socket/SetKeepAlive]"); }
+	IoResult<void_t> Socket::SetKeepAlive(const bool_t _isEnabled) { return ApplyFlag(handle.Get(), SOL_SOCKET, SO_KEEPALIVE, _isEnabled, "[Socket/SetKeepAlive]"); }
 
 	IoResult<void_t> Socket::SetKeepAliveTiming(const std::chrono::seconds _idle, const std::chrono::seconds _interval)
 	{
@@ -420,9 +420,9 @@ namespace ne::io
 
 	IoResult<void_t> Socket::SetSendBufferSize(const int_t _bytes) { return ApplyOption(handle.Get(), SOL_SOCKET, SO_SNDBUF, &_bytes, static_cast<int_t>(sizeof(_bytes)), "[Socket/SetSendBufferSize]"); }
 
-	IoResult<void_t> Socket::SetBroadcast(const bool_t _enable) { return ApplyFlag(handle.Get(), SOL_SOCKET, SO_BROADCAST, _enable, "[Socket/SetBroadcast]"); }
+	IoResult<void_t> Socket::SetBroadcast(const bool_t _isEnabled) { return ApplyFlag(handle.Get(), SOL_SOCKET, SO_BROADCAST, _isEnabled, "[Socket/SetBroadcast]"); }
 
-	IoResult<void_t> Socket::SetIpV6Only(const bool_t _enable) { return ApplyFlag(handle.Get(), IPPROTO_IPV6, IPV6_V6ONLY, _enable, "[Socket/SetIpV6Only]"); }
+	IoResult<void_t> Socket::SetIpV6Only(const bool_t _isEnabled) { return ApplyFlag(handle.Get(), IPPROTO_IPV6, IPV6_V6ONLY, _isEnabled, "[Socket/SetIpV6Only]"); }
 
 	IoResult<void_t> Socket::SetRawOption(const int_t _level, const int_t _name, const std::span<const ne::byte_t> _value)
 	{

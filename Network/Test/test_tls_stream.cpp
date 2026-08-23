@@ -261,7 +261,7 @@ namespace
 		X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, reinterpret_cast<const unsigned char*>("nebula-tls-test"), -1, -1, 0);
 		X509_set_issuer_name(x509, name);
 
-		const bool_t signOk = X509_sign(x509, pkey, EVP_sha256()) > 0;
+		const bool_t isSignOk = X509_sign(x509, pkey, EVP_sha256()) > 0;
 
 		BIO* certBio = BIO_new(BIO_s_mem());
 		PEM_write_bio_X509(certBio, x509);
@@ -280,7 +280,7 @@ namespace
 		X509_free(x509);
 		EVP_PKEY_free(pkey);
 
-		return signOk;
+		return isSignOk;
 	}
 
 	IoResult<TestCert> MakeTestCert()
@@ -355,7 +355,7 @@ TEST(TlsStreamTest, ConnectAcceptSendReceiveRoundTrip)
 	serverConfig.pfxPassword = cert.pfxPassword;
 
 	TlsConfig clientConfig;
-	clientConfig.verifyPeer = false; // 자체서명 — CA 검증 생략
+	clientConfig.isPeerVerificationEnabled = false; // 자체서명 — CA 검증 생략
 
 	auto acceptTask = TlsStream::Accept(std::move(setup.accepted), context, serverConfig);
 	auto connectTask = TlsStream::Connect(std::move(setup.client), context, "localhost", clientConfig);
@@ -408,7 +408,7 @@ TEST(TlsStreamTest, ReceiveWithSmallBufferPreservesWholeRecord)
 	serverConfig.pfxPassword = cert.pfxPassword;
 
 	TlsConfig clientConfig;
-	clientConfig.verifyPeer = false;
+	clientConfig.isPeerVerificationEnabled = false;
 
 	auto acceptTask = TlsStream::Accept(std::move(setup.accepted), context, serverConfig);
 	auto connectTask = TlsStream::Connect(std::move(setup.client), context, "localhost", clientConfig);
@@ -469,7 +469,7 @@ TEST(TlsStreamTest, ShutdownSignalsCloseNotify)
 	serverConfig.pfxPassword = cert.pfxPassword;
 
 	TlsConfig clientConfig;
-	clientConfig.verifyPeer = false;
+	clientConfig.isPeerVerificationEnabled = false;
 
 	auto acceptTask = TlsStream::Accept(std::move(setup.accepted), context, serverConfig);
 	auto connectTask = TlsStream::Connect(std::move(setup.client), context, "localhost", clientConfig);
@@ -510,7 +510,7 @@ TEST(TlsStreamTest, RejectsUntrustedCertWhenVerifyPeerTrue)
 	serverConfig.keyFile = cert.keyFile;
 	serverConfig.pfxPassword = cert.pfxPassword;
 
-	TlsConfig clientConfig; // verifyPeer 기본값 true, caFile 없음 — 자체서명은 신뢰 루트에 없어 실패해야 함
+	TlsConfig clientConfig; // isPeerVerificationEnabled 기본값 true, caFile 없음 — 자체서명은 신뢰 루트에 없어 실패해야 함
 
 	auto acceptTask = TlsStream::Accept(std::move(setup.accepted), context, serverConfig);
 	auto connectTask = TlsStream::Connect(std::move(setup.client), context, "localhost", clientConfig);
@@ -540,7 +540,7 @@ TEST(TlsStreamTest, AlpnNegotiatesPreferredProtocol)
 	serverConfig.alpnProtocols = { "http/1.1" }; // 서버가 지원하는 것(우선순위 목록, RFC 7301 은 서버 우선순위를 따름)
 
 	TlsConfig clientConfig;
-	clientConfig.verifyPeer = false;
+	clientConfig.isPeerVerificationEnabled = false;
 	clientConfig.alpnProtocols = { "h2", "http/1.1" }; // 클라이언트 제안 — h2 를 먼저 제안하지만 서버가 http/1.1 만 지원
 
 	auto acceptTask = TlsStream::Accept(std::move(setup.accepted), context, serverConfig);

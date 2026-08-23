@@ -14,7 +14,7 @@ namespace ne::network
 	 */
 	struct TlsConfig
 	{
-		bool_t verifyPeer{ true };
+		bool_t isPeerVerificationEnabled{ true };
 		string_t caFile;      // PEM CA bundle (optional)
 		string_t certFile;    // PEM cert (OpenSSL) / PFX path (SChannel server)
 		string_t keyFile;     // PEM private key (OpenSSL only)

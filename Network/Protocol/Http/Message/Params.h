@@ -11,10 +11,10 @@
 namespace ne::network::http
 {
 	/**
-	 * @brief 퍼센트 인코딩(%XX)을 디코딩합니다. _plusAsSpace 면 '+' 를 공백으로도 변환합니다(쿼리 이름/값용).
+	 * @brief 퍼센트 인코딩(%XX)을 디코딩합니다. _isPlusAsSpace 면 '+' 를 공백으로도 변환합니다(쿼리 이름/값용).
 	 * @note 잘못된 %XX 시퀀스는 디코딩하지 않고 그대로 둡니다(관대한 처리).
 	 */
-	[[nodiscard]] string_t UrlDecode(string_view_t _text, bool_t _plusAsSpace = false);
+	[[nodiscard]] string_t UrlDecode(string_view_t _text, bool_t _isPlusAsSpace = false);
 
 	/**
 	 * @class PathParams

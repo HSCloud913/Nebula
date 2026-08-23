@@ -112,13 +112,13 @@ namespace ne::memory
 #ifndef NDEBUG
 		{
 			auto* raw = reinterpret_cast<ne::byte_t*>(_ptr);
-			const bool_t inRange = pool != nullptr && raw >= pool && raw < pool + blockCount * blockSize;
-			assert(inRange && "PoolAllocator: Deallocate() pointer is not from this pool");
+			const bool_t isInRange = pool != nullptr && raw >= pool && raw < pool + blockCount * blockSize;
+			assert(isInRange && "PoolAllocator: Deallocate() pointer is not from this pool");
 
-			const bool_t aligned = inRange && (static_cast<std::size_t>(raw - pool) % blockSize == 0);
-			assert(aligned && "PoolAllocator: Deallocate() pointer is not block-aligned (invalid or interior pointer)");
+			const bool_t isAligned = isInRange && (static_cast<std::size_t>(raw - pool) % blockSize == 0);
+			assert(isAligned && "PoolAllocator: Deallocate() pointer is not block-isAligned (invalid or interior pointer)");
 
-			if (aligned && debugAllocated)
+			if (isAligned && debugAllocated)
 			{
 				const bool_t wasAllocated = debugAllocated[index].exchange(false, std::memory_order_relaxed);
 				assert(wasAllocated && "PoolAllocator: double free (block was already free)");

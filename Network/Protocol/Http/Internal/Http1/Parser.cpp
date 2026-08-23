@@ -111,7 +111,7 @@ namespace ne::network::http_1::internal
 		co_return R::Ok(std::move(result));
 	}
 
-	ne::Task<http::HttpResult<http::Body>> MessageReader::ReadBody(const http::Headers& _headers, const bool_t _allowUntilClose, std::stop_token _stopToken)
+	ne::Task<http::HttpResult<http::Body>> MessageReader::ReadBody(const http::Headers& _headers, const bool_t _canReadUntilClose, std::stop_token _stopToken)
 	{
 		using R = http::HttpResult<http::Body>;
 
@@ -132,7 +132,7 @@ namespace ne::network::http_1::internal
 
 		// 응답에 길이 프레이밍이 없으면 "연결이 닫힐 때까지" 가 본문이다. 예전에는 빈 본문을 돌려줘
 		// HTTP/1.0 류 응답의 데이터를 조용히 버렸다.
-		if (_allowUntilClose) co_return co_await ReadBodyUntilClose(_stopToken);
+		if (_canReadUntilClose) co_return co_await ReadBodyUntilClose(_stopToken);
 
 		co_return R::Ok(http::Body{});
 	}
@@ -352,8 +352,8 @@ namespace ne::network::http_1::internal
 		http::Headers headers;
 
 		// 1xx(정보) 응답은 최종 응답이 아니므로 사용자 콜백에 올리지 않고 건너뛴다(상한은 버퍼링 경로와 동일).
-		bool_t haveFinal = false;
-		for (int_t informational = 0; informational <= MaxInformationalResponses && !haveFinal; ++informational)
+		bool_t hasFinal = false;
+		for (int_t informational = 0; informational <= MaxInformationalResponses && !hasFinal; ++informational)
 		{
 			auto line = co_await ReadLine(_stopToken);
 			if (line.IsError()) co_return R::Error(std::move(line.Error()));
@@ -378,10 +378,10 @@ namespace ne::network::http_1::internal
 			if (statusCode >= 100 && statusCode < 200) continue;
 
 			headers = std::move(parsedHeaders.Value());
-			haveFinal = true;
+			hasFinal = true;
 		}
 
-		if (!haveFinal) co_return R::Error(http::HttpError(http::HttpErrorKind::MALFORMED_MESSAGE, "too many informational (1xx) responses").Context("[MessageReader/ReadResponseStreaming]"));
+		if (!hasFinal) co_return R::Error(http::HttpError(http::HttpErrorKind::MALFORMED_MESSAGE, "too many informational (1xx) responses").Context("[MessageReader/ReadResponseStreaming]"));
 
 		if (_sink.onHead && !_sink.onHead(statusCode, reason, headers)) co_return R::Ok(false); // 헤드 단계에서 조기 중단
 

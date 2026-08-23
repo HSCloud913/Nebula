@@ -83,7 +83,7 @@ namespace ne::network::http_2::internal
 		[[nodiscard]] ne::Task<ne::io::IoResult<void_t>> WriteRaw(std::vector<byte_t> _buffer, std::stop_token _stopToken);
 
 		// 제어 프레임 편의 송신.
-		[[nodiscard]] ne::Task<ne::io::IoResult<void_t>> SendSettings(bool_t _ack, std::stop_token _stopToken);
+		[[nodiscard]] ne::Task<ne::io::IoResult<void_t>> SendSettings(bool_t _isAck, std::stop_token _stopToken);
 		[[nodiscard]] ne::Task<ne::io::IoResult<void_t>> SendWindowUpdate(std::uint32_t _streamId, std::uint32_t _increment, std::stop_token _stopToken);
 		[[nodiscard]] ne::Task<ne::io::IoResult<void_t>> SendPingAck(std::span<const byte_t> _opaque8, std::stop_token _stopToken);
 
@@ -135,12 +135,12 @@ namespace ne::network::http_2::internal
 			http::Headers headers;
 			std::vector<byte_t> body;
 			std::vector<byte_t> headerBlock; // HEADERS+CONTINUATION 조립
-			bool_t headersDone{ false };
-			bool_t endStreamFlag{ false }; // HEADERS 프레임에 END_STREAM 이 있었음(본문 없음)
-			bool_t done{ false };
-			bool_t failed{ false };
+			bool_t isHeadersDone{ false };
+			bool_t hasEndStreamFlag{ false }; // HEADERS 프레임에 END_STREAM 이 있었음(본문 없음)
+			bool_t isDone{ false };
+			bool_t hasFailed{ false };
 			std::int64_t sendWindow{ DefaultInitialWindowSize };
-			ne::Event complete;    // done/failed 시 신호
+			ne::Event complete;    // isDone/hasFailed 시 신호
 			ne::Event windowReady; // 송신 윈도우 갱신 시 신호
 
 			// 스트리밍 수신 sink(SendStreaming 프레임 소유). 설정 시 body 에 누적하지 않고 조각째 콜백으로 흘린다.
@@ -154,12 +154,12 @@ namespace ne::network::http_2::internal
 		// 소유권을 공유해 대기자가 유효한 Stream 을 보게 한다(서버 측과 같은 이유).
 		std::unordered_map<std::uint32_t, std::shared_ptr<Stream>> streams;
 		std::vector<std::uint32_t> pendingResets; // sink 콜백 조기 중단 스트림 — 드라이버가 RST_STREAM(CANCEL) 송신
-		bool_t goawayReceived{ false };
+		bool_t isGoawayReceived{ false };
 		string_t failReason;
 		std::optional<ne::Task<void_t>> driver;
 		std::stop_source driverStop;
 		ne::Event driverDone;             // 드라이버 코루틴이 종료될 때 신호
-		bool_t driverFinished{ false };
+		bool_t isDriverFinished{ false };
 
 	public:
 		/** @brief preface + SETTINGS 전송 후 드라이버를 기동합니다. Send 전에 1회 호출. */
@@ -227,17 +227,17 @@ namespace ne::network::http_2::internal
 			http::Headers headers;
 			std::vector<byte_t> body;
 			std::vector<byte_t> headerBlock;
-			bool_t headersDone{ false };
-			bool_t endStream{ false };
-			bool_t rejected{ false }; // 크기 초과로 RST 됨 — 남은 프레임은 무시
+			bool_t isHeadersDone{ false };
+			bool_t isEndStream{ false };
+			bool_t isRejected{ false }; // 크기 초과로 RST 됨 — 남은 프레임은 무시
 
 			// 스트림 레벨 송신 윈도우. 이것을 추적하지 않으면 초기 윈도우(65535)를 넘는 응답을 그대로
 			// 밀어내 정상 피어(브라우저/curl/nghttp2)가 GOAWAY(FLOW_CONTROL_ERROR)로 연결을 끊는다.
 			std::int64_t sendWindow{ DefaultInitialWindowSize };
 			ne::Event windowReady; // WINDOW_UPDATE 수신 시 신호 — 응답 송신 루프가 기다린다
 
-			bool_t dispatched{ false }; // 핸들러 디스패치를 이미 시작함 — 재진입/이중 응답 방지
-			bool_t closed{ false };     // RST 수신/응답 완료로 폐기됨 — 대기 중인 송신 루프가 즉시 물러난다
+			bool_t isDispatched{ false }; // 핸들러 디스패치를 이미 시작함 — 재진입/이중 응답 방지
+			bool_t isClosed{ false };     // RST 수신/응답 완료로 폐기됨 — 대기 중인 송신 루프가 즉시 물러난다
 		};
 
 		Http2Handler handler;
@@ -248,9 +248,9 @@ namespace ne::network::http_2::internal
 		// RST_STREAM 을 받아 이 항목을 지울 수 있다. unique_ptr 이면 그 순간 Stream(과 그 안의
 		// windowReady Event)이 파괴되어, 대기 중인 코루틴은 영원히 재개되지 않고(연결 누수) 나중에
 		// Event::Awaiter 소멸자가 해제된 메모리에 쓴다. 소유권을 공유하면 맵에서 빠져도 대기자가
-		// 안전하게 closed 플래그를 보고 물러날 수 있다.
+		// 안전하게 isClosed 플래그를 보고 물러날 수 있다.
 		std::unordered_map<std::uint32_t, std::shared_ptr<Stream>> streams;
-		bool_t goaway{ false };
+		bool_t isGoawayReceived{ false };
 
 		// 핸들러 디스패치를 프레임 루프와 **분리**하기 위한 상태. 예전에는 Run() 안에서 DispatchStream 을
 		// 그 자리에서 co_await 했다. 그러면 핸들러가 대기하는 동안 프레임을 한 개도 읽지 못해 (a) 다른
@@ -284,12 +284,12 @@ namespace ne::network::http_2::internal
 		 * 윈도우가 0 이면 해당 스트림의 windowReady 를 기다린다 — 드라이버가 WINDOW_UPDATE 를 받으면
 		 * 신호한다. 이 창구를 통하지 않고 DATA 를 쓰면 흐름제어를 위반해 피어가 연결을 끊는다.
 		 *
-		 * @param _endStream 마지막 조각에 END_STREAM 플래그를 실을지 여부.
+		 * @param _isEndStream 마지막 조각에 END_STREAM 플래그를 실을지 여부.
 		 */
-		[[nodiscard]] ne::Task<http::HttpResult<void_t>> SendDataFlowControlled(std::uint32_t _streamId, std::span<const byte_t> _data, bool_t _endStream, std::stop_token _stopToken);
+		[[nodiscard]] ne::Task<http::HttpResult<void_t>> SendDataFlowControlled(std::uint32_t _streamId, std::span<const byte_t> _data, bool_t _isEndStream, std::stop_token _stopToken);
 
 		/**
-		 * @brief 스트림을 폐기한다 — closed 로 표시하고 **대기자를 깨운 뒤** 맵에서 제거한다.
+		 * @brief 스트림을 폐기한다 — isClosed 로 표시하고 **대기자를 깨운 뒤** 맵에서 제거한다.
 		 *
 		 * 순서가 중요하다. 깨우지 않고 지우면, 흐름제어 창을 기다리던 응답 송신 루프가 영원히 재개되지
 		 * 않아 activeDispatches 가 0 이 되지 못하고 Run() 이 반환하지 못한다(연결 누수).

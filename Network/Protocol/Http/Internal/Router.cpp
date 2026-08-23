@@ -94,7 +94,7 @@ namespace ne::network::http::internal
 		string_view_t path = _request.target;
 		if (const auto query = path.find('?'); query != string_view_t::npos) path = path.substr(0, query);
 
-		bool_t pathMatched = false;
+		bool_t isPathMatched = false;
 		string_t allow;
 
 		for (const auto& entry : routes)
@@ -102,7 +102,7 @@ namespace ne::network::http::internal
 			PathParams params;
 			if (!Match(entry.segments, path, params)) continue;
 
-			pathMatched = true;
+			isPathMatched = true;
 			if (entry.method == _request.method) co_return co_await entry.handler(_request, params);
 
 			// 경로는 맞지만 메서드가 다른 경우 — 405 응답의 Allow 헤더용으로 모아 둔다.
@@ -110,7 +110,7 @@ namespace ne::network::http::internal
 			allow += string_t(ToString(entry.method));
 		}
 
-		if (pathMatched)
+		if (isPathMatched)
 		{
 			Response response = Response::Status(405);
 			response.headers.Set("Allow", allow);

@@ -95,8 +95,8 @@ namespace ne::network::http
 			if (_version == Version::HTTP_2 && _endpoint.isSecure && established.Value().negotiatedProtocol != "h2") co_return R::Error(HttpError(HttpErrorKind::UNSUPPORTED_VERSION, "server did not negotiate HTTP/2 (ALPN h2)").Context("[Client/Establish]"));
 
 			// AUTO+TLS 에서 h2 미협상 → 같은 스트림 위에서 HTTP/1.1 로 보낸다.
-			const bool_t useHttp2 = !_endpoint.isSecure || established.Value().negotiatedProtocol == "h2";
-			if (!useHttp2) co_return co_await http_1::internal::Client::RequestOver(std::move(established.Value().stream), _endpoint, std::move(_request), std::move(_stopToken));
+			const bool_t isHttp2 = !_endpoint.isSecure || established.Value().negotiatedProtocol == "h2";
+			if (!isHttp2) co_return co_await http_1::internal::Client::RequestOver(std::move(established.Value().stream), _endpoint, std::move(_request), std::move(_stopToken));
 
 			auto connResult = co_await StartHttp2(std::move(established.Value().stream), _endpoint, _context, _stopToken);
 			if (connResult.IsError()) co_return R::Error(std::move(connResult.Error()));
@@ -158,8 +158,8 @@ namespace ne::network::http
 
 			if (_version == Version::HTTP_2 && _endpoint.isSecure && established.Value().negotiatedProtocol != "h2") co_return R::Error(HttpError(HttpErrorKind::UNSUPPORTED_VERSION, "server did not negotiate HTTP/2 (ALPN h2)").Context("[Client/Establish]"));
 
-			const bool_t useHttp2 = !_endpoint.isSecure || established.Value().negotiatedProtocol == "h2";
-			if (!useHttp2) co_return co_await http_1::internal::Client::StreamOver(std::move(established.Value().stream), _endpoint, std::move(_request), _sink, std::move(_stopToken));
+			const bool_t isHttp2 = !_endpoint.isSecure || established.Value().negotiatedProtocol == "h2";
+			if (!isHttp2) co_return co_await http_1::internal::Client::StreamOver(std::move(established.Value().stream), _endpoint, std::move(_request), _sink, std::move(_stopToken));
 
 			auto connResult = co_await StartHttp2(std::move(established.Value().stream), _endpoint, _context, _stopToken);
 			if (connResult.IsError()) co_return R::Error(std::move(connResult.Error()));
@@ -331,8 +331,8 @@ namespace ne::network::http
 		if (version == http::Version::HTTP_2 && endpoint.isSecure && established.Value().negotiatedProtocol != "h2") co_return R::Error(HttpError(HttpErrorKind::UNSUPPORTED_VERSION, "server did not negotiate HTTP/2 (ALPN h2)").Context("[ClientSession/Establish]"));
 
 		// AUTO+TLS 에서 h2 미협상 → 같은 스트림을 HTTP/1.1 keep-alive 연결로 쓴다.
-		const bool_t useHttp2 = !endpoint.isSecure || established.Value().negotiatedProtocol == "h2";
-		if (!useHttp2)
+		const bool_t isHttp2 = !endpoint.isSecure || established.Value().negotiatedProtocol == "h2";
+		if (!isHttp2)
 		{
 			stream = std::move(established.Value().stream);
 			reader = std::make_unique<http_1::internal::MessageReader>(*stream);
@@ -391,7 +391,7 @@ namespace ne::network::http
 		if (!_request.body.IsEmpty() && !_request.headers.Has("Content-Length")) _request.headers.Set("Content-Length", std::to_string(_request.body.Size()));
 		if (!_request.headers.Has("Connection")) _request.headers.Set("Connection", "keep-alive");
 
-		const bool_t idempotent = IsIdempotent(_request.method);
+		const bool_t isIdempotent = IsIdempotent(_request.method);
 
 		auto builtHead = http_1::internal::BuildRequestHead(_request);
 		if (builtHead.IsError()) co_return R::Error(std::move(builtHead.Error()));
@@ -415,7 +415,7 @@ namespace ne::network::http
 			if (auto sent = co_await stream->Send(ne::memory::BufferView{ const_cast<byte_t*>(reinterpret_cast<const byte_t*>(head.data())), head.size() }, _stopToken); sent.IsError())
 			{
 				Close();
-				if (wasReused && idempotent && attempt == 0) continue;
+				if (wasReused && isIdempotent && attempt == 0) continue;
 				co_return R::Error(HttpError(std::move(sent.Error())).Context("[ClientSession/Send]"));
 			}
 
@@ -424,7 +424,7 @@ namespace ne::network::http
 				if (auto sent = co_await stream->Sendv(_request.body.View(), _stopToken); sent.IsError())
 				{
 					Close();
-					if (wasReused && idempotent && attempt == 0) continue;
+					if (wasReused && isIdempotent && attempt == 0) continue;
 					co_return R::Error(HttpError(std::move(sent.Error())).Context("[ClientSession/Send]"));
 				}
 			}
@@ -433,7 +433,7 @@ namespace ne::network::http
 			if (response.IsError())
 			{
 				Close();
-				if (wasReused && idempotent && attempt == 0) continue;
+				if (wasReused && isIdempotent && attempt == 0) continue;
 				co_return R::Error(std::move(response.Error()));
 			}
 

@@ -119,18 +119,18 @@ namespace ne::network::http_2::internal
 	void_t AppendFrame(std::vector<byte_t>& _out, FrameType _type, byte_t _flags, std::uint32_t _streamId, std::span<const byte_t> _payload);
 
 	/** @brief DATA 프레임 하나(단일 조각, 이미 maxFrameSize 이하로 잘린 상태). */
-	void_t AppendData(std::vector<byte_t>& _out, std::uint32_t _streamId, std::span<const byte_t> _data, bool_t _endStream);
+	void_t AppendData(std::vector<byte_t>& _out, std::uint32_t _streamId, std::span<const byte_t> _data, bool_t _isEndStream);
 
 	/**
 	 * @brief HPACK 헤더 블록을 HEADERS(+필요 시 CONTINUATION)로 잘라 append 합니다.
 	 * @note _maxFrameSize 를 넘으면 CONTINUATION 으로 분할하며, 마지막 조각에만 END_HEADERS 를 세웁니다.
 	 */
-	void_t AppendHeaderBlock(std::vector<byte_t>& _out, std::uint32_t _streamId, std::span<const byte_t> _headerBlock, bool_t _endStream, std::uint32_t _maxFrameSize);
+	void_t AppendHeaderBlock(std::vector<byte_t>& _out, std::uint32_t _streamId, std::span<const byte_t> _headerBlock, bool_t _isEndStream, std::uint32_t _maxFrameSize);
 
 	void_t AppendSettings(std::vector<byte_t>& _out, std::span<const SettingsEntry> _entries);
 	void_t AppendSettingsAck(std::vector<byte_t>& _out);
 	void_t AppendWindowUpdate(std::vector<byte_t>& _out, std::uint32_t _streamId, std::uint32_t _increment);
 	void_t AppendRstStream(std::vector<byte_t>& _out, std::uint32_t _streamId, ErrorCode _code);
-	void_t AppendPing(std::vector<byte_t>& _out, std::span<const byte_t> _opaque8, bool_t _ack);
+	void_t AppendPing(std::vector<byte_t>& _out, std::span<const byte_t> _opaque8, bool_t _isAck);
 	void_t AppendGoAway(std::vector<byte_t>& _out, std::uint32_t _lastStreamId, ErrorCode _code, std::span<const byte_t> _debug = {});
 }

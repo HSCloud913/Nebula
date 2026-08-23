@@ -89,10 +89,10 @@ namespace ne::network
 		SSL_CTX* sslCtx = SSL_CTX_new(TLS_client_method());
 		if (!sslCtx) co_return R::Error(SslError("[TlsStream/Connect]"));
 
-		SSL_CTX_set_verify(sslCtx, _config.verifyPeer ? SSL_VERIFY_PEER : SSL_VERIFY_NONE, nullptr);
+		SSL_CTX_set_verify(sslCtx, _config.isPeerVerificationEnabled ? SSL_VERIFY_PEER : SSL_VERIFY_NONE, nullptr);
 
 		// caFile 이 지정되면 그것만 신뢰하고, 없으면 **시스템 신뢰 저장소**를 읽는다. 과거에는 후자가
-		// 빠져 있어, verifyPeer=true(기본값) + caFile 미지정이면 신뢰 앵커가 하나도 없는 상태로
+		// 빠져 있어, isPeerVerificationEnabled=true(기본값) + caFile 미지정이면 신뢰 앵커가 하나도 없는 상태로
 		// 검증을 요구해 모든 실제 HTTPS 접속이 "unable to get local issuer certificate" 로 실패했다.
 		// Windows/Schannel 은 시스템 저장소를 자동으로 쓰므로, 조용한 플랫폼 비대칭이기도 했다.
 		if (!_config.caFile.empty())
@@ -103,7 +103,7 @@ namespace ne::network
 				co_return R::Error(SslError("[TlsStream/Connect/CA]"));
 			}
 		}
-		else if (_config.verifyPeer && SSL_CTX_set_default_verify_paths(sslCtx) != 1)
+		else if (_config.isPeerVerificationEnabled && SSL_CTX_set_default_verify_paths(sslCtx) != 1)
 		{
 			SSL_CTX_free(sslCtx);
 			co_return R::Error(SslError("[TlsStream/Connect/DefaultTrustStore]"));
@@ -156,7 +156,7 @@ namespace ne::network
 			// **인증서 이름 검증**: 체인 검증(SSL_CTX_set_verify)만으로는 "신뢰된 CA 가 발급한 아무 이름의
 			// 인증서"도 통과하므로 MITM 을 막지 못한다. 검증 대상 이름을 지정해야 OpenSSL 이 SAN/CN 을
 			// 대조하고, 불일치 시 핸드셰이크가 실패한다.
-			if (_config.verifyPeer)
+			if (_config.isPeerVerificationEnabled)
 			{
 				// 부분 와일드카드(`w*.example.com`)는 거부한다 — 표준이 요구하지 않고 위험만 크다.
 				SSL_set_hostflags(tempSsl, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
@@ -188,7 +188,7 @@ namespace ne::network
 		SSL_CTX* sslCtx = SSL_CTX_new(TLS_server_method());
 		if (!sslCtx) co_return R::Error(SslError("[TlsStream/Accept]"));
 
-		SSL_CTX_set_verify(sslCtx, _config.verifyPeer ? SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT : SSL_VERIFY_NONE, nullptr);
+		SSL_CTX_set_verify(sslCtx, _config.isPeerVerificationEnabled ? SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT : SSL_VERIFY_NONE, nullptr);
 		if (!_config.caFile.empty() && SSL_CTX_load_verify_locations(sslCtx, _config.caFile.c_str(), nullptr) != 1)
 		{
 			SSL_CTX_free(sslCtx);

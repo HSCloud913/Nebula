@@ -113,13 +113,13 @@ TEST(IoContextTest, TimerQueueIntegration)
 	ne::time::TimerQueue wheel;
 	Context context{ engine, &wheel };
 
-	std::atomic<bool_t> fired{ false };
-	(void_t)wheel.Schedule(std::chrono::milliseconds{ 50 }, [&] { fired.store(true, std::memory_order_release); });
+	std::atomic<bool_t> isFired{ false };
+	(void_t)wheel.Schedule(std::chrono::milliseconds{ 50 }, [&] { isFired.store(true, std::memory_order_release); });
 
 	const auto start = std::chrono::steady_clock::now();
-	while (!fired.load(std::memory_order_acquire) && std::chrono::steady_clock::now() - start < std::chrono::seconds(2)) (void_t)context.RunOnce(std::chrono::milliseconds{ -1 }); // 타이머가 유효 타임아웃을 만든다
+	while (!isFired.load(std::memory_order_acquire) && std::chrono::steady_clock::now() - start < std::chrono::seconds(2)) (void_t)context.RunOnce(std::chrono::milliseconds{ -1 }); // 타이머가 유효 타임아웃을 만든다
 
-	EXPECT_TRUE(fired.load());
+	EXPECT_TRUE(isFired.load());
 	const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
 	EXPECT_GE(elapsed, 50);
 }

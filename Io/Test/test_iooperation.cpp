@@ -189,11 +189,11 @@ TEST(IoOperationTest, AbandonedInFlightIsCancelledWithoutClosingSocket)
 	} // 여기서 취소가 요청되어야 한다
 
 	// 소켓은 그대로 열어 둔다 — 취소 외에는 이 op 을 끝낼 방법이 없다.
-	bool_t sawCompletion = false;
+	bool_t hasSeenCompletion = false;
 	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-	while (!sawCompletion && std::chrono::steady_clock::now() < deadline) sawCompletion = context.RunOnce(std::chrono::milliseconds{ 20 });
+	while (!hasSeenCompletion && std::chrono::steady_clock::now() < deadline) hasSeenCompletion = context.RunOnce(std::chrono::milliseconds{ 20 });
 
-	EXPECT_TRUE(sawCompletion) << "취소 완료가 도착하지 않았다 — 버려진 op 이 여전히 커널에 남아 있다";
+	EXPECT_TRUE(hasSeenCompletion) << "취소 완료가 도착하지 않았다 — 버려진 op 이 여전히 커널에 남아 있다";
 
 	::closesocket(a);
 	::closesocket(b);

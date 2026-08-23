@@ -63,8 +63,8 @@ namespace ne::network::http_1::internal
 		ne::Task<http::HttpResult<void_t>> SendReadErrorResponse(IStream& _stream, const http::HttpError& _error, std::stop_token _stopToken);
 
 		// 하나의 응답을 직렬화해 스트림으로 보낸다(헤드 + 본문 — 스트리밍 본문이면 chunked).
-		// _suppressBody 가 true 면 헤드만 보낸다(HEAD 응답 — 헤더는 GET 과 동일해야 하고 본문만 없다).
-		ne::Task<http::HttpResult<void_t>> SendResponse(IStream& _stream, const http::Response& _response, const bool_t _suppressBody, std::stop_token _stopToken)
+		// _isBodySuppressed 가 true 면 헤드만 보낸다(HEAD 응답 — 헤더는 GET 과 동일해야 하고 본문만 없다).
+		ne::Task<http::HttpResult<void_t>> SendResponse(IStream& _stream, const http::Response& _response, const bool_t _isBodySuppressed, std::stop_token _stopToken)
 		{
 			using R = http::HttpResult<void_t>;
 
@@ -74,7 +74,7 @@ namespace ne::network::http_1::internal
 			const string_t head = std::move(builtHead.Value());
 			if (auto sent = co_await _stream.Send(ne::memory::BufferView{ const_cast<byte_t*>(reinterpret_cast<const byte_t*>(head.data())), head.size() }, _stopToken); sent.IsError()) co_return R::Error(http::HttpError(std::move(sent.Error())).Context("[Server/SendResponse]"));
 
-			if (_suppressBody) co_return R::Ok();
+			if (_isBodySuppressed) co_return R::Ok();
 
 			if (_response.body.IsStreaming()) co_return co_await SendChunkedBody(_stream, *_response.body.Producer(), std::move(_stopToken));
 
@@ -151,7 +151,7 @@ namespace ne::network::http_1::internal
 				co_return R::Error(std::move(request.Error()));
 			}
 
-			const bool_t clientWantsClose = WantsClose(request.Value().headers);
+			const bool_t isClientCloseRequested = WantsClose(request.Value().headers);
 			const auto handleStart = std::chrono::steady_clock::now();
 
 			auto response = co_await handler(request.Value());
@@ -173,21 +173,21 @@ namespace ne::network::http_1::internal
 			// 연결당 요청 수 상한에 도달했다면 **이 응답에** close 를 실어야 한다. 루프 상단에서 조용히
 			// break 하면 방금 keep-alive 를 약속한 클라이언트가 다음 요청을 보내다 FIN 과 경합해 잃는다
 			// (비멱등 요청은 안전하게 재시도할 수도 없다).
-			const bool_t reachedRequestLimit = limits.maxRequestsPerConnection > 0 && handled >= limits.maxRequestsPerConnection;
+			const bool_t hasReachedRequestLimit = limits.maxRequestsPerConnection > 0 && handled >= limits.maxRequestsPerConnection;
 
-			const bool_t keepAlive = !clientWantsClose && !reachedRequestLimit && !_stopToken.stop_requested();
-			res.headers.Set("Connection", keepAlive ? "keep-alive" : "close");
+			const bool_t isKeepAlive = !isClientCloseRequested && !hasReachedRequestLimit && !_stopToken.stop_requested();
+			res.headers.Set("Connection", isKeepAlive ? "keep-alive" : "close");
 
 			// RFC 9110 §6.6.1: 시계를 가진 오리진 서버는 Date 를 보내야 한다(캐시/조건부 요청의 기준).
 			if (!res.headers.Has("Date")) res.headers.Set("Date", http::FormatDate(std::chrono::system_clock::now()));
 
 			// HEAD 응답에 본문을 실으면 keep-alive 프레이밍이 깨져 이후 모든 응답이 오염된다.
 			// Content-Length 는 GET 과 동일하게 유지하고(RFC 9110 §9.3.2) 본문 전송만 생략한다.
-			const bool_t suppressBody = request.Value().method == http::Method::HEAD;
+			const bool_t isBodySuppressed = request.Value().method == http::Method::HEAD;
 
 			const std::size_t responseBytes = res.body.IsStreaming() ? 0 : res.body.Size();
 
-			if (auto sent = co_await SendResponse(*stream, res, suppressBody, _stopToken); sent.IsError())
+			if (auto sent = co_await SendResponse(*stream, res, isBodySuppressed, _stopToken); sent.IsError())
 			{
 				if (observer != nullptr && observer->onError) observer->onError(sent.Error(), "Write");
 
@@ -203,13 +203,13 @@ namespace ne::network::http_1::internal
 				record.statusCode = res.statusCode;
 				record.version = http::Version::HTTP_1_1;
 				record.requestBodyBytes = request.Value().body.Size();
-				record.responseBodyBytes = suppressBody ? 0 : responseBytes;
+				record.responseBodyBytes = isBodySuppressed ? 0 : responseBytes;
 				record.duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - handleStart);
 
 				observer->onAccess(record);
 			}
 
-			if (!keepAlive) break;
+			if (!isKeepAlive) break;
 		}
 
 		(void_t)stream->Close();

@@ -177,8 +177,8 @@ namespace ne::network::http::internal
 
 	void_t AdaptRequestForRedirect(const int_t _statusCode, http::Request& _request)
 	{
-		const bool_t toGet = _statusCode == 303 || ((_statusCode == 301 || _statusCode == 302) && _request.method == Method::POST);
-		if (!toGet) return; // 307/308 — 메서드/본문 유지
+		const bool_t isConvertedToGet = _statusCode == 303 || ((_statusCode == 301 || _statusCode == 302) && _request.method == Method::POST);
+		if (!isConvertedToGet) return; // 307/308 — 메서드/본문 유지
 
 		_request.method = Method::GET;
 		_request.body = Body{};

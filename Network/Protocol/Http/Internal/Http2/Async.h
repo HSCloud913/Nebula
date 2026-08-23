@@ -31,9 +31,9 @@ namespace ne::network::http_2::internal
 
 			[[nodiscard]] bool await_ready() const noexcept
 			{
-				if (!mutex.locked)
+				if (!mutex.isLocked)
 				{
-					mutex.locked = true;
+					mutex.isLocked = true;
 					return true;
 				}
 				return false;
@@ -44,7 +44,7 @@ namespace ne::network::http_2::internal
 		};
 
 	private:
-		bool_t locked{ false };
+		bool_t isLocked{ false };
 		std::deque<std::coroutine_handle<>> waiters;
 
 	public:
@@ -54,12 +54,12 @@ namespace ne::network::http_2::internal
 		{
 			if (!waiters.empty())
 			{
-				const auto handle = waiters.front(); // 락 소유권을 다음 대기자에게 그대로 넘김(locked 유지)
+				const auto handle = waiters.front(); // 락 소유권을 다음 대기자에게 그대로 넘김(isLocked 유지)
 				waiters.pop_front();
 				handle.resume();
 				return;
 			}
-			locked = false;
+			isLocked = false;
 		}
 	};
 }

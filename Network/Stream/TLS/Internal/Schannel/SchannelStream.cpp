@@ -113,7 +113,7 @@ namespace ne::network
 		credData.dwVersion = SCHANNEL_CRED_VERSION;
 		credData.grbitEnabledProtocols = SP_PROT_TLS1_2_CLIENT | SP_PROT_TLS1_3_CLIENT;
 		credData.dwFlags = SCH_CRED_NO_DEFAULT_CREDS | SCH_USE_STRONG_CRYPTO;
-		if (_config.verifyPeer) credData.dwFlags |= SCH_CRED_AUTO_CRED_VALIDATION;
+		if (_config.isPeerVerificationEnabled) credData.dwFlags |= SCH_CRED_AUTO_CRED_VALIDATION;
 		else credData.dwFlags |= SCH_CRED_MANUAL_CRED_VALIDATION | SCH_CRED_NO_SERVERNAME_CHECK;
 
 		auto tempCredHandle = std::unique_ptr<CredHandle>(new CredHandle{});

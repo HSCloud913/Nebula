@@ -134,19 +134,19 @@ namespace ne::io
 
 	public:
 		/** @brief SO_REUSEADDR — TIME_WAIT 상태의 주소에 다시 bind 할 수 있게 합니다. */
-		[[nodiscard]] IoResult<void_t> SetReuseAddress(bool_t _enable);
+		[[nodiscard]] IoResult<void_t> SetReuseAddress(bool_t _isEnabled);
 		/** @brief TCP_NODELAY — Nagle 알고리즘을 끕니다(작은 메시지의 지연 감소). */
-		[[nodiscard]] IoResult<void_t> SetNoDelay(bool_t _enable);
+		[[nodiscard]] IoResult<void_t> SetNoDelay(bool_t _isEnabled);
 
 		/**
 		 * @brief SO_REUSEPORT — 여러 소켓이 같은 주소/포트에 bind 해 커널이 연결을 분산하게 합니다.
 		 * @note Linux/BSD 전용입니다. Windows 에는 대응 옵션이 없어 UNSUPPORTED 를 반환합니다
 		 *       (SO_REUSEADDR 이 유사하지만 의미가 달라 대체하지 않습니다).
 		 */
-		[[nodiscard]] IoResult<void_t> SetReusePort(bool_t _enable);
+		[[nodiscard]] IoResult<void_t> SetReusePort(bool_t _isEnabled);
 
 		/** @brief SO_KEEPALIVE — 유휴 연결에 keepalive 프로브를 보내 죽은 피어를 감지합니다. */
-		[[nodiscard]] IoResult<void_t> SetKeepAlive(bool_t _enable);
+		[[nodiscard]] IoResult<void_t> SetKeepAlive(bool_t _isEnabled);
 
 		/**
 		 * @brief keepalive 타이밍을 조정합니다(SetKeepAlive(true) 와 함께 써야 의미가 있습니다).
@@ -166,14 +166,14 @@ namespace ne::io
 		[[nodiscard]] IoResult<void_t> SetSendBufferSize(int_t _bytes);
 
 		/** @brief SO_BROADCAST — 데이터그램 소켓이 브로드캐스트 주소로 송신할 수 있게 합니다. */
-		[[nodiscard]] IoResult<void_t> SetBroadcast(bool_t _enable);
+		[[nodiscard]] IoResult<void_t> SetBroadcast(bool_t _isEnabled);
 
 		/**
 		 * @brief IPV6_V6ONLY — false 면 IPv6 소켓이 IPv4-mapped 주소로 IPv4 연결도 받습니다.
 		 * @note AF_INET6 소켓에만 유효합니다. 이 값의 기본값은 플랫폼마다 달라(Windows=true,
 		 *       대부분의 Linux=true) 듀얼스택을 원하면 명시적으로 false 를 설정해야 합니다.
 		 */
-		[[nodiscard]] IoResult<void_t> SetIpV6Only(bool_t _enable);
+		[[nodiscard]] IoResult<void_t> SetIpV6Only(bool_t _isEnabled);
 
 		/**
 		 * @brief 이름 있는 setter 가 없는 옵션을 직접 설정하는 탈출구입니다.

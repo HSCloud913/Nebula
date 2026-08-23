@@ -29,7 +29,7 @@ namespace ne
 
 	private:
 		std::coroutine_handle<> waiter{};
-		bool_t signaled{ false };
+		bool_t isSignaled{ false };
 
 	public:
 		/**
@@ -59,7 +59,7 @@ namespace ne
 			std::coroutine_handle<> registered{};
 
 		public:
-			[[nodiscard]] bool await_ready() const noexcept { return event.signaled; }
+			[[nodiscard]] bool await_ready() const noexcept { return event.isSignaled; }
 
 			void await_suspend(const std::coroutine_handle<> _handle) noexcept
 			{
@@ -70,7 +70,7 @@ namespace ne
 			void await_resume() noexcept
 			{
 				registered = {}; // 재개됐으므로 소멸자가 해제할 것이 없다
-				event.signaled = false;
+				event.isSignaled = false;
 			}
 		};
 
@@ -80,7 +80,7 @@ namespace ne
 		/** @brief 대기 중인 코루틴을 그 자리에서(동기) 재개합니다(없으면 신호 상태만 기록). */
 		void_t Signal() noexcept
 		{
-			signaled = true;
+			isSignaled = true;
 			if (waiter)
 			{
 				const auto handle = waiter;
@@ -98,7 +98,7 @@ namespace ne
 		 */
 		void_t SignalDeferred(IExecutor& _executor)
 		{
-			signaled = true;
+			isSignaled = true;
 			if (waiter)
 			{
 				const auto handle = waiter;

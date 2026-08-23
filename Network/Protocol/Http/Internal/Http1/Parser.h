@@ -116,11 +116,11 @@ namespace ne::network::http_1::internal
 
 		/**
 		 * @brief Content-Length / Transfer-Encoding: chunked 를 보고 본문을 읽는다.
-		 * @param _allowUntilClose 둘 다 없을 때 EOF 까지 읽을지 여부. **응답에서만** true 다 — RFC 9112
+		 * @param _canReadUntilClose 둘 다 없을 때 EOF 까지 읽을지 여부. **응답에서만** true 다 — RFC 9112
 		 * §6.3 item 8. 요청에서 프레이밍이 없으면 본문이 없다는 뜻이므로 false 여야 한다(EOF 까지
 		 * 기다리면 keep-alive 연결이 멈춘다).
 		 */
-		[[nodiscard]] ne::Task<http::HttpResult<http::Body>> ReadBody(const http::Headers& _headers, bool_t _allowUntilClose, std::stop_token _stopToken);
+		[[nodiscard]] ne::Task<http::HttpResult<http::Body>> ReadBody(const http::Headers& _headers, bool_t _canReadUntilClose, std::stop_token _stopToken);
 		[[nodiscard]] ne::Task<http::HttpResult<http::Body>> ReadChunkedBody(std::stop_token _stopToken);
 		// 상대가 연결을 닫을 때까지 읽어 남은 전부를 본문으로 삼는다(길이 프레이밍이 없는 응답).
 		[[nodiscard]] ne::Task<http::HttpResult<http::Body>> ReadBodyUntilClose(std::stop_token _stopToken);

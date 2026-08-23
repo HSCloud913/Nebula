@@ -59,11 +59,11 @@ namespace
 
 	// Accept(AcceptEx)와 Connect(ConnectEx)는 서로 의존한다 — 둘 다 제출한 뒤 함께 구동해야
 	// 완료된다(한쪽만 돌리면 교착).
-	IoResult<std::pair<Socket, Socket>> ConnectPair(Context& _context, Socket& _listener, const uint16_t _port, const bool_t _clientRegisteredIo = false)
+	IoResult<std::pair<Socket, Socket>> ConnectPair(Context& _context, Socket& _listener, const uint16_t _port, const bool_t _isClientRegisteredIo = false)
 	{
 		using R = IoResult<std::pair<Socket, Socket>>;
 
-		auto clientResult = Socket::Create(_context, AF_INET, SOCK_STREAM, IPPROTO_TCP, _clientRegisteredIo);
+		auto clientResult = Socket::Create(_context, AF_INET, SOCK_STREAM, IPPROTO_TCP, _isClientRegisteredIo);
 		if (clientResult.IsError()) return R::Error(std::move(clientResult.Error()));
 		Socket client = std::move(clientResult.Value());
 
@@ -91,7 +91,7 @@ namespace
 	};
 
 	// 리스너를 새로 열고, accept/connect 로 연결한 뒤 양쪽 다 PlainStream 으로 감싼다.
-	IoResult<StreamPair> MakeConnectedStreamPair(Context& _context, const bool_t _clientRegisteredIo = false)
+	IoResult<StreamPair> MakeConnectedStreamPair(Context& _context, const bool_t _isClientRegisteredIo = false)
 	{
 		using R = IoResult<StreamPair>;
 
@@ -102,7 +102,7 @@ namespace
 		auto portResult = BindEphemeralListener(listener);
 		if (portResult.IsError()) return R::Error(std::move(portResult.Error()));
 
-		auto pairResult = ConnectPair(_context, listener, portResult.Value(), _clientRegisteredIo);
+		auto pairResult = ConnectPair(_context, listener, portResult.Value(), _isClientRegisteredIo);
 		if (pairResult.IsError()) return R::Error(std::move(pairResult.Error()));
 		auto [accepted, client] = std::move(pairResult.Value());
 
@@ -418,7 +418,7 @@ TEST(PlainStreamTest, SendRegisteredRioFastPathRoundTrip)
 	ASSERT_TRUE(portResult.IsOk()) << portResult.Error().What();
 
 	// 클라이언트만 RIO 소켓(WSA_FLAG_REGISTERED_IO)으로 생성 — SendZeroCopy(RIO) 는 송신측 소켓에서만 필요.
-	auto pairResult = ConnectPair(context, listener, portResult.Value(), /*_clientRegisteredIo=*/true);
+	auto pairResult = ConnectPair(context, listener, portResult.Value(), /*_isClientRegisteredIo=*/true);
 	ASSERT_TRUE(pairResult.IsOk()) << pairResult.Error().What();
 	auto [accepted, client] = std::move(pairResult.Value());
 
@@ -458,7 +458,7 @@ TEST(PlainStreamTest, SendRegisteredFallsBackToPlainSendOnNonRioSocket)
 
 	// 이번엔 클라이언트를 일반(RIO 아닌) 소켓으로 생성 — Socket::SendZeroCopy 가 2단계에서
 	// UNSUPPORTED 를 값으로 반환하고, PlainStream::SendRegistered 는 그걸 감지해 Send() 로 폴백해야 한다.
-	auto pairResult = MakeConnectedStreamPair(context, /*_clientRegisteredIo=*/false);
+	auto pairResult = MakeConnectedStreamPair(context, /*_isClientRegisteredIo=*/false);
 	ASSERT_TRUE(pairResult.IsOk()) << pairResult.Error().What();
 	auto [server, client] = std::move(pairResult.Value());
 

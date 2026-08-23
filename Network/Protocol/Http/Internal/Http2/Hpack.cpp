@@ -163,7 +163,7 @@ namespace ne::network::http_2::internal
 		{
 			if (_pos >= _data.size()) return false;
 
-			const bool_t huffman = (_data[_pos] & 0x80) != 0;
+			const bool_t isHuffmanEncoded = (_data[_pos] & 0x80) != 0;
 			std::uint64_t length = 0;
 			if (!DecodeInteger(_data, _pos, 7, length)) return false;
 			if (_pos + length > _data.size()) return false;
@@ -171,7 +171,7 @@ namespace ne::network::http_2::internal
 			const auto bytes = _data.subspan(_pos, static_cast<std::size_t>(length));
 			_pos += static_cast<std::size_t>(length);
 
-			if (!huffman)
+			if (!isHuffmanEncoded)
 			{
 				_out.assign(reinterpret_cast<const char*>(bytes.data()), bytes.size());
 				return true;

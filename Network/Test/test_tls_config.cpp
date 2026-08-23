@@ -10,7 +10,7 @@ using namespace ne::network;
 TEST(TlsConfigTest, DefaultVerifyPeerIsTrue)
 {
 	TlsConfig config;
-	EXPECT_TRUE(config.verifyPeer);
+	EXPECT_TRUE(config.isPeerVerificationEnabled);
 }
 
 TEST(TlsConfigTest, DefaultFieldsAreEmpty)
@@ -36,12 +36,12 @@ TEST(TlsConfigTest, AssignAlpnProtocols)
 TEST(TlsConfigTest, AssignFields)
 {
 	TlsConfig config;
-	config.verifyPeer = false;
+	config.isPeerVerificationEnabled = false;
 	config.caFile = "ca.pem";
 	config.certFile = "cert.pfx";
 	config.pfxPassword = "secret";
 
-	EXPECT_FALSE(config.verifyPeer);
+	EXPECT_FALSE(config.isPeerVerificationEnabled);
 	EXPECT_EQ(config.caFile, "ca.pem");
 	EXPECT_EQ(config.certFile, "cert.pfx");
 	EXPECT_EQ(config.pfxPassword, "secret");
