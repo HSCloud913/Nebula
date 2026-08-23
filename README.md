@@ -23,7 +23,7 @@ C++23 기반의 모듈러 공용 라이브러리. 저수준 I/O(코루틴 기반
 | Log | `ne::log` (별칭 `ne::Logger`) | 비동기 파일 로거 | ✅ |
 | Json | `ne::json` | `Value`/`Object`/`Array`, 자유함수 `Parse`/`Stringify` | ✅ |
 | Util | `ne::util` | `Ascii`, `Base64`, `StringFormat` | ✅ |
-| Time | `ne::time` | `TimerQueue`(min-heap, 반복 타이머), `Sleep`/`Deadline` awaitable, `HttpDate` | ✅ |
+| Time | `ne::time` | `TimerQueue`(min-heap, 반복 타이머), `SleepFor`/`Deadline` 코루틴 awaitable | ✅ |
 | Io | `ne::io` | 비동기 엔진(IOCP/WsaPoll/epoll/io_uring) + `Context`/`Task`/`IStream`/`Socket`/`File` | ✅ |
 | Cryptography | `ne::crypto` | Hash(MD5/SHA1/2/3/CRC32)/HMAC/AES/RSA/BigInt/SecureRandom | 🚧 |
 | Ipc | `ne::ipc` | `Pipe`/`SharedMemory`/`Semaphore`/`MessageQueue` | 🚧 |

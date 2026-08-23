@@ -15,6 +15,7 @@
 #include "Network/Protocol/Http/Message/Method.h"
 #include "Network/Protocol/Http/Message/Version.h"
 #include "Network/Protocol/Http/Limits.h"
+#include "Network/Protocol/Http/ServerObserver.h"
 #include "Network/Protocol/Http/Message/Request.h"
 #include "Network/Protocol/Http/Message/Response.h"
 #include "Network/Protocol/Http/Diagnostic/Error.h"
@@ -64,6 +65,7 @@ namespace ne::network::http
 		const TlsConfig* tlsConfig{ nullptr };
 		http::Version version{ http::Version::AUTO };
 		http::Limits limits;
+		ServerObserver observer;
 
 	public:
 		/** @brief _method + _path 패턴 조합에 경로 파라미터를 받는 핸들러를 등록합니다(체이닝 가능). */
@@ -119,6 +121,16 @@ namespace ne::network::http
 		ServerBuilder& Version(const http::Version _version)
 		{
 			version = _version;
+			return *this;
+		}
+
+		/**
+		 * @brief 관측 훅을 등록합니다 — 액세스 로그·에러 추적(기본: 없음, 비용 0).
+		 * @note 콜백은 이벤트 루프 스레드에서 동기 호출되므로 블로킹 작업을 직접 하지 마세요(ServerObserver 참고).
+		 */
+		ServerBuilder& Observe(ServerObserver _observer)
+		{
+			observer = std::move(_observer);
 			return *this;
 		}
 

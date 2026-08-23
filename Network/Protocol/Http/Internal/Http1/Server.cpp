@@ -121,14 +121,18 @@ namespace ne::network::http_1::internal
 
 		while (!_stopToken.stop_requested())
 		{
-			// 읽기 데드라인. 첫 요청은 헤더 대기(headerTimeout)부터 시작하고, keep-alive 재사용 시에는
-			// 다음 요청이 시작되기까지의 유휴 시간(idleTimeout)이 포함된다. 본문까지 한 번에 읽으므로
-			// bodyTimeout 을 더해 하나의 예산으로 쓴다 — 파서 내부 단계별 데드라인은 후속 과제.
-			const auto readBudget = (handled == 0 ? limits.headerTimeout : limits.idleTimeout) + limits.bodyTimeout;
+			// 읽기 데드라인을 **절대 시각으로 한 번** 정한다. 첫 요청은 헤더 대기(headerTimeout)부터,
+			// keep-alive 재사용 시에는 다음 요청이 시작되기까지의 유휴 시간(idleTimeout)부터 센다.
+			// 본문까지 한 호출에 읽으므로 bodyTimeout 을 더해 하나의 예산으로 만든다.
+			//
+			// 여기서 Deadline 을 쓰는 이유: 상대 지연으로 넘기면 이후 파서 내부 단계에 시한을 더 걸 때
+			// 각 단계가 자기 몫을 새로 받아 전체 예산이 단계 수만큼 불어난다. 절대 시각이면 그 전부가
+			// 같은 예산을 나눠 쓴다.
+			const auto readDeadline = _context.DeadlineAfter((handled == 0 ? limits.headerTimeout : limits.idleTimeout) + limits.bodyTimeout);
 
 			// 타임아웃 시 리더 상태는 메시지 중간에 멈춰 있다. 아래 모든 에러 경로가 연결을 닫으므로
 			// 그 상태가 재사용되지 않는다 — 타임아웃을 비치명적으로 바꾸려면 리더도 함께 버려야 한다.
-			auto request = co_await http::internal::WithTimeout(_context, readBudget, [&reader](std::stop_token _token) { return reader.ReadRequest(std::move(_token)); });
+			auto request = co_await http::internal::WithTimeout(_context, readDeadline, [&reader](std::stop_token _token) { return reader.ReadRequest(std::move(_token)); });
 
 			if (request.IsError())
 			{
@@ -139,6 +143,8 @@ namespace ne::network::http_1::internal
 					co_return R::Ok();
 				}
 
+				if (observer != nullptr && observer->onError) observer->onError(request.Error(), "Read");
+
 				// 크기 초과/형식 오류는 조용히 끊지 않고 상태 코드로 알린 뒤 닫는다(클라이언트가 원인을 알 수 있게).
 				(void_t)co_await SendReadErrorResponse(*stream, request.Error(), _stopToken);
 				(void_t)stream->Close();
@@ -146,10 +152,12 @@ namespace ne::network::http_1::internal
 			}
 
 			const bool_t clientWantsClose = WantsClose(request.Value().headers);
+			const auto handleStart = std::chrono::steady_clock::now();
 
 			auto response = co_await handler(request.Value());
 			if (response.IsError())
 			{
+				if (observer != nullptr && observer->onError) observer->onError(response.Error(), "Dispatch");
 				(void_t)stream->Close();
 				co_return R::Error(std::move(response.Error()));
 			}
@@ -177,10 +185,28 @@ namespace ne::network::http_1::internal
 			// Content-Length 는 GET 과 동일하게 유지하고(RFC 9110 §9.3.2) 본문 전송만 생략한다.
 			const bool_t suppressBody = request.Value().method == http::Method::HEAD;
 
+			const std::size_t responseBytes = res.body.IsStreaming() ? 0 : res.body.Size();
+
 			if (auto sent = co_await SendResponse(*stream, res, suppressBody, _stopToken); sent.IsError())
 			{
+				if (observer != nullptr && observer->onError) observer->onError(sent.Error(), "Write");
+
 				(void_t)stream->Close();
 				co_return R::Error(std::move(sent.Error()));
+			}
+
+			if (observer != nullptr && observer->onAccess)
+			{
+				http::AccessRecord record;
+				record.method = request.Value().method;
+				record.target = request.Value().target;
+				record.statusCode = res.statusCode;
+				record.version = http::Version::HTTP_1_1;
+				record.requestBodyBytes = request.Value().body.Size();
+				record.responseBodyBytes = suppressBody ? 0 : responseBytes;
+				record.duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - handleStart);
+
+				observer->onAccess(record);
 			}
 
 			if (!keepAlive) break;

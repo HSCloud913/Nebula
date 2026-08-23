@@ -314,20 +314,119 @@ namespace ne::io
 
 
 
-	IoResult<void_t> Socket::SetReuseAddress(const bool_t _enable)
+	namespace
 	{
-		const int_t value = _enable ? 1 : 0;
-		if (::setsockopt(handle.Get(), SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char_t*>(&value), sizeof(value)) != 0) return IoResult<void_t>::Error(IoError{ ne::OsError{ ne::LastOsError() } }.Context("[Socket/SetReuseAddress]"));
+		// 모든 옵션 setter 가 공유하는 원시 경로. 실패 시 어느 옵션이었는지 문맥에 남긴다.
+		[[nodiscard]] IoResult<void_t> ApplyOption(const socket_t _socket, const int_t _level, const int_t _name, const void_t* _value, const int_t _length, const string_view_t _context)
+		{
+			if (::setsockopt(_socket, _level, _name, static_cast<const char_t*>(_value), _length) != 0) return IoResult<void_t>::Error(IoError{ ne::OsError{ ne::LastOsError() } }.Context(_context));
 
-		return IoResult<void_t>::Ok();
+			return IoResult<void_t>::Ok();
+		}
+
+		[[nodiscard]] IoResult<void_t> ApplyFlag(const socket_t _socket, const int_t _level, const int_t _name, const bool_t _enable, const string_view_t _context)
+		{
+			const int_t value = _enable ? 1 : 0;
+			return ApplyOption(_socket, _level, _name, &value, static_cast<int_t>(sizeof(value)), _context);
+		}
+
+		// getsockname/getpeername 결과를 SocketAddress 로 정규화한다.
+		[[nodiscard]] IoResult<SocketAddress> DescribeAddress(const sockaddr_storage& _address, const string_view_t _context)
+		{
+			char_t buffer[INET6_ADDRSTRLEN]{};
+			SocketAddress result;
+			result.family = _address.ss_family;
+
+			if (_address.ss_family == AF_INET)
+			{
+				const auto* v4 = reinterpret_cast<const sockaddr_in*>(&_address);
+				if (::inet_ntop(AF_INET, &v4->sin_addr, buffer, sizeof(buffer)) == nullptr) return IoResult<SocketAddress>::Error(IoError{ ne::OsError{ ne::LastOsError() } }.Context(_context));
+				result.port = ::ntohs(v4->sin_port);
+			}
+			else if (_address.ss_family == AF_INET6)
+			{
+				const auto* v6 = reinterpret_cast<const sockaddr_in6*>(&_address);
+				if (::inet_ntop(AF_INET6, &v6->sin6_addr, buffer, sizeof(buffer)) == nullptr) return IoResult<SocketAddress>::Error(IoError{ ne::OsError{ ne::LastOsError() } }.Context(_context));
+				result.port = ::ntohs(v6->sin6_port);
+			}
+			else
+			{
+				// AF_UNIX 등은 ip/port 개념이 없어 이 표현으로 담을 수 없다.
+				return IoResult<SocketAddress>::Error(IoError{ IoErrorKind::UNSUPPORTED, "address family has no ip/port representation" }.Context(_context));
+			}
+
+			result.ip = buffer;
+
+			return IoResult<SocketAddress>::Ok(std::move(result));
+		}
 	}
 
-	IoResult<void_t> Socket::SetNoDelay(const bool_t _enable)
+
+
+	IoResult<void_t> Socket::SetReuseAddress(const bool_t _enable) { return ApplyFlag(handle.Get(), SOL_SOCKET, SO_REUSEADDR, _enable, "[Socket/SetReuseAddress]"); }
+
+	IoResult<void_t> Socket::SetNoDelay(const bool_t _enable) { return ApplyFlag(handle.Get(), IPPROTO_TCP, TCP_NODELAY, _enable, "[Socket/SetNoDelay]"); }
+
+	IoResult<void_t> Socket::SetReusePort(const bool_t _enable)
 	{
-		const int_t value = _enable ? 1 : 0;
-		if (::setsockopt(handle.Get(), IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char_t*>(&value), sizeof(value)) != 0) return IoResult<void_t>::Error(IoError{ ne::OsError{ ne::LastOsError() } }.Context("[Socket/SetNoDelay]"));
+#if defined(SO_REUSEPORT)
+		return ApplyFlag(handle.Get(), SOL_SOCKET, SO_REUSEPORT, _enable, "[Socket/SetReusePort]");
+#else
+		// Windows 에는 대응 옵션이 없다. SO_REUSEADDR 로 조용히 대체하면 의미가 달라(그쪽은 연결 분산이
+		// 아니라 주소 재사용) 사용자가 없는 기능을 있다고 믿게 되므로 명시적으로 실패시킨다.
+		(void_t)_enable;
+		return IoResult<void_t>::Error(IoError{ IoErrorKind::UNSUPPORTED, "SO_REUSEPORT is not available on this platform" }.Context("[Socket/SetReusePort]"));
+#endif
+	}
+
+	IoResult<void_t> Socket::SetKeepAlive(const bool_t _enable) { return ApplyFlag(handle.Get(), SOL_SOCKET, SO_KEEPALIVE, _enable, "[Socket/SetKeepAlive]"); }
+
+	IoResult<void_t> Socket::SetKeepAliveTiming(const std::chrono::seconds _idle, const std::chrono::seconds _interval)
+	{
+		if (_idle.count() <= 0 || _interval.count() <= 0) return IoResult<void_t>::Error(IoError{ IoErrorKind::INVALID_BUFFER, "keepalive idle/interval must be positive" }.Context("[Socket/SetKeepAliveTiming]"));
+
+#if defined(_WIN32)
+		// Windows 는 개별 setsockopt 이 아니라 ioctl 한 번으로 idle/interval 을 함께 넘긴다(단위: ms).
+		tcp_keepalive settings{};
+		settings.onoff = 1;
+		settings.keepalivetime = static_cast<ulong_t>(_idle.count() * 1000);
+		settings.keepaliveinterval = static_cast<ulong_t>(_interval.count() * 1000);
+
+		ulong_t returned = 0;
+		if (::WSAIoctl(handle.Get(), SIO_KEEPALIVE_VALS, &settings, sizeof(settings), nullptr, 0, &returned, nullptr, nullptr) != 0) return IoResult<void_t>::Error(IoError{ ne::OsError{ ne::LastOsError() } }.Context("[Socket/SetKeepAliveTiming]"));
 
 		return IoResult<void_t>::Ok();
+#elif defined(TCP_KEEPIDLE) && defined(TCP_KEEPINTVL)
+		const auto idle = static_cast<int_t>(_idle.count());
+		if (auto result = ApplyOption(handle.Get(), IPPROTO_TCP, TCP_KEEPIDLE, &idle, static_cast<int_t>(sizeof(idle)), "[Socket/SetKeepAliveTiming/idle]"); result.IsError()) return result;
+
+		const auto interval = static_cast<int_t>(_interval.count());
+		return ApplyOption(handle.Get(), IPPROTO_TCP, TCP_KEEPINTVL, &interval, static_cast<int_t>(sizeof(interval)), "[Socket/SetKeepAliveTiming/interval]");
+#else
+		return IoResult<void_t>::Error(IoError{ IoErrorKind::UNSUPPORTED, "keepalive timing is not tunable on this platform" }.Context("[Socket/SetKeepAliveTiming]"));
+#endif
+	}
+
+	IoResult<void_t> Socket::SetLinger(const LingerOption _option)
+	{
+		::linger value{};
+		value.l_onoff = _option.isEnabled ? 1 : 0;
+		value.l_linger = static_cast<decltype(value.l_linger)>(_option.seconds);
+
+		return ApplyOption(handle.Get(), SOL_SOCKET, SO_LINGER, &value, static_cast<int_t>(sizeof(value)), "[Socket/SetLinger]");
+	}
+
+	IoResult<void_t> Socket::SetReceiveBufferSize(const int_t _bytes) { return ApplyOption(handle.Get(), SOL_SOCKET, SO_RCVBUF, &_bytes, static_cast<int_t>(sizeof(_bytes)), "[Socket/SetReceiveBufferSize]"); }
+
+	IoResult<void_t> Socket::SetSendBufferSize(const int_t _bytes) { return ApplyOption(handle.Get(), SOL_SOCKET, SO_SNDBUF, &_bytes, static_cast<int_t>(sizeof(_bytes)), "[Socket/SetSendBufferSize]"); }
+
+	IoResult<void_t> Socket::SetBroadcast(const bool_t _enable) { return ApplyFlag(handle.Get(), SOL_SOCKET, SO_BROADCAST, _enable, "[Socket/SetBroadcast]"); }
+
+	IoResult<void_t> Socket::SetIpV6Only(const bool_t _enable) { return ApplyFlag(handle.Get(), IPPROTO_IPV6, IPV6_V6ONLY, _enable, "[Socket/SetIpV6Only]"); }
+
+	IoResult<void_t> Socket::SetRawOption(const int_t _level, const int_t _name, const std::span<const ne::byte_t> _value)
+	{
+		return ApplyOption(handle.Get(), _level, _name, _value.data(), static_cast<int_t>(_value.size()), "[Socket/SetRawOption]");
 	}
 
 
@@ -347,19 +446,52 @@ namespace ne::io
 		return ::ntohs(reinterpret_cast<const sockaddr_in*>(&address)->sin_port);
 	}
 
+	IoResult<SocketAddress> Socket::LocalAddress() const
+	{
+		sockaddr_storage address{};
+#if defined(_WIN32)
+		int length = static_cast<int>(sizeof(address));
+#else
+		socklen_t length = static_cast<socklen_t>(sizeof(address));
+#endif
+		if (::getsockname(handle.Get(), reinterpret_cast<sockaddr*>(&address), &length) != 0) return IoResult<SocketAddress>::Error(IoError{ ne::OsError{ ne::LastOsError() } }.Context("[Socket/LocalAddress]"));
+
+		return DescribeAddress(address, "[Socket/LocalAddress]");
+	}
+
+	IoResult<SocketAddress> Socket::PeerAddress() const
+	{
+		sockaddr_storage address{};
+#if defined(_WIN32)
+		int length = static_cast<int>(sizeof(address));
+#else
+		socklen_t length = static_cast<socklen_t>(sizeof(address));
+#endif
+		if (::getpeername(handle.Get(), reinterpret_cast<sockaddr*>(&address), &length) != 0) return IoResult<SocketAddress>::Error(IoError{ ne::OsError{ ne::LastOsError() } }.Context("[Socket/PeerAddress]"));
+
+		return DescribeAddress(address, "[Socket/PeerAddress]");
+	}
 
 
-	IoResult<void_t> Socket::Shutdown()
+
+	IoResult<void_t> Socket::Shutdown(const ShutdownMode _mode)
 	{
 #if defined(_WIN32)
-		constexpr int_t how = SD_SEND;
+		constexpr int_t sendOnly = SD_SEND;
+		constexpr int_t receiveOnly = SD_RECEIVE;
+		constexpr int_t both = SD_BOTH;
 #elif defined(IS_POSIX)
-		constexpr int_t how = SHUT_WR;
+		constexpr int_t sendOnly = SHUT_WR;
+		constexpr int_t receiveOnly = SHUT_RD;
+		constexpr int_t both = SHUT_RDWR;
 #endif
+		const int_t how = _mode == ShutdownMode::SEND ? sendOnly : (_mode == ShutdownMode::RECEIVE ? receiveOnly : both);
+
 		if (::shutdown(handle.Get(), how) != 0) return IoResult<void_t>::Error(IoError{ ne::OsError{ ne::LastOsError() } }.Context("[Socket/Shutdown]"));
 
 		return IoResult<void_t>::Ok();
 	}
+
 
 	IoResult<void_t> Socket::Close()
 	{

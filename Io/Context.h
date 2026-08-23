@@ -128,6 +128,12 @@ namespace ne::io
 
 		[[nodiscard]] ne::time::Timer SleepFor(std::chrono::milliseconds _duration) const noexcept;
 
+		/** @brief 절대 시각까지 대기합니다 — 여러 단계가 하나의 데드라인을 공유할 때 씁니다. */
+		[[nodiscard]] ne::time::Timer SleepUntil(ne::time::Deadline _deadline) const noexcept;
+
+		/** @brief 지금(타이머 큐의 시계)으로부터 _duration 뒤가 시한인 Deadline 을 만듭니다. */
+		[[nodiscard]] ne::time::Deadline DeadlineAfter(std::chrono::milliseconds _duration) const noexcept;
+
 	private:
 		[[nodiscard]] std::chrono::milliseconds EffectiveTimeout(std::chrono::milliseconds _timeout) const noexcept;
 		void_t DrainPosted();

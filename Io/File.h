@@ -7,7 +7,7 @@
 #include <span>
 #include <stop_token>
 #include "Base/Type.h"
-#include "Diagnostic/Type.h"
+#include "Io/Handle.h"
 #include "Base/Handle.h"
 #include "Io/Diagnostic/Error.h"
 #include "Base/Coroutine/Task.h"

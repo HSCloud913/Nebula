@@ -105,8 +105,16 @@ namespace ne::io
 
 	ne::time::Timer Context::SleepFor(const std::chrono::milliseconds _duration) const noexcept
 	{
-		// 생성자가 항상 휠을 확보하므로 nullptr 일 수 없다.
+		// 생성자가 항상 타이머 큐를 확보하므로 nullptr 일 수 없다.
 		return ne::time::SleepFor(*timer, _duration);
+	}
+
+	ne::time::Timer Context::SleepUntil(const ne::time::Deadline _deadline) const noexcept { return ne::time::SleepUntil(*timer, _deadline); }
+
+	ne::time::Deadline Context::DeadlineAfter(const std::chrono::milliseconds _duration) const noexcept
+	{
+		// 큐의 시계를 기준으로 만든다 — steady_clock::now() 를 직접 쓰면 페이크 클럭 주입 시 어긋난다.
+		return ne::time::Deadline::After(timer->Now(), _duration);
 	}
 
 

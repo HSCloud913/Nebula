@@ -16,6 +16,7 @@
 #include "Network/Protocol/Http/Message/Response.h"
 #include "Network/Protocol/Http/Diagnostic/Error.h"
 #include "Network/Protocol/Http/Limits.h"
+#include "Network/Protocol/Http/ServerObserver.h"
 
 namespace ne { class Event; }
 
@@ -39,13 +40,16 @@ namespace ne::network::http_1::internal
 		using Handler = std::function<ne::Task<http::HttpResult<http::Response>>(const http::Request&)>;
 
 	public:
-		explicit Server(Handler _handler, const http::Limits _limits = {}) noexcept
+		// _observer 는 널이면 관측을 하지 않는다(수명은 호출자 = ServerBuilder::Serve 프레임이 보장).
+		explicit Server(Handler _handler, const http::Limits _limits = {}, const http::ServerObserver* _observer = nullptr) noexcept
 			: handler(std::move(_handler))
-			, limits(_limits) {}
+			, limits(_limits)
+			, observer(_observer) {}
 
 	private:
 		Handler handler;
 		http::Limits limits;
+		const http::ServerObserver* observer{ nullptr };
 
 	public:
 		/**

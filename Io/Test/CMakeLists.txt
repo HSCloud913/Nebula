@@ -18,6 +18,7 @@ add_executable(${PROJECT_NAME}
 if (WIN32)
 	target_sources(${PROJECT_NAME} PRIVATE test_wsapoll_engine.cpp)
 	target_sources(${PROJECT_NAME} PRIVATE test_socket_reactor.cpp) # io::Socket × 리액터 엔진 조합
+	target_sources(${PROJECT_NAME} PRIVATE test_socket_option.cpp) # 옵션/주소/Shutdown 방향
 endif ()
 target_link_libraries(${PROJECT_NAME} PRIVATE NebulaBase NebulaTime NebulaIo GTest::gtest_main)
 

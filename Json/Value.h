@@ -19,10 +19,7 @@ namespace ne::json
 		INVALID,
 		NULL_DATA,
 		BOOLEAN,
-		NUMBER,
-		POSITIVE_NUMBER,
-		LARGE_NUMBER,
-		POSITIVE_LARGE_NUMBER,
+		INTEGER,
 		REAL,
 		STRING,
 		ARRAY,
@@ -43,8 +40,9 @@ namespace ne::json
 	 * @class Value
 	 * @brief JSON 값 하나(null/bool/숫자/문자열/객체/배열)를 담는 variant 기반 래퍼입니다.
 	 *
-	 * 실제 타입은 Type 으로 구분되며, 숫자는 부호/크기별로 NUMBER/POSITIVE_NUMBER/
-	 * LARGE_NUMBER/POSITIVE_LARGE_NUMBER/REAL 다섯 종류로 세분화되어 있습니다. 타입이 확실할 때는
+	 * 실제 타입은 Type 으로 구분됩니다. JSON 은 숫자를 하나의 타입으로 정의하므로 여기서도
+	 * INTEGER/REAL 둘로만 나눕니다 — 내부 저장이 부호 있는/없는 64비트를 함께 쓰는 것은 2^63 이상의
+	 * 정수까지 손실 없이 담기 위한 구현 세부이며, 사용자는 그것을 알 필요가 없습니다. 타입이 확실할 때는
 	 * Is*() 확인 후 As*() 로 값을 꺼내고(무예외; 선행 조건 위반 시 assert), 타입을 모를 때는
 	 * TryAs*() 가 ne::Result 로 안전하게 반환합니다.
 	 */
@@ -64,19 +62,19 @@ namespace ne::json
 			, value(_value) {}
 
 		explicit Value(const int_t _value)
-			: type(Type::NUMBER)
-			, value(_value) {}
+			: type(Type::INTEGER)
+			, value(static_cast<longlong_t>(_value)) {}
 
 		explicit Value(const uint_t _value)
-			: type(Type::POSITIVE_NUMBER)
-			, value(_value) {}
+			: type(Type::INTEGER)
+			, value(static_cast<longlong_t>(_value)) {}
 
 		explicit Value(const longlong_t _value)
-			: type(Type::LARGE_NUMBER)
+			: type(Type::INTEGER)
 			, value(_value) {}
 
 		explicit Value(const ulonglong_t _value)
-			: type(Type::POSITIVE_LARGE_NUMBER)
+			: type(Type::INTEGER)
 			, value(_value) {}
 
 		explicit Value(const double_t _value)
@@ -116,7 +114,7 @@ namespace ne::json
 		// 중첩 깊이를 제한한다. 초과 시 무효(INVALID) Value 로 실패시킨다.
 		static constexpr int_t MaxParseDepth = 256;
 
-		using Storage = std::variant<std::monostate, bool_t, int_t, uint_t, longlong_t, ulonglong_t, double_t, std::shared_ptr<string_t>, Object, Array>;
+		using Storage = std::variant<std::monostate, bool_t, longlong_t, ulonglong_t, double_t, std::shared_ptr<string_t>, Object, Array>;
 
 	private:
 		Type type;
@@ -126,11 +124,10 @@ namespace ne::json
 		[[nodiscard]] bool_t IsInvalid() const { return type == Type::INVALID; }
 		[[nodiscard]] bool_t IsNull() const { return type == Type::NULL_DATA; }
 		[[nodiscard]] bool_t IsBool() const { return type == Type::BOOLEAN; }
-		[[nodiscard]] bool_t IsNumber() const { return type == Type::NUMBER; }
-		[[nodiscard]] bool_t IsPositiveNumber() const { return type == Type::POSITIVE_NUMBER; }
-		[[nodiscard]] bool_t IsLargeNumber() const { return type == Type::LARGE_NUMBER; }
-		[[nodiscard]] bool_t IsPositiveLargeNumber() const { return type == Type::POSITIVE_LARGE_NUMBER; }
+		[[nodiscard]] bool_t IsInteger() const { return type == Type::INTEGER; }
 		[[nodiscard]] bool_t IsReal() const { return type == Type::REAL; }
+		/** @brief 정수든 실수든 숫자이면 true — JSON 자체가 숫자를 하나의 타입으로 보는 관점입니다. */
+		[[nodiscard]] bool_t IsNumber() const { return type == Type::INTEGER || type == Type::REAL; }
 		[[nodiscard]] bool_t IsString() const { return type == Type::STRING; }
 		[[nodiscard]] bool_t IsObject() const { return type == Type::OBJECT; }
 		[[nodiscard]] bool_t IsArray() const { return type == Type::ARRAY; }
@@ -139,11 +136,20 @@ namespace ne::json
 		// 프로그래머 오류로 간주해 assert 로 잡는다(릴리스에서는 UB) — ne::Result::Value() 와 동일 계약.
 		// 타입을 모르는 상태에서의 안전한 접근은 아래 TryAs*() (Result 반환)를 사용한다.
 		[[nodiscard]] bool_t AsBool() const;
-		[[nodiscard]] int_t AsNumber() const;
-		[[nodiscard]] uint_t AsPositiveNumber() const;
-		[[nodiscard]] longlong_t AsLargeNumber() const;
-		[[nodiscard]] ulonglong_t AsPositiveLargeNumber() const;
-		[[nodiscard]] double_t AsReal() const;
+
+		/**
+		 * @brief 정수 값을 부호 있는 64비트로 반환합니다.
+		 * @note 내부에 부호 없는 값이 담겨 있고 그것이 2^63 이상이면 표현할 수 없어 assert 로 잡습니다.
+		 * 그 범위가 필요하면 AsUint64(), 확실치 않으면 TryAsInt64() 를 쓰세요.
+		 */
+		[[nodiscard]] longlong_t AsInt64() const;
+
+		/** @brief 정수 값을 부호 없는 64비트로 반환합니다(음수가 담겨 있으면 assert). */
+		[[nodiscard]] ulonglong_t AsUint64() const;
+
+		/** @brief 숫자 값을 double 로 반환합니다 — 정수도 받아 넓혀 줍니다(큰 정수는 정밀도 손실 가능). */
+		[[nodiscard]] double_t AsDouble() const;
+
 		[[nodiscard]] string_t* AsString() const;
 		[[nodiscard]] const Object& AsObject() const;
 		[[nodiscard]] const Array& AsArray() const;
@@ -151,11 +157,12 @@ namespace ne::json
 		// [안전] 타입 불일치 시 예외 대신 Err 를 반환한다("예외 없음" 철학). 참조 타입은 Result 에
 		// 담을 수 없어 Object/Array/String 은 포인터로 반환한다(성공 시 non-null).
 		[[nodiscard]] ne::Result<bool_t> TryAsBool() const { return AsScalar<bool_t>("json: expected bool"); }
-		[[nodiscard]] ne::Result<int_t> TryAsNumber() const { return AsScalar<int_t>("json: expected number"); }
-		[[nodiscard]] ne::Result<uint_t> TryAsPositiveNumber() const { return AsScalar<uint_t>("json: expected positive number"); }
-		[[nodiscard]] ne::Result<longlong_t> TryAsLargeNumber() const { return AsScalar<longlong_t>("json: expected large number"); }
-		[[nodiscard]] ne::Result<ulonglong_t> TryAsPositiveLargeNumber() const { return AsScalar<ulonglong_t>("json: expected positive large number"); }
-		[[nodiscard]] ne::Result<double_t> TryAsReal() const { return AsScalar<double_t>("json: expected real"); }
+		/** @brief 정수 값을 부호 있는 64비트로 반환합니다. 정수가 아니거나 범위를 넘으면 Err. */
+		[[nodiscard]] ne::Result<longlong_t> TryAsInt64() const;
+		/** @brief 정수 값을 부호 없는 64비트로 반환합니다. 정수가 아니거나 음수면 Err. */
+		[[nodiscard]] ne::Result<ulonglong_t> TryAsUint64() const;
+		/** @brief 숫자 값을 double 로 반환합니다(정수도 허용). 숫자가 아니면 Err. */
+		[[nodiscard]] ne::Result<double_t> TryAsDouble() const;
 		[[nodiscard]] ne::Result<string_t*> TryAsString() const;
 		[[nodiscard]] ne::Result<const Object*> TryAsObject() const;
 		[[nodiscard]] ne::Result<const Array*> TryAsArray() const;

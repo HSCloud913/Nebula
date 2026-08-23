@@ -8,8 +8,7 @@
 #include "Base/Result.h"
 #include "Base/Error.h"
 #include "Base/Type.h"
-#include "../Diagnostic/Type.h"
-#include "Io/Diagnostic/Error.h"
+#include "Io/Handle.h"
 #include "Io/Diagnostic/Error.h"
 
 namespace ne::io

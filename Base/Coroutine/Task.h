@@ -16,10 +16,10 @@ namespace ne
 	 * 호출자 코루틴으로 즉시 이동합니다(스택 성장 없음).
 	 *
 	 * @note 계약: 소멸자는 무조건 handle.destroy() 로 코루틴 프레임을 파괴합니다 — 코루틴이 진행 중인
-	 * I/O 로 suspend 된 채(예: co_await Io::Awaitable/Time::Awaitable 내부) 소멸되어도 안전합니다.
-	 * 완료 컨텍스트가 코루틴 프레임이 아니라 heap 에 별도로 살기 때문입니다 — Io::Awaitable 은
-	 * CompletionHandler 를 abandoned=true 로 표시해 루프에 소유권을 넘기고, Time::Awaitable 은
-	 * 소멸자가 미발화 타이머를 wheel.Cancel() 합니다. 중도 폐기가 정상 경로이며, Io/Coroutine/Timeout.h
+	 * I/O 로 suspend 된 채(예: co_await io::IoOperation/time::Timer 내부) 소멸되어도 안전합니다.
+	 * 완료 컨텍스트가 코루틴 프레임이 아니라 heap 에 별도로 살기 때문입니다 — io::IoOperation 은
+	 * CompletionHandler 를 ABANDONED 로 넘기고 커널 취소를 요청하며, time::Timer 는 소멸자가
+	 * 미발화 타이머를 TimerQueue::Cancel() 합니다. 중도 폐기가 정상 경로이며, Io/Coroutine/Timeout.h
 	 * 의 when_any 류 콤비네이터가 진 쪽 Task 를 그대로 파괴해 취소하는 것도 이 계약에 기대고 있습니다.
 	 *
 	 * @tparam T 코루틴이 co_return하는 값의 타입. 값이 없는 경우 아래 Task<void_t> 특수화를 사용합니다.

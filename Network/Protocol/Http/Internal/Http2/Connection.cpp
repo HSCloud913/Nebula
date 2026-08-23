@@ -771,11 +771,37 @@ namespace ne::network::http_2::internal
 		request.body = http::Body(std::move(stream.body));
 		if (!stream.authority.empty() && !request.headers.Has("Host")) request.headers.Set("Host", stream.authority);
 
+		const auto handleStart = std::chrono::steady_clock::now();
+		const http::Method method = request.method;
+		const string_t target = request.target;
+		const std::size_t requestBytes = request.body.Size();
+
 		auto handled = co_await handler(request);
+		if (handled.IsError() && observer != nullptr && observer->onError) observer->onError(handled.Error(), "Dispatch");
+
 		http::Response response = handled.IsError() ? http::Response::Status(500) : std::move(handled.Value());
 
+		const int_t statusCode = response.statusCode;
+		const std::size_t responseBytes = response.body.IsStreaming() ? 0 : response.body.Size();
+
 		auto sent = co_await SendResponse(_streamId, std::move(response), _stopToken);
-		streams.erase(_streamId);
+		if (sent.IsError() && observer != nullptr && observer->onError) observer->onError(sent.Error(), "Write");
+
+		if (observer != nullptr && observer->onAccess)
+		{
+			http::AccessRecord record;
+			record.method = method;
+			record.target = target;
+			record.statusCode = statusCode;
+			record.version = http::Version::HTTP_2;
+			record.requestBodyBytes = requestBytes;
+			record.responseBodyBytes = responseBytes;
+			record.duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - handleStart);
+
+			observer->onAccess(record);
+		}
+
+		DiscardStream(_streamId);
 
 		co_return sent;
 	}

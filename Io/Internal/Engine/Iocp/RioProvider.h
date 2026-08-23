@@ -11,7 +11,7 @@
 #	include "Io/Buffer/RegisteredBufferProvider.h"
 #	include "Io/Internal/Engine/Iocp/RioExtension.h"
 #	include "Io/Diagnostic/Error.h"
-#	include "Io/Diagnostic/Type.h"
+#	include "Io/Handle.h"
 #	include "Base/Result.h"
 #	include "Base/Type.h"
 

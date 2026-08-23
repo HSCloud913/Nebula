@@ -3,6 +3,7 @@
 //
 
 #include <gtest/gtest.h>
+#include <limits>
 #include "Json/Json.h"
 
 
@@ -49,7 +50,7 @@ TEST_F(NebulaJsonValueTest, TryAsReturnsResult)
 	ASSERT_TRUE(root.IsObject());
 	const auto& obj = root.AsObject();
 
-	const auto n = obj.at("n").TryAsNumber();
+	const auto n = obj.at("n").TryAsInt64();
 	ASSERT_TRUE(n.IsOk());
 	EXPECT_EQ(n.Value(), -1);
 
@@ -116,11 +117,11 @@ TEST_F(NebulaJsonValueTest, SerializeAndParseJson)
 
 	ne::json::Object parseObject = root.AsObject();
 	EXPECT_EQ(parseObject["bool_value"].AsBool(), false);
-	EXPECT_EQ(parseObject["number_value"].AsNumber(), -1);
-	EXPECT_EQ(parseObject["positive_number_value"].AsPositiveNumber(), 4294967295U);
-	EXPECT_EQ(parseObject["large_number_value"].AsLargeNumber(), 9223372036854775807LL);
-	EXPECT_EQ(parseObject["positive_large_number_value"].AsPositiveLargeNumber(), 18446744073709551615ULL);
-	EXPECT_NEAR(parseObject["real_value"].AsReal(), 0.123456789f, 1e-9);
+	EXPECT_EQ(parseObject["number_value"].AsInt64(), -1);
+	EXPECT_EQ(parseObject["positive_number_value"].AsUint64(), 4294967295U);
+	EXPECT_EQ(parseObject["large_number_value"].AsInt64(), 9223372036854775807LL);
+	EXPECT_EQ(parseObject["positive_large_number_value"].AsUint64(), 18446744073709551615ULL);
+	EXPECT_NEAR(parseObject["real_value"].AsDouble(), 0.123456789f, 1e-9);
 	EXPECT_EQ(*parseObject["string_value"].AsString(), "Test string");
 }
 
@@ -129,15 +130,15 @@ TEST_F(NebulaJsonValueTest, ParseIntegerExponent)
 {
 	auto v1 = ne::json::Parse("3e2");
 	EXPECT_TRUE(v1.IsReal());
-	EXPECT_NEAR(v1.AsReal(), 300.0, 1e-9);
+	EXPECT_NEAR(v1.AsDouble(), 300.0, 1e-9);
 
 	auto v2 = ne::json::Parse("5e3");
 	EXPECT_TRUE(v2.IsReal());
-	EXPECT_NEAR(v2.AsReal(), 5000.0, 1e-9);
+	EXPECT_NEAR(v2.AsDouble(), 5000.0, 1e-9);
 
 	auto v3 = ne::json::Parse("2e-1");
 	EXPECT_TRUE(v3.IsReal());
-	EXPECT_NEAR(v3.AsReal(), 0.2, 1e-9);
+	EXPECT_NEAR(v3.AsDouble(), 0.2, 1e-9);
 }
 
 // JSON 객체에 값 추가
@@ -164,17 +165,17 @@ TEST_F(NebulaJsonValueTest, AddValue)
 	object["array_value"] = subArray;
 
 	EXPECT_EQ(object["bool_value"].AsBool(), false);
-	EXPECT_EQ(object["number_value"].AsNumber(), -1);
-	EXPECT_EQ(object["positive_number_value"].AsPositiveNumber(), 4294967295U);
-	EXPECT_EQ(object["large_number_value"].AsLargeNumber(), 9223372036854775807LL);
-	EXPECT_EQ(object["positive_large_number_value"].AsPositiveLargeNumber(), 18446744073709551615ULL);
-	EXPECT_EQ(object["real_value"].AsReal(), 0.123456789f);
+	EXPECT_EQ(object["number_value"].AsInt64(), -1);
+	EXPECT_EQ(object["positive_number_value"].AsUint64(), 4294967295U);
+	EXPECT_EQ(object["large_number_value"].AsInt64(), 9223372036854775807LL);
+	EXPECT_EQ(object["positive_large_number_value"].AsUint64(), 18446744073709551615ULL);
+	EXPECT_EQ(object["real_value"].AsDouble(), 0.123456789f);
 	EXPECT_EQ(*object["string_value"].AsString(), "Test string");
 
 	auto& object_value = object["object_value"].AsObject();
 	EXPECT_EQ(object_value.at("sub1").AsBool(), true);
-	EXPECT_EQ(object_value.at("sub2").AsNumber(), 2);
-	EXPECT_EQ(object_value.at("sub3").AsReal(), 0.12f);
+	EXPECT_EQ(object_value.at("sub2").AsInt64(), 2);
+	EXPECT_EQ(object_value.at("sub3").AsDouble(), 0.12f);
 	EXPECT_EQ(*object_value.at("sub4").AsString(), "Test sub string");
 
 	EXPECT_EQ(subArray.size(), 3); // 배열 크기 확인
@@ -182,8 +183,8 @@ TEST_F(NebulaJsonValueTest, AddValue)
 	{
 		auto& testObject = subArray[i].AsObject();
 		EXPECT_EQ(testObject.at("sub1").AsBool(), true);
-		EXPECT_EQ(testObject.at("sub2").AsNumber(), 2);
-		EXPECT_EQ(testObject.at("sub3").AsReal(), 0.12f);
+		EXPECT_EQ(testObject.at("sub2").AsInt64(), 2);
+		EXPECT_EQ(testObject.at("sub3").AsDouble(), 0.12f);
 		EXPECT_EQ(*testObject.at("sub4").AsString(), "Test sub string");
 	}
 }
@@ -237,14 +238,14 @@ TEST_F(NebulaJsonValueTest, Whitespace)
 	EXPECT_EQ(parseObject["bool_name"].AsBool(), true);
 	EXPECT_EQ(parseObject["bool_second"].AsBool(), true);
 	EXPECT_TRUE(parseObject["null_name"].IsNull());
-	EXPECT_EQ(parseObject["nua"].AsLargeNumber(), 9223372036854775807LL);
-	EXPECT_EQ(parseObject["max"].AsPositiveLargeNumber(), 18446744073709551615ULL);
+	EXPECT_EQ(parseObject["nua"].AsInt64(), 9223372036854775807LL);
+	EXPECT_EQ(parseObject["max"].AsUint64(), 18446744073709551615ULL);
 	EXPECT_FALSE(parseObject.contains("oor")); // 표현 범위 초과 값은 INVALID → 객체에 추가되지 않음
-	EXPECT_NEAR(parseObject["negative"].AsReal(), -34.276f, 1e-3);
+	EXPECT_NEAR(parseObject["negative"].AsDouble(), -34.276f, 1e-3);
 
 	auto& subObject = parseObject["sub_object"].AsObject();
 	EXPECT_EQ(*subObject.at("foo").AsString(), "abc");
-	EXPECT_EQ(subObject.at("bar").AsReal(), 1.35e2);
+	EXPECT_EQ(subObject.at("bar").AsDouble(), 1.35e2);
 
 	auto blahObject = subObject.at("blah").AsObject();
 	EXPECT_EQ(*blahObject.at("a").AsString(), "A");
@@ -259,7 +260,85 @@ TEST_F(NebulaJsonValueTest, Whitespace)
 	EXPECT_EQ(*arrayLetters[2].AsString(), "c");
 
 	auto& arraySubLetters = arrayLetters[3].AsArray();
-	EXPECT_EQ(arraySubLetters[0].AsNumber(), 1);
-	EXPECT_EQ(arraySubLetters[1].AsNumber(), 2);
-	EXPECT_EQ(arraySubLetters[2].AsNumber(), 3);
+	EXPECT_EQ(arraySubLetters[0].AsInt64(), 1);
+	EXPECT_EQ(arraySubLetters[1].AsInt64(), 2);
+	EXPECT_EQ(arraySubLetters[2].AsInt64(), 3);
+}
+
+// ── 숫자 타입은 INTEGER/REAL 둘뿐이며, 폭에 따라 태그가 갈리지 않는다 ──
+//
+// 예전에는 NUMBER/POSITIVE_NUMBER/LARGE_NUMBER/POSITIVE_LARGE_NUMBER/REAL 다섯이라, 정수를 읽으려면
+// 소비자가 최대 4개의 술어를 순서대로 검사해야 했다. JSON 자체는 숫자를 한 타입으로 정의한다.
+TEST_F(NebulaJsonValueTest, IntegerTagIsWidthIndependent)
+{
+	auto parsed = ne::json::Parse(R"({"tiny":1,"big":9223372036854775807,"huge":18446744073709551615,"neg":-42,"real":1.5})");
+	auto& object = parsed.AsObject();
+
+	// 폭이 달라도 전부 INTEGER 하나로 보인다.
+	for (const auto* key : { "tiny", "big", "huge", "neg" })
+	{
+		EXPECT_TRUE(object.at(key).IsInteger()) << key;
+		EXPECT_TRUE(object.at(key).IsNumber()) << key;
+		EXPECT_FALSE(object.at(key).IsReal()) << key;
+	}
+
+	EXPECT_TRUE(object.at("real").IsReal());
+	EXPECT_TRUE(object.at("real").IsNumber());
+	EXPECT_FALSE(object.at("real").IsInteger());
+}
+
+// ── 2^63 이상의 정수도 손실 없이 담기고 직렬화된다 ──
+TEST_F(NebulaJsonValueTest, IntegerBeyondSignedRangeSurvivesRoundTrip)
+{
+	auto parsed = ne::json::Parse(R"({"huge":18446744073709551615})");
+	auto& object = parsed.AsObject();
+
+	EXPECT_EQ(object.at("huge").AsUint64(), 18446744073709551615ULL);
+
+	// 부호 있는 64비트로는 표현할 수 없으므로 TryAsInt64 는 실패해야 한다(조용히 잘리면 안 된다).
+	EXPECT_TRUE(object.at("huge").TryAsInt64().IsError());
+
+	EXPECT_EQ(parsed.Stringify(), R"({"huge":18446744073709551615})");
+}
+
+// ── 음수 경계(-2^63)를 오버플로 없이 파싱한다 ──
+TEST_F(NebulaJsonValueTest, ParsesSignedMinimum)
+{
+	auto parsed = ne::json::Parse(R"({"min":-9223372036854775808})");
+	auto& object = parsed.AsObject();
+
+	ASSERT_TRUE(object.at("min").IsInteger());
+	EXPECT_EQ(object.at("min").AsInt64(), std::numeric_limits<ne::longlong_t>::min());
+
+	// 음수는 부호 없는 정수로 읽을 수 없다.
+	EXPECT_TRUE(object.at("min").TryAsUint64().IsError());
+}
+
+// ── AsDouble 은 정수도 받아 넓혀 준다(숫자를 하나로 다루고 싶을 때의 단일 경로) ──
+TEST_F(NebulaJsonValueTest, DoubleAccessorWidensIntegers)
+{
+	auto parsed = ne::json::Parse(R"({"i":7,"u":18446744073709551615,"r":2.5})");
+	auto& object = parsed.AsObject();
+
+	EXPECT_NEAR(object.at("i").AsDouble(), 7.0, 1e-9);
+	EXPECT_NEAR(object.at("r").AsDouble(), 2.5, 1e-9);
+	EXPECT_GT(object.at("u").AsDouble(), 1.8e19); // 정밀도는 잃지만 값의 규모는 유지된다
+
+	EXPECT_TRUE(object.at("i").TryAsDouble().IsOk());
+	EXPECT_TRUE(object.at("r").TryAsDouble().IsOk());
+}
+
+// ── 숫자가 아닌 값에 숫자 접근자를 쓰면 Err ──
+TEST_F(NebulaJsonValueTest, NumberAccessorsRejectNonNumbers)
+{
+	auto parsed = ne::json::Parse(R"({"s":"text","b":true,"n":null})");
+	auto& object = parsed.AsObject();
+
+	for (const auto* key : { "s", "b", "n" })
+	{
+		EXPECT_TRUE(object.at(key).TryAsInt64().IsError()) << key;
+		EXPECT_TRUE(object.at(key).TryAsUint64().IsError()) << key;
+		EXPECT_TRUE(object.at(key).TryAsDouble().IsError()) << key;
+		EXPECT_FALSE(object.at(key).IsNumber()) << key;
+	}
 }

@@ -18,6 +18,7 @@
 #include "Network/Protocol/Http/Message/Response.h"
 #include "Network/Protocol/Http/Diagnostic/Error.h"
 #include "Network/Protocol/Http/Limits.h"
+#include "Network/Protocol/Http/ServerObserver.h"
 #include "Network/Protocol/Http/Message/Method.h"
 #include "Network/Protocol/Http/ResponseCallbacks.h"
 #include "Network/Protocol/Http/Internal/Http2/Frame.h"
@@ -209,10 +210,12 @@ namespace ne::network::http_2::internal
 	class ServerConnection final :public Connection
 	{
 	public:
-		ServerConnection(std::unique_ptr<ne::network::IStream> _stream, ne::io::Context& _context, Http2Handler _handler, const http::Limits _limits = {}) noexcept
+		// _observer 는 널이면 관측을 하지 않는다(수명은 호출자 = ServerBuilder::Serve 프레임이 보장).
+		ServerConnection(std::unique_ptr<ne::network::IStream> _stream, ne::io::Context& _context, Http2Handler _handler, const http::Limits _limits = {}, const http::ServerObserver* _observer = nullptr) noexcept
 			: Connection(std::move(_stream), _context)
 			, handler(std::move(_handler))
-			, limits(_limits) {}
+			, limits(_limits)
+			, observer(_observer) {}
 		~ServerConnection() override = default;
 
 	private:
@@ -239,6 +242,7 @@ namespace ne::network::http_2::internal
 
 		Http2Handler handler;
 		http::Limits limits;
+		const http::ServerObserver* observer{ nullptr };
 
 		// shared_ptr 인 이유: 응답 송신 루프가 흐름제어 창을 기다리며 suspend 된 동안 프레임 루프가
 		// RST_STREAM 을 받아 이 항목을 지울 수 있다. unique_ptr 이면 그 순간 Stream(과 그 안의

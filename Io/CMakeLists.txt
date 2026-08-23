@@ -25,7 +25,7 @@ set(HEADERS
     Buffer/RegisteredBuffer.h
 
     # 공개 값 타입
-		Diagnostic/Type.h
+    Handle.h
     Diagnostic/Error.h
 
     # 내부 구현(엔진 백엔드)

@@ -13,6 +13,7 @@ add_executable(${PROJECT_NAME}
                test_tls_config.cpp
                test_tls_stream.cpp
                test_http_date.cpp
+               test_http_observer.cpp
                test_http_type.cpp
                test_http_router.cpp
                test_http1_client_server.cpp

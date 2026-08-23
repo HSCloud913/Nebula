@@ -7,7 +7,7 @@
 #include <cstddef>
 #include <memory>
 #include "Base/Type.h"
-#include "Diagnostic/Type.h"
+#include "Io/Handle.h"
 #include "Memory/Buffer/BufferChain.h"
 
 namespace ne::io

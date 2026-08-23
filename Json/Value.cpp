@@ -4,6 +4,7 @@
 #include <cstring>
 #include <sstream>
 #include <cmath>
+#include <limits>
 
 
 
@@ -32,34 +33,44 @@ namespace ne::json
 		return *std::get_if<bool_t>(&value);
 	}
 
-	int_t Value::AsNumber() const
+	// 정수는 부호 있는/없는 64비트 두 형태로 저장되므로(2^63 이상을 담기 위해) 접근자는 양쪽을 본다.
+	longlong_t Value::AsInt64() const
+	{
+		assert(IsInteger());
+
+		if (const auto* signedValue = std::get_if<longlong_t>(&value)) return *signedValue;
+
+		const auto* unsignedValue = std::get_if<ulonglong_t>(&value);
+		assert(unsignedValue != nullptr);
+		assert(*unsignedValue <= static_cast<ulonglong_t>(std::numeric_limits<longlong_t>::max()) && "값이 부호 있는 64비트 범위를 넘는다 — AsUint64() 를 쓸 것");
+
+		return static_cast<longlong_t>(*unsignedValue);
+	}
+
+	ulonglong_t Value::AsUint64() const
+	{
+		assert(IsInteger());
+
+		if (const auto* unsignedValue = std::get_if<ulonglong_t>(&value)) return *unsignedValue;
+
+		const auto* signedValue = std::get_if<longlong_t>(&value);
+		assert(signedValue != nullptr);
+		assert(*signedValue >= 0 && "음수를 부호 없는 정수로 읽을 수 없다 — AsInt64() 를 쓸 것");
+
+		return static_cast<ulonglong_t>(*signedValue);
+	}
+
+	double_t Value::AsDouble() const
 	{
 		assert(IsNumber());
-		return *std::get_if<int_t>(&value);
-	}
 
-	uint_t Value::AsPositiveNumber() const
-	{
-		assert(IsPositiveNumber());
-		return *std::get_if<uint_t>(&value);
-	}
+		if (const auto* realValue = std::get_if<double_t>(&value)) return *realValue;
+		if (const auto* signedValue = std::get_if<longlong_t>(&value)) return static_cast<double_t>(*signedValue);
 
-	longlong_t Value::AsLargeNumber() const
-	{
-		assert(IsLargeNumber());
-		return *std::get_if<longlong_t>(&value);
-	}
+		const auto* unsignedValue = std::get_if<ulonglong_t>(&value);
+		assert(unsignedValue != nullptr);
 
-	ulonglong_t Value::AsPositiveLargeNumber() const
-	{
-		assert(IsPositiveLargeNumber());
-		return *std::get_if<ulonglong_t>(&value);
-	}
-
-	double_t Value::AsReal() const
-	{
-		assert(IsReal());
-		return *std::get_if<double_t>(&value);
+		return static_cast<double_t>(*unsignedValue);
 	}
 
 	string_t* Value::AsString() const
@@ -80,6 +91,50 @@ namespace ne::json
 		return *std::get_if<Array>(&value);
 	}
 
+
+	// TryAs* 는 As* 와 같은 폭 변환을 하지만, 위반을 assert 가 아니라 Err 로 알린다.
+	ne::Result<longlong_t> Value::TryAsInt64() const
+	{
+		using R = ne::Result<longlong_t>;
+
+		if (const auto* signedValue = std::get_if<longlong_t>(&value)) return R::Ok(*signedValue);
+
+		if (const auto* unsignedValue = std::get_if<ulonglong_t>(&value))
+		{
+			if (*unsignedValue > static_cast<ulonglong_t>(std::numeric_limits<longlong_t>::max())) return R::Error(ne::Error{ "json: integer exceeds signed 64-bit range" });
+
+			return R::Ok(static_cast<longlong_t>(*unsignedValue));
+		}
+
+		return R::Error(ne::Error{ "json: expected integer" });
+	}
+
+	ne::Result<ulonglong_t> Value::TryAsUint64() const
+	{
+		using R = ne::Result<ulonglong_t>;
+
+		if (const auto* unsignedValue = std::get_if<ulonglong_t>(&value)) return R::Ok(*unsignedValue);
+
+		if (const auto* signedValue = std::get_if<longlong_t>(&value))
+		{
+			if (*signedValue < 0) return R::Error(ne::Error{ "json: integer is negative" });
+
+			return R::Ok(static_cast<ulonglong_t>(*signedValue));
+		}
+
+		return R::Error(ne::Error{ "json: expected integer" });
+	}
+
+	ne::Result<double_t> Value::TryAsDouble() const
+	{
+		using R = ne::Result<double_t>;
+
+		if (const auto* realValue = std::get_if<double_t>(&value)) return R::Ok(*realValue);
+		if (const auto* signedValue = std::get_if<longlong_t>(&value)) return R::Ok(static_cast<double_t>(*signedValue));
+		if (const auto* unsignedValue = std::get_if<ulonglong_t>(&value)) return R::Ok(static_cast<double_t>(*unsignedValue));
+
+		return R::Error(ne::Error{ "json: expected number" });
+	}
 
 	ne::Result<string_t*> Value::TryAsString() const
 	{
@@ -111,23 +166,23 @@ namespace ne::json
 
 	Value& Value::operator=(int_t _value)
 	{
-		type = Type::NUMBER;
-		value = _value;
+		type = Type::INTEGER;
+		value = static_cast<longlong_t>(_value);
 
 		return *this;
 	}
 
 	Value& Value::operator=(uint_t _value)
 	{
-		type = Type::POSITIVE_NUMBER;
-		value = _value;
+		type = Type::INTEGER;
+		value = static_cast<longlong_t>(_value);
 
 		return *this;
 	}
 
 	Value& Value::operator=(longlong_t _value)
 	{
-		type = Type::LARGE_NUMBER;
+		type = Type::INTEGER;
 		value = _value;
 
 		return *this;
@@ -135,7 +190,7 @@ namespace ne::json
 
 	Value& Value::operator=(ulonglong_t _value)
 	{
-		type = Type::POSITIVE_LARGE_NUMBER;
+		type = Type::INTEGER;
 		value = _value;
 
 		return *this;
@@ -294,18 +349,21 @@ namespace ne::json
 			if (isOverflow) return {};
 
 			if (isReal) return Value((isNegative) ? real * -1 : real);
+
+			// 정수는 폭에 따라 좁은 타입을 고르지 않는다 — 타입 태그가 INTEGER 하나이므로 저장은
+			// 부호 있는 64비트를 기본으로 하고, 그 범위를 넘는 양수만 부호 없는 64비트로 담는다.
 			if (isNegative)
 			{
-				if (number <= std::numeric_limits<int_t>::max()) return Value(static_cast<int_t>(number * -1));
-				if (number <= std::numeric_limits<longlong_t>::max()) return Value(static_cast<longlong_t>(number * -1));
+				// -(2^63) 은 longlong_t 로 표현 가능하지만 number * -1 로는 오버플로하므로 별도로 만든다.
+				if (number == static_cast<ulonglong_t>(std::numeric_limits<longlong_t>::max()) + 1) return Value(std::numeric_limits<longlong_t>::min());
+				if (number <= static_cast<ulonglong_t>(std::numeric_limits<longlong_t>::max())) return Value(-static_cast<longlong_t>(number));
+
+				return {}; // 부호 있는 64비트 미만 — 표현 불가
 			}
-			else
-			{
-				if (number <= std::numeric_limits<int_t>::max()) return Value(static_cast<int_t>(number));
-				if (number <= std::numeric_limits<uint_t>::max()) return Value(static_cast<uint_t>(number));
-				if (number <= std::numeric_limits<longlong_t>::max()) return Value(static_cast<longlong_t>(number));
-				if (number <= std::numeric_limits<ulonglong_t>::max()) return Value(number);
-			}
+
+			if (number <= static_cast<ulonglong_t>(std::numeric_limits<longlong_t>::max())) return Value(static_cast<longlong_t>(number));
+
+			return Value(number); // 2^63 이상은 부호 없는 64비트로만 담긴다
 		}
 
 		if (**_data == '[')
@@ -566,21 +624,20 @@ namespace ne::json
 				return AsBool() ? "true" : "false";
 			case Type::STRING:
 				return StringifyString(*AsString());
-			case Type::NUMBER:
-				return std::to_string(AsNumber());
-			case Type::POSITIVE_NUMBER:
-				return std::to_string(AsPositiveNumber());
-			case Type::LARGE_NUMBER:
-				return std::to_string(AsLargeNumber());
-			case Type::POSITIVE_LARGE_NUMBER:
-				return std::to_string(AsPositiveLargeNumber());
+			case Type::INTEGER:
+				// 저장 형태(부호 있는/없는)에 따라 그대로 직렬화한다 — AsInt64() 로 통일하면 2^63 이상이 깨진다.
+				if (const auto* unsignedValue = std::get_if<ulonglong_t>(&value)) return std::to_string(*unsignedValue);
+				return std::to_string(AsInt64());
 			case Type::REAL:
 			{
-				if (std::isinf(AsReal()) || std::isnan(AsReal())) return "null";
+				const double_t real = AsDouble();
+
+				// JSON 에는 Infinity/NaN 표기가 없다(RFC 8259) — null 로 대체한다.
+				if (std::isinf(real) || std::isnan(real)) return "null";
 
 				std::stringstream ss;
 				ss.precision(15);
-				ss << AsReal();
+				ss << real;
 				return ss.str();
 			}
 			case Type::ARRAY:

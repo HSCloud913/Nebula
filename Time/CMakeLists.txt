@@ -9,6 +9,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(HEADERS
     Coroutine/Sleep.h
+    Deadline.h
     TimerQueue.h
 )
 
