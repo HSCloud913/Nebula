@@ -15,6 +15,62 @@ extern "C" ne::ulong_t __stdcall RtlNtStatusToDosError(ne::long_t _status);
 
 namespace ne::io
 {
+	namespace
+	{
+		/**
+		 * @class SocketProtocol
+		 * @brief 소켓 하나를 다시 만들기 위해 필요한 3요소(주소체계/종류/프로토콜).
+		 */
+		struct SocketProtocol
+		{
+			int_t family{ AF_INET };
+			int_t type{ SOCK_STREAM };
+			int_t protocol{ IPPROTO_TCP };
+		};
+
+		/**
+		 * @brief 소켓의 실제 (family, type, protocol) 을 조회한다.
+		 *
+		 * SO_PROTOCOL_INFOW 는 세 값을 한 번에 돌려주며 AF_UNIX 리스너에서도 동작한다(실측:
+		 * family=AF_UNIX, type=SOCK_STREAM, protocol=0). 실패하면 getsockname 으로 family 만이라도
+		 * 얻고 나머지는 TCP 로 가정한다 — 그것이 이 엔진이 지금까지 해 온 동작이라, 조회가 안 되는
+		 * 환경에서 기존 TCP 경로가 갑자기 깨지는 일은 없게 한다.
+		 */
+		[[nodiscard]] SocketProtocol QuerySocketProtocol(const SOCKET _socket) noexcept
+		{
+			WSAPROTOCOL_INFOW info{};
+			int_t infoLength = static_cast<int_t>(sizeof(info));
+			if (::getsockopt(_socket, SOL_SOCKET, SO_PROTOCOL_INFOW, reinterpret_cast<char*>(&info), &infoLength) == 0)
+			{
+				return SocketProtocol{ info.iAddressFamily, info.iSocketType, info.iProtocol };
+			}
+
+			sockaddr_storage local{};
+			int_t nameLength = static_cast<int_t>(sizeof(local));
+			if (::getsockname(_socket, reinterpret_cast<sockaddr*>(&local), &nameLength) == 0)
+			{
+				return SocketProtocol{ static_cast<int_t>(local.ss_family), SOCK_STREAM, IPPROTO_TCP };
+			}
+
+			return SocketProtocol{};
+		}
+
+		/**
+		 * @brief AcceptEx 의 로컬/원격 주소 버퍼 하나에 줘야 하는 크기.
+		 *
+		 * 규격은 "그 주소체계의 sockaddr 크기 + 16" 을 요구한다. 이 값이 부족하면 제출은 성공하고
+		 * **완료 시점에** ERROR_INSUFFICIENT_BUFFER(122) 로 실패하므로, 주소체계별로 정확히 줘야 한다.
+		 */
+		[[nodiscard]] ulong_t AcceptAddressLength(const int_t _family) noexcept
+		{
+			if (_family == AF_UNIX) return static_cast<ulong_t>(sizeof(SOCKADDR_UN) + 16);
+
+			return static_cast<ulong_t>(sizeof(sockaddr_in6) + 16);
+		}
+	}
+
+
+
 	IocpEngine::IocpEngine(const ulong_t _concurrentThreads) noexcept
 	// hFile=INVALID_HANDLE_VALUE, ExistingCompletionPort=nullptr 조합은 "새 IOCP 를 만들기만 한다"는 뜻이다.
 		: iocpHandle(::CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, _concurrentThreads))
@@ -312,14 +368,15 @@ namespace ne::io
 					break;
 				}
 
-				// AcceptEx 는 리스닝 소켓과 같은 주소체계(IPv4/IPv6)의 새 소켓을 미리 만들어 넘겨야 하므로,
-				// 리스닝 소켓의 실제 바인딩 주소체계를 getsockname 으로 먼저 확인한다.
-				sockaddr_storage local{};
-				int_t nameLength = static_cast<int_t>(sizeof(local));
-				(void_t)::getsockname(listenSocket, reinterpret_cast<sockaddr*>(&local), &nameLength);
+				// AcceptEx 는 POSIX accept() 와 달리 **호출자가 accept 될 소켓을 미리 만들어 넘겨야** 한다.
+				// 그래서 "무엇으로 만들 것인가" 를 우리가 결정해야 하는데, 리스닝 소켓의 실제 속성을
+				// 물어보는 것이 유일하게 옳은 답이다. 예전에는 family 만 getsockname 으로 얻고
+				// type/protocol 을 SOCK_STREAM/IPPROTO_TCP 로 박아 뒀는데, 그러면 AF_UNIX 리스너에서
+				// WSASocketW 가 WSAEPROTONOSUPPORT(10043) 로 실패한다(실측).
+				const SocketProtocol protocol = QuerySocketProtocol(listenSocket);
 
 				// RIO 로 이어질 accept 라면 WSA_FLAG_REGISTERED_IO 로 소켓을 만들어야 RIO 요청 큐를 붙일 수 있다.
-				const SOCKET accepted = ::WSASocketW(local.ss_family, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED | (_request.isRegisteredIo ? WSA_FLAG_REGISTERED_IO : 0));
+				const SOCKET accepted = ::WSASocketW(protocol.family, protocol.type, protocol.protocol, nullptr, 0, WSA_FLAG_OVERLAPPED | (_request.isRegisteredIo ? WSA_FLAG_REGISTERED_IO : 0));
 				if (accepted == INVALID_SOCKET)
 				{
 					syncError = ::WSAGetLastError();
@@ -330,8 +387,11 @@ namespace ne::io
 				_operation->contextSocket = static_cast<socket_t>(listenSocket);
 
 				const auto acceptEx = reinterpret_cast<LPFN_ACCEPTEX>(acceptExPtr);
-				// AcceptEx 의 로컬/원격 주소 버퍼는 sockaddr 구조체 크기 + 16바이트 여유를 요구한다(문서화된 요구사항).
-				const ulong_t addressLength = static_cast<ulong_t>(sizeof(sockaddr_in6) + 16);
+
+				// 주소 버퍼도 주소체계를 따라야 한다. 이 크기가 부족하면 **제출은 성공하고 완료에서**
+				// ERROR_INSUFFICIENT_BUFFER(122) 로 실패한다 — AF_UNIX 에 TCP 크기(28+16=44)를 주면
+				// 정확히 그렇게 된다(실측). 제출 시점에 안 걸리므로 원인 추적이 특히 어렵다.
+				const ulong_t addressLength = AcceptAddressLength(protocol.family);
 
 				ulong_t received = 0;
 				if (!acceptEx(listenSocket, accepted, _operation->acceptBuffer, 0, addressLength, addressLength, &received, &_operation->overlapped)) if (const int_t error = ::WSAGetLastError(); error != WSA_IO_PENDING) syncError = error;

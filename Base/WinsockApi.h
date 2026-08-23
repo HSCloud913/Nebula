@@ -19,4 +19,5 @@
 #	include <winsock2.h>
 #	include <ws2tcpip.h> // getaddrinfo/inet_pton 등 IPv6 대응 API
 #	include <mswsock.h>  // AcceptEx/ConnectEx/RIO 등 Microsoft 확장
+#	include <afunix.h>   // AF_UNIX/SOCKADDR_UN — IPC 및 AcceptEx 의 주소 버퍼 크기 계산에 필요
 #endif

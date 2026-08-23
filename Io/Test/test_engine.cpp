@@ -225,6 +225,117 @@ TEST(IoEngineTest, SendZeroCopyRegisteredBufferRoundTrip)
 }
 
 // ── Capability 매트릭스 (스펙 2.2) ──
+
+// ── AcceptEx: 리스닝 소켓의 주소체계/프로토콜을 그대로 물려받아야 한다 ──
+//
+// AcceptEx 는 POSIX accept() 와 달리 accept 될 소켓을 **호출자가 미리 만들어** 넘기는 모델이라,
+// "무엇으로 만들 것인가" 를 엔진이 결정해야 한다. 예전에는 SOCK_STREAM/IPPROTO_TCP 로 박아 뒀고,
+// 주소 버퍼도 sockaddr_in6 기준으로 고정돼 있었다. TCP 만 쓰는 동안에는 드러나지 않지만
+// AF_UNIX 리스너에서는 둘 다 터진다.
+namespace
+{
+	// 리스너에 ACCEPT 를 제출하고, 클라이언트를 붙여 완료까지 받아 accept 된 소켓을 돌려준다.
+	// 실패하면 InvalidSocket. _connect 는 이 리스너에 연결하는 방법을 호출자가 알려준다.
+	template <typename TConnect>
+	socket_t AcceptOnce(IocpEngine& _engine, const SOCKET _listener, TConnect _connect)
+	{
+		int_t acceptTag = 0;
+		const Request request{ .requestKind = RequestKind::ACCEPT, .userData = &acceptTag, .handle = static_cast<ulonglong_t>(_listener) };
+		_engine.Submit(request);
+
+		const SOCKET client = _connect();
+		if (client == INVALID_SOCKET) return InvalidSocket;
+
+		const longlong_t result = WaitFor(_engine, &acceptTag);
+		::closesocket(client);
+
+		// result < 0 이면 -(에러코드). 122(ERROR_INSUFFICIENT_BUFFER) 는 주소 버퍼가 작다는 뜻이다.
+		if (result < 0) return InvalidSocket;
+
+		return static_cast<socket_t>(result);
+	}
+}
+
+TEST(IoEngineTest, AcceptInheritsTcpListenerProtocol)
+{
+	const WsaScope wsa;
+	IocpEngine engine;
+	ASSERT_TRUE(engine.IsValid());
+
+	const SOCKET listener = ::WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
+	ASSERT_NE(listener, INVALID_SOCKET);
+
+	sockaddr_in address{};
+	address.sin_family = AF_INET;
+	address.sin_addr.s_addr = ::htonl(INADDR_LOOPBACK);
+	int_t length = static_cast<int_t>(sizeof(address));
+	ASSERT_EQ(::bind(listener, reinterpret_cast<sockaddr*>(&address), length), 0);
+	ASSERT_EQ(::getsockname(listener, reinterpret_cast<sockaddr*>(&address), &length), 0);
+	ASSERT_EQ(::listen(listener, 1), 0);
+
+	const socket_t accepted = AcceptOnce(engine, listener, [&address] {
+		const SOCKET client = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+		if (client == INVALID_SOCKET) return INVALID_SOCKET;
+		if (::connect(client, reinterpret_cast<const sockaddr*>(&address), static_cast<int_t>(sizeof(address))) != 0) { ::closesocket(client); return INVALID_SOCKET; }
+
+		return client;
+	});
+
+	EXPECT_NE(accepted, InvalidSocket);
+	if (accepted != InvalidSocket) ::closesocket(static_cast<SOCKET>(accepted));
+	::closesocket(listener);
+}
+
+TEST(IoEngineTest, AcceptInheritsUnixListenerProtocol)
+{
+	// 이 테스트가 잡는 결함 두 가지(둘 다 실측으로 확인):
+	//  (1) WSASocketW(AF_UNIX, SOCK_STREAM, IPPROTO_TCP) 는 WSAEPROTONOSUPPORT(10043) 로 실패한다
+	//      → 제출 자체가 안 된다.
+	//  (2) 주소 버퍼를 sockaddr_in6+16(=44) 로 주면 제출은 성공하고 **완료에서**
+	//      ERROR_INSUFFICIENT_BUFFER(122) 로 실패한다 → 원인 추적이 특히 어려운 형태다.
+	const WsaScope wsa;
+	IocpEngine engine;
+	ASSERT_TRUE(engine.IsValid());
+
+	const SOCKET listener = ::WSASocketW(AF_UNIX, SOCK_STREAM, 0, nullptr, 0, WSA_FLAG_OVERLAPPED);
+	if (listener == INVALID_SOCKET) GTEST_SKIP() << "이 환경은 AF_UNIX 를 지원하지 않습니다(WSAGetLastError=" << ::WSAGetLastError() << ")";
+
+	// 파일시스템에 남은 이전 실행분을 지운다 — bind 는 경로가 이미 있으면 실패한다.
+	const char* path = "nebula_test_accept_afunix.sock";
+	::DeleteFileA(path);
+
+	SOCKADDR_UN address{};
+	address.sun_family = AF_UNIX;
+	std::strncpy(address.sun_path, path, sizeof(address.sun_path) - 1);
+
+	ASSERT_EQ(::bind(listener, reinterpret_cast<sockaddr*>(&address), static_cast<int_t>(sizeof(address))), 0) << "bind 실패: " << ::WSAGetLastError();
+	ASSERT_EQ(::listen(listener, 1), 0) << "listen 실패: " << ::WSAGetLastError();
+
+	const socket_t accepted = AcceptOnce(engine, listener, [&address] {
+		const SOCKET client = ::socket(AF_UNIX, SOCK_STREAM, 0);
+		if (client == INVALID_SOCKET) return INVALID_SOCKET;
+		if (::connect(client, reinterpret_cast<const sockaddr*>(&address), static_cast<int_t>(sizeof(address))) != 0) { ::closesocket(client); return INVALID_SOCKET; }
+
+		return client;
+	});
+
+	EXPECT_NE(accepted, InvalidSocket) << "AF_UNIX accept 가 실패했다 — 프로토콜 또는 주소 버퍼 크기가 리스너와 맞지 않는다";
+
+	if (accepted != InvalidSocket)
+	{
+		// accept 된 소켓이 정말 AF_UNIX 인지 확인한다 — TCP 로 만들어졌다면 여기서 드러난다.
+		WSAPROTOCOL_INFOW info{};
+		int_t infoLength = static_cast<int_t>(sizeof(info));
+		EXPECT_EQ(::getsockopt(static_cast<SOCKET>(accepted), SOL_SOCKET, SO_PROTOCOL_INFOW, reinterpret_cast<char*>(&info), &infoLength), 0);
+		EXPECT_EQ(info.iAddressFamily, AF_UNIX);
+		EXPECT_EQ(info.iSocketType, SOCK_STREAM);
+
+		::closesocket(static_cast<SOCKET>(accepted));
+	}
+
+	::closesocket(listener);
+	::DeleteFileA(path);
+}
 TEST(IoEngineTest, SupportsMatrix)
 {
 	const IocpEngine engine;

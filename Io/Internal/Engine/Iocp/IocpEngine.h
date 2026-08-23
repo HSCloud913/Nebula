@@ -47,7 +47,13 @@ namespace ne::io
 		static constexpr ulonglong_t WakeKey = 1;
 		static constexpr ulonglong_t RioKey = 2;
 		static constexpr int_t MaxBatch = 128;
+		// AcceptEx 는 로컬/원격 주소를 각각 "sockaddr 크기 + 16" 바이트에 써 넣으므로, 이 버퍼는 우리가
+		// 지원하는 **가장 큰 주소체계** 두 개분을 담아야 한다. 현재는 AF_UNIX(SOCKADDR_UN=110) 가
+		// 가장 크다 — 2 * (110 + 16) = 252. 부족하면 제출은 성공하고 완료에서 ERROR_INSUFFICIENT_BUFFER
+		// 로 실패하므로, 조용히 어긋나지 않게 아래 static_assert 로 묶어 둔다.
 		static constexpr std::size_t AcceptAddressBufferSize = 256;
+		static_assert(AcceptAddressBufferSize >= 2 * (sizeof(SOCKADDR_UN) + 16), "AcceptEx 주소 버퍼가 AF_UNIX 주소 두 개를 담지 못한다 — 완료 시점에 ERROR_INSUFFICIENT_BUFFER 로 실패한다");
+		static_assert(AcceptAddressBufferSize >= 2 * (sizeof(sockaddr_in6) + 16), "AcceptEx 주소 버퍼가 IPv6 주소 두 개를 담지 못한다");
 
 		struct IocpOperation
 		{
