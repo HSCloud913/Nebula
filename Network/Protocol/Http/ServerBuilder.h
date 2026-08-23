@@ -14,6 +14,7 @@
 #include "Network/Stream/Tls/TlsStream.h"
 #include "Network/Protocol/Http/Message/Method.h"
 #include "Network/Protocol/Http/Message/Version.h"
+#include "Network/Protocol/Http/Compression.h"
 #include "Network/Protocol/Http/Limits.h"
 #include "Network/Protocol/Http/ServerObserver.h"
 #include "Network/Protocol/Http/Message/Request.h"
@@ -66,6 +67,8 @@ namespace ne::network::http
 		http::Version version{ http::Version::AUTO };
 		http::Limits limits;
 		ServerObserver observer;
+		http::Compression compression;
+		bool_t isCompressionEnabled{ false }; // 설정값 유무로는 "껐다" 를 표현할 수 없어 별도 플래그를 둔다
 
 	public:
 		/** @brief _method + _path 패턴 조합에 경로 파라미터를 받는 핸들러를 등록합니다(체이닝 가능). */
@@ -131,6 +134,18 @@ namespace ne::network::http
 		ServerBuilder& Observe(ServerObserver _observer)
 		{
 			observer = std::move(_observer);
+			return *this;
+		}
+
+		/**
+		 * @brief 응답 압축을 켭니다(기본: 꺼짐 — Compression 의 설명 참고).
+		 * @note 클라이언트가 `Accept-Encoding` 으로 광고한 경우에만 적용되고, 압축한 응답에는
+		 *       `Vary: Accept-Encoding` 이 붙습니다. 어떤 경우에 건너뛰는지는 Compression 을 보세요.
+		 */
+		ServerBuilder& Compress(http::Compression _compression = {})
+		{
+			compression = std::move(_compression);
+			isCompressionEnabled = true;
 			return *this;
 		}
 

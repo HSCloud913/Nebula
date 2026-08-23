@@ -15,6 +15,8 @@ set(SOURCES
         Protocol/Http/Message/Status.cpp
         Protocol/Http/Message/Params.cpp
         Protocol/Http/Internal/Router.cpp
+        Protocol/Http/Compression.h
+        Protocol/Http/Internal/ContentEncoding.cpp
         Protocol/Http/Internal/Transport.cpp
         Protocol/Http/Internal/Http1/Client.cpp
         Protocol/Http/Internal/Http1/Parser.cpp
@@ -51,9 +53,11 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
                       NebulaBase
                       NebulaMemory
                       NebulaUtil
-                      NebulaIo
+                      NebulaIo
 )
 target_link_libraries(${PROJECT_NAME} PRIVATE NebulaConcurrency)
+# Compress 는 Internal/ContentEncoding.cpp 안에서만 쓰인다(공개 헤더 include 0건) — 그래서 PRIVATE.
+target_link_libraries(${PROJECT_NAME} PRIVATE NebulaCompress)
 
 if (WIN32)
 	target_link_libraries(${PROJECT_NAME} PRIVATE Ws2_32 Secur32 Crypt32 Mswsock)

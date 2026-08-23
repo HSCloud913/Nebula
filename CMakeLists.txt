@@ -40,11 +40,11 @@ add_subdirectory(Log)
 add_subdirectory(Json)
 add_subdirectory(Util)
 add_subdirectory(Time)
+add_subdirectory(Compress)
 add_subdirectory(Io)
 add_subdirectory(Cryptography)
 add_subdirectory(Ipc)
 add_subdirectory(Network)
-# Compress 는 구현 후 추가
 
 
 # ── install / export: find_package(Nebula CONFIG) 지원 ──
@@ -53,7 +53,7 @@ add_subdirectory(Network)
 # (예외였던 둘은 실체가 공개 표면이라 승격해 해소: Base/Coroutine/Internal 의 Race → Coroutine/Race.h
 #  2026-08-06, Concurrency/Internal 의 SingleRoleGuard → Queue/SingleRoleGuard.h 2026-08-11.
 #  둘 다 값 멤버/전이 include 라 숨길 수 없는 구조였고, Internal 이라는 위치가 거짓말이었던 경우다.)
-install(DIRECTORY Base Memory Concurrency Log Json Util Time Io Cryptography
+install(DIRECTORY Base Memory Concurrency Log Json Util Time Compress Io Cryptography
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
         FILES_MATCHING PATTERN "*.h"
         # "/Internal/" 로만 쓰면 파일은 제외되지만 디렉터리 자체(.../Io/Internal)는 매치되지 않아

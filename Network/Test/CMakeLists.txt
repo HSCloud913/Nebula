@@ -13,6 +13,7 @@ add_executable(${PROJECT_NAME}
                test_tls_config.cpp
                test_tls_stream.cpp
                test_http_date.cpp
+               test_http_content_encoding.cpp
                test_http_observer.cpp
                test_http_type.cpp
                test_http_router.cpp
@@ -21,7 +22,7 @@ add_executable(${PROJECT_NAME}
 )
 
 # include 경로는 NebulaNetwork 의 INTERFACE(저장소 루트)로 충분하다 — 모듈 접두 include 규약.
-target_link_libraries(${PROJECT_NAME} gtest gtest_main NebulaNetwork)
+target_link_libraries(${PROJECT_NAME} gtest gtest_main NebulaNetwork NebulaCompress)
 
 if (WIN32)
 	target_link_libraries(${PROJECT_NAME} Ws2_32 Secur32 Crypt32)

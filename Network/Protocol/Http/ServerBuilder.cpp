@@ -10,6 +10,7 @@
 #include <vector>
 #include "Base/Coroutine/Event.h"
 #include "Network/Stream/PlainStream.h"
+#include "Network/Protocol/Http/Internal/ContentEncoding.h"
 #include "Network/Protocol/Http/Internal/Router.h"
 #include "Network/Protocol/Http/Internal/Http1/Server.h"
 #include "Network/Protocol/Http/Internal/Http2/Connection.h"
@@ -100,7 +101,16 @@ namespace ne::network::http
 		for (const auto& entry : routes) router.Add(entry.method, entry.path, entry.handler);
 		if (notFound) router.SetNotFound(notFound);
 
-		return [router = std::move(router)](const Request& _request) { return router.Dispatch(_request); };
+		if (!isCompressionEnabled) return [router = std::move(router)](const Request& _request) { return router.Dispatch(_request); };
+
+		// 압축은 라우팅 뒤에 한 겹 감싼다 — 여기가 h1/h2 응답이 모두 지나는 유일한 지점이라, 두 엔진에
+		// 각각 넣었을 때 생기는 "한쪽만 압축된다" 는 불일치가 구조적으로 불가능해진다.
+		return [router = std::move(router), compression = compression](const Request& _request) -> ne::Task<HttpResult<Response>> {
+			auto response = co_await router.Dispatch(_request);
+			if (response.IsOk()) internal::CompressResponseBody(_request, response.Value(), compression);
+
+			co_return response;
+		};
 	}
 
 	ne::Task<HttpResult<void_t>> ServerBuilder::Serve(ne::io::Socket _listener, ne::io::Context& _context, std::stop_token _stopToken) const

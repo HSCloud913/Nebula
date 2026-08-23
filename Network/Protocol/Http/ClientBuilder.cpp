@@ -13,6 +13,7 @@
 #include "Network/Protocol/Http/Internal/Http1/Client.h"
 #include "Network/Protocol/Http/Internal/Http1/Parser.h"
 #include "Network/Protocol/Http/Internal/Http2/Connection.h"
+#include "Network/Protocol/Http/Internal/ContentEncoding.h"
 #include "Network/Protocol/Http/Internal/Transport.h"
 #include "Network/Protocol/Http/Internal/Timeout.h"
 #include "Util/Base64.h"
@@ -122,8 +123,14 @@ namespace ne::network::http
 				Request hopRequest = _request; // 다음 홉을 위해 원본은 남겨 둔다(AdaptRequestForRedirect 가 변형)
 				hopRequest.target = parsed->target;
 
+				// 해제 가능한 인코딩을 광고하고, 우리가 광고했을 때만 응답을 자동으로 푼다. 홉마다 다시 넣는
+				// 이유는 리다이렉트 대상이 다른 서버일 수 있어서다 — 홉별로 판단이 독립해야 한다.
+				const bool_t isAutoDecoded = internal::ApplyAcceptEncoding(hopRequest);
+
 				auto response = co_await SendOnce(Endpoint{ parsed->host, parsed->port, parsed->isSecure }, std::move(hopRequest), _version, _context, _stopToken);
 				if (response.IsError()) co_return std::move(response);
+
+				if (auto decoded = internal::DecodeResponseBody(response.Value(), isAutoDecoded); decoded.IsError()) co_return R::Error(std::move(decoded.Error()));
 
 				const int_t status = response.Value().statusCode;
 				if (hop >= _maxRedirects || !internal::IsRedirect(status)) co_return std::move(response);
@@ -360,9 +367,17 @@ namespace ne::network::http
 
 	ne::Task<HttpResult<Response>> ClientSession::SendCore(Request _request, std::stop_token _stopToken)
 	{
-		if (connection) co_return co_await connection->Send(std::move(_request), std::move(_stopToken));
+		// 세션 경로도 원샷 경로와 같은 규칙을 쓴다 — 광고했을 때만 자동 해제(둘의 동작이 갈리면 안 된다).
+		const bool_t isAutoDecoded = internal::ApplyAcceptEncoding(_request);
 
-		co_return co_await SendCoreHttp1(std::move(_request), std::move(_stopToken));
+		auto response = connection
+			? co_await connection->Send(std::move(_request), std::move(_stopToken))
+			: co_await SendCoreHttp1(std::move(_request), std::move(_stopToken));
+		if (response.IsError()) co_return response;
+
+		if (auto decoded = internal::DecodeResponseBody(response.Value(), isAutoDecoded); decoded.IsError()) co_return HttpResult<Response>::Error(std::move(decoded.Error()));
+
+		co_return response;
 	}
 
 	ne::Task<HttpResult<Response>> ClientSession::SendCoreHttp1(Request _request, std::stop_token _stopToken)
