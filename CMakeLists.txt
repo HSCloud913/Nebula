@@ -59,7 +59,10 @@ install(DIRECTORY Base Memory Concurrency Log Json Util Time Compress Io Cryptog
         # "/Internal/" 로만 쓰면 파일은 제외되지만 디렉터리 자체(.../Io/Internal)는 매치되지 않아
         # 설치 트리에 빈 폴더가 남는다. 경로 끝도 함께 매치시켜 폴더 생성까지 막는다.
         REGEX "/Internal(/|$)" EXCLUDE
-        REGEX "/Test" EXCLUDE)
+        REGEX "/Test" EXCLUDE
+        # IDE 가 소스 트리에 만드는 폴더(.idea/.vs 등)도 걸러 낸다 — *.h 필터 때문에 파일은 안 들어오지만
+        # 폴더 자체는 만들어져 설치 트리에 빈 디렉터리가 남는다(위 Internal 과 같은 이유).
+        REGEX "/\\.[^/]+(/|$)" EXCLUDE)
 
 install(EXPORT NebulaTargets
         NAMESPACE Nebula::
