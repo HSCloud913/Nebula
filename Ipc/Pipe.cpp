@@ -7,6 +7,7 @@
 #include "Base/Exception.h"
 #include "Util/StringFormat.h"
 #include "Io/Engine.h"
+#include "Io/Context.h"
 #include "Io/Coroutine/IoOperation.h"
 
 #if defined(IS_POSIX)
@@ -35,7 +36,7 @@ private:
 private:
 	wstring_t pipeName;
 	HANDLE handle = INVALID_HANDLE_VALUE;
-	bool_t isRegistered{ false }; // IocpEngine 등록 여부 — 최초 ReadAsync/WriteAsync 에서 1회만 등록(RegisterFileHandle 은 멱등하지 않음)
+	bool_t isAsyncUsed{ false }; // ReadAsync/WriteAsync 를 쓴 뒤로는 완료가 IOCP 큐로 가므로 동기 경로를 막는다
 
 
 
@@ -95,7 +96,7 @@ public:
 public:
 	[[nodiscard]] longlong_t Read(const std::span<std::byte> _buffer) const
 	{
-		if (isRegistered) throw ne::Exception("[Pipe/Read]", "cannot call Read() after ReadAsync/WriteAsync registered this handle with an IocpEngine — use ReadAsync instead");
+		if (isAsyncUsed) throw ne::Exception("[Pipe/Read]", "cannot call Read() after ReadAsync/WriteAsync — this handle now delivers completions to the IOCP queue; use ReadAsync instead");
 
 		OVERLAPPED overlapped{};
 		overlapped.hEvent = ::CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -129,7 +130,7 @@ public:
 
 	bool_t Write(const std::span<const std::byte> _data) const
 	{
-		if (isRegistered) throw ne::Exception("[Pipe/Write]", "cannot call Write() after ReadAsync/WriteAsync registered this handle with an IocpEngine — use WriteAsync instead");
+		if (isAsyncUsed) throw ne::Exception("[Pipe/Write]", "cannot call Write() after ReadAsync/WriteAsync — this handle now delivers completions to the IOCP queue; use WriteAsync instead");
 
 		OVERLAPPED overlapped{};
 		overlapped.hEvent = ::CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -158,20 +159,12 @@ public:
 	}
 
 public:
-	// ReadAsync/WriteAsync 에서 호출 — 핸들을 IocpEngine 에 최초 1회만 등록한다.
-	[[nodiscard]] ne::Result<void_t, ne::OsError> EnsureRegistered(ne::io::IocpEngine& _engine) noexcept
-	{
-		if (isRegistered) return ne::Result<void_t, ne::OsError>::Ok();
+	// ReadAsync/WriteAsync 에서 호출 — 이 핸들이 이제 IOCP 로 완료를 받는다는 사실만 기록한다.
+	// IOCP 연관(CreateIoCompletionPort)은 엔진이 첫 제출에서 알아서 하고 멱등하므로, 예전처럼
+	// 여기서 등록을 대신할 필요가 없다. 남은 목적은 아래 동기 Read/Write 를 막는 것 하나다.
+	void_t MarkAsyncUsed() noexcept { isAsyncUsed = true; }
 
-		if (auto result = _engine.RegisterFileHandle(handle); result.IsError()) return result;
-
-		isRegistered = true;
-
-		return ne::Result<void_t, ne::OsError>::Ok();
-	}
-
-public:
-	[[nodiscard]] HANDLE Handle() const noexcept { return handle; }
+	[[nodiscard]] ne::ulonglong_t HandleValue() const noexcept { return reinterpret_cast<ne::ulonglong_t>(handle); }
 	[[nodiscard]] bool_t IsConnected() const noexcept { return handle != INVALID_HANDLE_VALUE; }
 };
 
@@ -256,7 +249,11 @@ public:
 	}
 
 public:
-	[[nodiscard]] int_t Handle() const noexcept { return handle; }
+	// POSIX 는 동기/비동기를 섞어도 되므로(같은 fd 에 recv 와 io_uring 제출이 공존 가능) 아무것도
+	// 기록할 필요가 없다. Windows Impl 과 표면을 맞추기 위해 no-op 으로만 둔다.
+	void_t MarkAsyncUsed() noexcept {}
+
+	[[nodiscard]] ne::ulonglong_t HandleValue() const noexcept { return static_cast<ne::ulonglong_t>(handle); }
 	[[nodiscard]] bool_t IsConnected() const noexcept { return handle != -1; }
 };
 
@@ -286,31 +283,48 @@ bool_t Pipe::Write(const std::span<const std::byte> _data) const { return impl->
 
 
 // ─── 비동기 API ──────────────────────────────────────────────────────────────
+// 플랫폼 차이는 "어떤 RequestKind 를 쓰는가" 하나로 줄어든다. Windows 는 명명 파이프 HANDLE 에
+// READ/WRITE(ReadFile/WriteFile + OVERLAPPED), POSIX 는 AF_UNIX 소켓에 RECEIVE/SEND 를 제출한다.
+// 파이프에는 byte offset 개념이 없어 offset 은 항상 0 — 명명 파이프에 대해 OS 가 무시한다.
 #if defined(_WIN32)
-// Windows: 명명 파이프를 FILE_FLAG_OVERLAPPED 로 열어 IocpEngine 에 등록하고,
-// ne::io::ReadSubmitAwaitable/WriteSubmitAwaitable(파일 Proactor)로 진짜 완료 기반
-// 비동기 I/O 를 수행한다. 파이프는 byte offset 개념이 없으므로 offset 은 항상 0.
-ne::Task<ne::Result<std::size_t, ne::OsError>> Pipe::ReadAsync(const std::span<std::byte> _buffer, ne::io::IocpEngine& _engine)
+namespace
 {
-	if (auto registerResult = impl->EnsureRegistered(_engine); registerResult.IsError()) co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(registerResult.Error()));
-
-	co_return co_await ne::io::ReadSubmitAwaitable{ _engine, impl->Handle(), std::span<ne::byte_t>(reinterpret_cast<ne::byte_t*>(_buffer.data()), _buffer.size()), 0 };
-} ne::Task<ne::Result<std::size_t, ne::OsError>> Pipe::WriteAsync(const std::span<const std::byte> _data, ne::io::IocpEngine& _engine)
+	constexpr ne::io::RequestKind PipeReadKind = ne::io::RequestKind::READ;
+	constexpr ne::io::RequestKind PipeWriteKind = ne::io::RequestKind::WRITE;
+}
+#elif defined(IS_POSIX)
+namespace
 {
-	if (auto registerResult = impl->EnsureRegistered(_engine); registerResult.IsError()) co_return ne::Result<std::size_t, ne::OsError>::Error(std::move(registerResult.Error()));
+	constexpr ne::io::RequestKind PipeReadKind = ne::io::RequestKind::RECEIVE;
+	constexpr ne::io::RequestKind PipeWriteKind = ne::io::RequestKind::SEND;
+}
+#endif
 
-	co_return co_await ne::io::WriteSubmitAwaitable{ _engine, impl->Handle(), std::span<const ne::byte_t>(reinterpret_cast<const ne::byte_t*>(_data.data()), _data.size()), 0 };
+#if defined(_WIN32) || defined(IS_POSIX)
+ne::Task<ne::io::IoResult<std::size_t>> Pipe::ReadAsync(const std::span<std::byte> _buffer, ne::io::Context& _context, std::stop_token _stopToken)
+{
+	impl->MarkAsyncUsed();
+
+	const ne::io::Request request{ .requestKind = PipeReadKind, .handle = impl->HandleValue(), .buffer = _buffer.data(), .length = _buffer.size() };
+
+	co_return co_await ne::io::IoOperation{ _context, request, std::move(_stopToken) };
 }
 
-#elif defined(IS_POSIX)
-// POSIX: AF_UNIX SOCK_STREAM → IEngine::SubmitReceive/SubmitSend 로 진짜 Proactor 제출
-// (IORING_OP_RECV/SEND, epoll 은 Watch+recv/send 로 에뮬레이션).
-ne::Task<ne::Result<std::size_t, ne::OsError>> Pipe::ReadAsync(const std::span<std::byte> _buffer, ne::io::IEngine& _engine) { co_return co_await ne::io::ReceiveSubmitAwaitable{ _engine, static_cast<ne::io::socket_t>(impl->Handle()), _buffer.data(), _buffer.size() }; } ne::Task<ne::Result<std::size_t, ne::OsError>> Pipe::WriteAsync(const std::span<const std::byte> _data, ne::io::IEngine& _engine) { co_return co_await ne::io::SendSubmitAwaitable{ _engine, static_cast<ne::io::socket_t>(impl->Handle()), _data.data(), _data.size() }; }
+ne::Task<ne::io::IoResult<std::size_t>> Pipe::WriteAsync(const std::span<const std::byte> _data, ne::io::Context& _context, std::stop_token _stopToken)
+{
+	impl->MarkAsyncUsed();
+
+	// Request::buffer 는 방향을 구분하지 않는 void_t* 다(엔진이 RequestKind 로 방향을 안다) —
+	// Io/File::Write 도 같은 이유로 const 를 벗긴다.
+	const ne::io::Request request{ .requestKind = PipeWriteKind, .handle = impl->HandleValue(), .buffer = const_cast<std::byte*>(_data.data()), .length = _data.size() };
+
+	co_return co_await ne::io::IoOperation{ _context, request, std::move(_stopToken) };
+}
 
 #else
-ne::Task<ne::Result<std::size_t, ne::OsError>> Pipe::ReadAsync(const std::span<std::byte>, ne::io::IEngine&) { co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "[Pipe/ReadAsync] not supported on this platform" }); }
+ne::Task<ne::io::IoResult<std::size_t>> Pipe::ReadAsync(const std::span<std::byte>, ne::io::Context&, std::stop_token) { co_return ne::io::IoResult<std::size_t>::Error(ne::io::IoError{ ne::io::IoErrorKind::UNSUPPORTED, "[Pipe/ReadAsync] not supported on this platform" }); }
 
-ne::Task<ne::Result<std::size_t, ne::OsError>> Pipe::WriteAsync(const std::span<const std::byte>, ne::io::IEngine&) { co_return ne::Result<std::size_t, ne::OsError>::Error(ne::OsError{ 0, "[Pipe/WriteAsync] not supported on this platform" }); }
+ne::Task<ne::io::IoResult<std::size_t>> Pipe::WriteAsync(const std::span<const std::byte>, ne::io::Context&, std::stop_token) { co_return ne::io::IoResult<std::size_t>::Error(ne::io::IoError{ ne::io::IoErrorKind::UNSUPPORTED, "[Pipe/WriteAsync] not supported on this platform" }); }
 #endif
 
 

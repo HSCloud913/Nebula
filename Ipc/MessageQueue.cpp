@@ -7,9 +7,7 @@
 #include "Base/Exception.h"
 #include "Util/StringFormat.h"
 #include "Io/Engine.h"
-// SendSubmitAwaitable/ReceiveSubmitAwaitable(소켓 Proactor, POSIX) +
-// ReadSubmitAwaitable/WriteSubmitAwaitable(파일 Proactor, Windows/IocpEngine) 전부
-// Io 모듈 공용 — Ipc 는 더 이상 자체 IoOperation.h 를 두지 않는다.
+#include "Io/Context.h"
 #include "Io/Coroutine/IoOperation.h"
 
 #if defined(_WIN32)
@@ -43,10 +41,9 @@ public:
 private:
 	wstring_t pipeName;
 	HANDLE handle = INVALID_HANDLE_VALUE;
-	bool_t isRegistered{ false }; // IocpEngine 등록 여부 — 최초 SendAsync/ReceiveAsync 에서 1회만 등록(RegisterFileHandle 은 멱등하지 않음)
+	bool_t isAsyncUsed{ false }; // SendAsync/ReceiveAsync 를 쓴 뒤로는 완료가 IOCP 큐로 가므로 동기 경로를 막는다
 
 public:
-	[[nodiscard]] HANDLE Handle() const noexcept { return handle; }
 	static constexpr ulong_t MaxMessage = 65536;
 
 public:
@@ -102,7 +99,7 @@ public:
 public:
 	void_t Send(const std::span<const std::byte> _message) const
 	{
-		if (isRegistered) throw ne::Exception("[MessageQueue/Send]", "cannot call Send() after SendAsync/ReceiveAsync registered this handle with an IocpEngine — use SendAsync instead");
+		if (isAsyncUsed) throw ne::Exception("[MessageQueue/Send]", "cannot call Send() after SendAsync/ReceiveAsync — this handle now delivers completions to the IOCP queue; use SendAsync instead");
 
 		OVERLAPPED overlapped{};
 		overlapped.hEvent = ::CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -122,7 +119,7 @@ public:
 
 	[[nodiscard]] std::vector<std::byte> Receive() const
 	{
-		if (isRegistered) throw ne::Exception("[MessageQueue/Receive]", "cannot call Receive() after SendAsync/ReceiveAsync registered this handle with an IocpEngine — use ReceiveAsync instead");
+		if (isAsyncUsed) throw ne::Exception("[MessageQueue/Receive]", "cannot call Receive() after SendAsync/ReceiveAsync — this handle now delivers completions to the IOCP queue; use ReceiveAsync instead");
 
 		auto buffer = std::vector<std::byte>(MaxMessage);
 
@@ -148,23 +145,18 @@ public:
 	}
 
 public:
-	// SendAsync/ReceiveAsync 에서 호출 — 핸들을 IocpEngine 에 최초 1회만 등록한다.
-	[[nodiscard]] ne::Result<void_t, ne::OsError> EnsureRegistered(ne::io::IocpEngine& _engine) noexcept
-	{
-		if (isRegistered) return ne::Result<void_t, ne::OsError>::Ok();
+	// SendAsync/ReceiveAsync 에서 호출 — 이 핸들이 이제 IOCP 로 완료를 받는다는 사실만 기록한다.
+	// IOCP 연관(CreateIoCompletionPort)은 엔진이 첫 제출에서 알아서 하고 멱등하므로, 예전처럼
+	// 여기서 등록을 대신할 필요가 없다. 남은 목적은 위 동기 Send/Receive 를 막는 것 하나다.
+	void_t MarkAsyncUsed() noexcept { isAsyncUsed = true; }
 
-		if (auto result = _engine.RegisterFileHandle(handle); result.IsError()) return result;
-
-		isRegistered = true;
-
-		return ne::Result<void_t, ne::OsError>::Ok();
-	}
+	[[nodiscard]] ne::ulonglong_t HandleValue() const noexcept { return reinterpret_cast<ne::ulonglong_t>(handle); }
 
 private:
 	// 동기 Send/Receive 가 자신이 제출한 OVERLAPPED 의 완료를 블로킹 대기한다. 오직 이
-	// OVERLAPPED 를 대상으로 한 이벤트만 기다리므로, registered 가 false 인 동안(즉
-	// 아직 IocpEngine 에 등록되지 않은 동안)에는 RunOnce() 와 경합할 여지가 없다 — 등록 이후엔
-	// Send()/Receive() 진입 자체를 위에서 막는다.
+	// OVERLAPPED 를 대상으로 한 이벤트만 기다리므로, isAsyncUsed 가 false 인 동안(즉 이 핸들이
+	// 아직 IOCP 에 연관되지 않은 동안)에는 RunOnce() 와 경합할 여지가 없다 — 비동기 API 를 한 번
+	// 쓴 뒤에는 Send()/Receive() 진입 자체를 위에서 막는다.
 	void_t WaitOverlapped(OVERLAPPED& _overlapped, ulong_t& _transferred, const string_view_t _context) const
 	{
 		if (!::GetOverlappedResult(handle, &_overlapped, &_transferred, TRUE))
@@ -193,7 +185,10 @@ private:
 	int_t handle = -1;
 
 public:
-	[[nodiscard]] int_t Handle() const noexcept { return handle; }
+	// POSIX 는 동기/비동기를 섞어도 되므로 기록할 것이 없다 — Windows Impl 과 표면만 맞춘다.
+	void_t MarkAsyncUsed() noexcept {}
+
+	[[nodiscard]] ne::ulonglong_t HandleValue() const noexcept { return static_cast<ne::ulonglong_t>(handle); }
 
 public:
 	void_t Connect()
@@ -288,60 +283,65 @@ std::vector<std::byte> MessageQueue::Receive() const { return impl->Receive(); }
 
 
 
-// ─── 비동기 awaitable ────────────────────────────────────────────────────────
+// ─── 비동기 API ──────────────────────────────────────────────────────────────
+// 플랫폼 차이는 RequestKind 하나로 줄어든다. Windows 는 명명 파이프 HANDLE 에 READ/WRITE
+// (ReadFile/WriteFile + OVERLAPPED), POSIX 는 AF_UNIX SOCK_SEQPACKET 소켓에 RECEIVE/SEND 를
+// 제출한다. 메시지 경계는 양쪽 모두 OS 가 보존한다(PIPE_READMODE_MESSAGE / SOCK_SEQPACKET) —
+// 그래서 한 번의 완료가 정확히 한 메시지다. 파이프에는 offset 개념이 없어 offset 은 항상 0.
 #if defined(_WIN32)
-// Windows: 명명 파이프를 FILE_FLAG_OVERLAPPED 로 열어 IocpEngine 에 등록하고,
-// ne::io::WriteSubmitAwaitable/ReadSubmitAwaitable(파일 Proactor)로 진짜 완료 기반
-// 비동기 I/O 를 수행한다. 파이프는 byte offset 개념이 없으므로 offset 은 항상 0 —
-// OVERLAPPED.Offset/OffsetHigh 는 named pipe 에 대해 OS 가 무시한다.
-ne::Task<ne::Result<void_t, ne::OsError>> MessageQueue::SendAsync(const std::span<const std::byte> _message, ne::io::IocpEngine& _engine)
+namespace
 {
-	if (auto registerResult = impl->EnsureRegistered(_engine); registerResult.IsError()) co_return ne::Result<void_t, ne::OsError>::Error(std::move(registerResult.Error()));
-
-	auto result = co_await ne::io::WriteSubmitAwaitable{ _engine, impl->Handle(), std::span<const ne::byte_t>(reinterpret_cast<const ne::byte_t*>(_message.data()), _message.size()), 0 };
-	if (result.IsError()) co_return ne::Result<void_t, ne::OsError>::Error(std::move(result.Error()));
-
-	co_return ne::Result<void_t, ne::OsError>::Ok();
-} ne::Task<ne::Result<std::vector<std::byte>, ne::OsError>> MessageQueue::ReceiveAsync(ne::io::IocpEngine& _engine)
+	constexpr ne::io::RequestKind QueueReceiveKind = ne::io::RequestKind::READ;
+	constexpr ne::io::RequestKind QueueSendKind = ne::io::RequestKind::WRITE;
+}
+#elif defined(IS_POSIX)
+namespace
 {
-	if (auto registerResult = impl->EnsureRegistered(_engine); registerResult.IsError()) co_return ne::Result<std::vector<std::byte>, ne::OsError>::Error(std::move(registerResult.Error()));
+	constexpr ne::io::RequestKind QueueReceiveKind = ne::io::RequestKind::RECEIVE;
+	constexpr ne::io::RequestKind QueueSendKind = ne::io::RequestKind::SEND;
+}
+#endif
 
-	auto buffer = std::vector<std::byte>(Impl::MaxMessage);
+#if defined(_WIN32) || defined(IS_POSIX)
+ne::Task<ne::io::IoResult<void_t>> MessageQueue::SendAsync(const std::span<const std::byte> _message, ne::io::Context& _context, std::stop_token _stopToken)
+{
+	impl->MarkAsyncUsed();
 
-	auto result = co_await ne::io::ReadSubmitAwaitable{ _engine, impl->Handle(), std::span<ne::byte_t>(reinterpret_cast<ne::byte_t*>(buffer.data()), buffer.size()), 0 };
-	if (result.IsError()) co_return ne::Result<std::vector<std::byte>, ne::OsError>::Error(std::move(result.Error()));
+	// Request::buffer 는 방향을 구분하지 않는 void_t* 다(엔진이 RequestKind 로 방향을 안다).
+	const ne::io::Request request{ .requestKind = QueueSendKind, .handle = impl->HandleValue(), .buffer = const_cast<std::byte*>(_message.data()), .length = _message.size() };
 
-	buffer.resize(result.Value());
+	auto result = co_await ne::io::IoOperation{ _context, request, std::move(_stopToken) };
+	if (result.IsError()) co_return ne::io::IoResult<void_t>::Error(std::move(result.Error()));
 
-	co_return ne::Result<std::vector<std::byte>, ne::OsError>::Ok(std::move(buffer));
+	co_return ne::io::IoResult<void_t>::Ok();
 }
 
-#elif defined(IS_POSIX)
-// POSIX: AF_UNIX SOCK_SEQPACKET → IEngine::SubmitSend/SubmitReceive 로 진짜 Proactor
-// 제출(IORING_OP_SEND/RECV, epoll 은 Watch+send/recv 로 에뮬레이션) — Reactor 로 준비완료를
-// 기다렸다가 별도로 mq_send/mq_receive 를 부르던 이전 2단계 구조가 필요 없다.
-ne::Task<ne::Result<void_t, ne::OsError>> MessageQueue::SendAsync(const std::span<const std::byte> _message, ne::io::IEngine& _engine)
+ne::Task<ne::io::IoResult<std::vector<std::byte>>> MessageQueue::ReceiveAsync(ne::io::Context& _context, std::stop_token _stopToken)
 {
-	auto result = co_await ne::io::SendSubmitAwaitable{ _engine, static_cast<ne::io::socket_t>(impl->Handle()), _message.data(), _message.size() };
+	using R = ne::io::IoResult<std::vector<std::byte>>;
 
-	if (result.IsError()) co_return ne::Result<void_t, ne::OsError>::Error(std::move(result.Error()));
+	impl->MarkAsyncUsed();
 
-	co_return ne::Result<void_t, ne::OsError>::Ok();
-} ne::Task<ne::Result<std::vector<std::byte>, ne::OsError>> MessageQueue::ReceiveAsync(ne::io::IEngine& _engine)
-{
+	// 메시지 경계가 보존되므로 한 메시지가 다 들어갈 버퍼를 미리 잡아야 한다 — 작게 잡으면
+	// Windows 는 ERROR_MORE_DATA, POSIX SOCK_SEQPACKET 은 **나머지를 조용히 버린다.**
 	auto buffer = std::vector<std::byte>(Impl::MaxMessage);
-	auto result = co_await ne::io::ReceiveSubmitAwaitable{ _engine, static_cast<ne::io::socket_t>(impl->Handle()), buffer.data(), buffer.size() };
 
-	if (result.IsError()) co_return ne::Result<std::vector<std::byte>, ne::OsError>::Error(std::move(result.Error()));
+	// 버퍼는 이 코루틴 프레임이 소유한다. IoOperation 이 파괴될 때 커널 취소를 요청하는 이유가
+	// 이것이다 — 취소 없이 프레임만 사라지면 커널이 이 벡터에 계속 쓴다.
+	const ne::io::Request request{ .requestKind = QueueReceiveKind, .handle = impl->HandleValue(), .buffer = buffer.data(), .length = buffer.size() };
+
+	auto result = co_await ne::io::IoOperation{ _context, request, std::move(_stopToken) };
+	if (result.IsError()) co_return R::Error(std::move(result.Error()));
 
 	buffer.resize(result.Value());
-	co_return ne::Result<std::vector<std::byte>, ne::OsError>::Ok(std::move(buffer));
+
+	co_return R::Ok(std::move(buffer));
 }
 
 #else
-ne::Task<ne::Result<void_t, ne::OsError>> MessageQueue::SendAsync(const std::span<const std::byte>, ne::io::IEngine&) { co_return ne::Result<void_t, ne::OsError>::Error(ne::OsError{ 0, "[MessageQueue/SendAsync] not supported on this platform" }); }
+ne::Task<ne::io::IoResult<void_t>> MessageQueue::SendAsync(const std::span<const std::byte>, ne::io::Context&, std::stop_token) { co_return ne::io::IoResult<void_t>::Error(ne::io::IoError{ ne::io::IoErrorKind::UNSUPPORTED, "[MessageQueue/SendAsync] not supported on this platform" }); }
 
-ne::Task<ne::Result<std::vector<std::byte>, ne::OsError>> MessageQueue::ReceiveAsync(ne::io::IEngine&) { co_return ne::Result<std::vector<std::byte>, ne::OsError>::Error(ne::OsError{ 0, "[MessageQueue/ReceiveAsync] not supported on this platform" }); }
+ne::Task<ne::io::IoResult<std::vector<std::byte>>> MessageQueue::ReceiveAsync(ne::io::Context&, std::stop_token) { co_return ne::io::IoResult<std::vector<std::byte>>::Error(ne::io::IoError{ ne::io::IoErrorKind::UNSUPPORTED, "[MessageQueue/ReceiveAsync] not supported on this platform" }); }
 
 #endif
 

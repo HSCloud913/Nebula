@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.28)
 project(NebulaIpcTest LANGUAGES CXX)
 
-set(CMAKE_INCLUDE_CURRENT_DIR ON)
+# 상위 모듈과 같은 이유로 켜지 않는다(Ipc/CMakeLists.txt 의 Semaphore.h 충돌 주석 참고).
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
